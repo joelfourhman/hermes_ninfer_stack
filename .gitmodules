@@ -1,0 +1,4 @@
+[submodule "ninfer"]
+	path = ninfer
+	url = https://github.com/Neroued/ninfer.git
+	branch = master
