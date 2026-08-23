@@ -8,6 +8,11 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Complete resumable `python stack.py setup` workflow that explicitly asks before
+  downloading the model, guides the Hermes wizard, reapplies managed settings, and
+  starts the finished stack.
+- Exact Blank Slate, `ninfer`, `qwen-local`, and SSH wizard guidance, including
+  Hermes's transient no-provider warning.
 - Cross-platform `python stack.py` control command for setup, Compose lifecycle,
   Hermes configuration, container shells, dashboard access, and verification.
 - Authenticated loopback-only Hermes web dashboard and a uv-managed Compose

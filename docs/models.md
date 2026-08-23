@@ -36,19 +36,27 @@ complete registered NInfer execution path.
 Those measurements establish upstream model/runtime evidence, not performance of this complete
 Hermes stack. See [Performance](performance.md) for the distinction.
 
-## Download with the helper
+## Download through setup
 
-Run the cross-platform downloader. It uses pinned `uv` and Hugging Face client
-versions inside a Compose utility container; it does not install anything on
-the host:
+The normal first-run command displays the artifact identity and size, then asks
+for explicit consent before downloading:
 
-```bash
+```text
+python stack.py setup
+```
+
+Answering no pauses setup without transferring model data. Answering yes uses pinned `uv` and
+Hugging Face client versions inside a Compose utility container; it installs nothing on the host.
+The helper reports the destination and available space and fails if the final checksum differs from
+the value above.
+
+The acquisition step is also available independently for recovery or checksum verification:
+
+```text
 python stack.py download-model
 ```
 
-Before downloading, the helper reports the artifact, size, destination, and available space and
-requires explicit confirmation. An existing file is verified rather than downloaded again. The
-script fails if the final checksum differs from the value above.
+An existing file is verified rather than downloaded again.
 
 For explicitly approved non-interactive automation, the helper accepts:
 

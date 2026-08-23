@@ -59,6 +59,18 @@ Compare variable names with `.env.example` without posting the secret values.
 Correct the existing file, or move it to a private backup and rerun setup. Do not delete an unknown
 `.env` until you have preserved any integration secrets it contains.
 
+## Setup pauses before downloading the model
+
+**Symptom**
+
+`python stack.py setup` prints `Setup paused before the model download` and exits.
+
+**Cause and fix**
+
+This is the expected result when the explicit download prompt is declined. No model bytes, images,
+or services are started. Rerun the same command when at least 24 GiB is available and answer `y` or
+`yes`; setup resumes the complete first-run workflow.
+
 ## GPU is not visible inside Docker
 
 **Symptom**

@@ -64,18 +64,49 @@ docker run --rm --gpus all \
 The output must identify an RTX 5090. A successful host-side `nvidia-smi` is not sufficient: this
 check also exercises Docker's NVIDIA runtime integration.
 
-## 3. Initialize local configuration
+## 3. Run the complete interactive setup
 
-Run the idempotent setup helper:
+One cross-platform Python command performs the complete first run:
 
-```bash
+```text
 python stack.py setup
 ```
 
-The helper prepares the local directories, creates `.env` from the reviewed example, generates two
-distinct API secrets, and copies `hermes/config.example.yaml` to the ignored live path
-`hermes-data/config.yaml` when that file does not already exist. Existing `.env` and Hermes
-configuration are preserved rather than silently replaced.
+The command is resumable and performs these stages in order:
+
+1. Initialize the pinned NInfer submodule, ignored local directories, `.env`, random secrets, and
+   the reviewed Hermes baseline without replacing existing local state.
+2. Display the exact 20.02 GiB model transfer and ask whether to download it. Nothing is downloaded
+   unless the owner answers `y` or `yes`. Declining pauses setup safely; rerun the same command later.
+3. Download through a digest-pinned, uv-managed Compose utility and verify the final SHA-256.
+4. Build the pinned images, start NInfer and the SSH sandbox, and wait for application health.
+5. Open the official Hermes wizard, restore the stack-owned provider and terminal fields afterward,
+   and start the complete stack.
+
+Nothing is installed into the host Python environment. CI and ordinary image builds never download
+the model. The standalone `python stack.py download-model` command remains available for recovery,
+checksum verification, or manually resuming model acquisition.
+
+Use these choices when the Hermes wizard opens:
+
+1. **Blank Slate**
+2. **ninfer (currently active)**
+3. **qwen-local**
+4. **Keep current (ssh)**
+5. **Start with everything disabled — finish now**
+
+Blank Slate deliberately clears the provider during the wizard and may finish with a “no inference
+provider is configured” warning. This is expected. Do not enter a Nous Portal or external-provider
+API key: `python stack.py setup` immediately reapplies `http://ninfer:8080/v1`, `qwen-local`, and the
+SSH sandbox through Hermes's supported configuration interface after the wizard exits.
+
+Choose **Walk through all configurations** at the final prompt only when intentionally enabling a
+messaging integration or optional tool. Those choices remain in ignored `hermes-data/`; the setup
+command still restores only the fields owned by this stack.
+
+Once setup has completed, later runs preserve the wizard choices and skip it. Use
+`python stack.py setup --rerun-wizard` to intentionally run it again. Existing `.env`, Hermes data,
+model bytes, and workspace content remain preserved.
 
 The following paths are local runtime data and must remain outside Git:
 
@@ -84,85 +115,16 @@ The following paths are local runtime data and must remain outside Git:
 - downloaded files under `models/`
 - generated content under `workspace/`
 
-Review user-tunable values before building:
+## 4. Verify the complete stack
 
-```bash
-${EDITOR:-vi} .env
-```
-
-The defaults select GPU 0, model alias `qwen-local`, a 131,072-token context, and two active NInfer
-requests. See [Configuration](configuration.md) before changing any of those coupled values.
-
-## 4. Download the model
-
-The helper displays the exact artifact, destination, size, and available disk space before asking
-for confirmation:
-
-```bash
-python stack.py download-model
-```
-
-The helper builds and runs the `model-downloader` Compose profile. That utility image is based on a
-digest-pinned official `uv` image and uses `uv tool install` with a pinned Hugging Face client. It pins the
-model revision and verifies the final SHA-256 checksum. Nothing is installed into the host Python
-environment, and no model is downloaded by setup, the normal image build, or CI.
-
-## 5. Build the images
-
-```bash
-docker compose build
-```
-
-This compiles the pinned NInfer source with its CUDA 13.1.2 build image and builds the SSH sandbox.
-Compose stamps the NInfer image with the pinned source revision and runtime-base provenance; the
-verifier rejects a stale or differently labeled image. The model is mounted read-only at runtime
-and is not copied into either image.
-
-## 6. Start NInfer and the sandbox
-
-Start the prerequisites first and wait for application health, not just container creation:
-
-```bash
-docker compose up -d --wait --wait-timeout 900 ninfer sandbox
-docker compose ps
-```
-
-NInfer's first model load may take several minutes. Follow startup without changing the service:
-
-```bash
-docker compose logs -f ninfer
-```
-
-## 7. Complete the Hermes first-run setup
-
-Run the official Hermes wizard once:
-
-```bash
-docker compose run --rm --no-deps hermes setup
-```
-
-Use the wizard for Hermes identity and any messaging integration you intentionally want to enable.
-Those answers are written under ignored `hermes-data/` and are not repository configuration.
-
-The wizard may update model settings. Reapply the stack-owned NInfer and SSH sandbox fields:
-
-```bash
-python stack.py configure-hermes
-```
-
-The helper uses the supported `hermes config` interface and checks the result. Run it while the
-long-running Hermes service is stopped.
-
-## 8. Start and verify the complete stack
-
-```bash
-docker compose up -d
+```text
 python stack.py verify
 ```
 
 Verification checks the GPU, model checksum, NInfer health and API, Hermes-to-NInfer inference,
 sandbox networking, and a real terminal tool side effect. A healthy container alone is not treated
-as proof that inference or tool execution works.
+as proof that inference or tool execution works. NInfer's initial model load can take several
+minutes; use `python stack.py logs` if setup is waiting on readiness.
 
 ## Shell and web dashboard access
 

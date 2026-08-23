@@ -135,9 +135,11 @@ unsupported. See [Models](models.md) before selecting a different artifact.
 
 ## Hermes configuration lifecycle
 
-`python stack.py setup` copies the reviewed template only when live configuration is absent. The
-first-run wizard may add identity, messaging, pairing, or provider information to the ignored live
-tree. `python stack.py configure-hermes` then owns only the fields required by this stack:
+`python stack.py setup` copies the reviewed template only when live configuration is absent, then
+runs the first-run wizard as part of the complete workflow. The wizard may add identity, messaging,
+pairing, or provider information to the ignored live tree. Setup automatically invokes the same
+managed configuration step exposed separately as `python stack.py configure-hermes`; it owns only
+the fields required by this stack:
 
 - custom NInfer provider endpoint and API-key environment name;
 - model alias, context length, and text-only capability metadata;

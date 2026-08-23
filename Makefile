@@ -8,11 +8,11 @@ COMPOSE := docker compose --project-directory "$(STACK_DIR)" --env-file "$(ENV_F
 
 help:
 	@echo "Hermes + NInfer stack"
-	@echo "  setup             initialize the submodule, directories, config, and secrets"
+	@echo "  setup             run the complete interactive first-run workflow"
 	@echo "  download-model    download and verify the pinned ~20 GiB artifact"
 	@echo "  build/up/down      build or manage the Compose stack"
 	@echo "  restart/status     restart services or show effective status"
-	@echo "  setup-hermes       run the one-time Hermes setup wizard"
+	@echo "  setup-hermes       rerun only the Hermes wizard (advanced recovery)"
 	@echo "  configure-hermes   reapply the reviewed NInfer/sandbox configuration"
 	@echo "  verify/benchmark   run local GPU integration checks or measurements"
 	@echo "  validate           run hardware-independent repository checks"

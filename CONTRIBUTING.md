@@ -29,14 +29,15 @@ If the repository was cloned without submodules:
 git submodule update --init --recursive
 ```
 
-Run the cross-platform Python setup helper to create local configuration and
-directories:
+When a change requires the live GPU stack, run the complete cross-platform setup
+workflow:
 
 ```bash
 python stack.py setup
 ```
 
-Do not download the model merely to edit documentation or run static checks.
+Setup explicitly asks before downloading; decline that prompt for documentation or
+static-only work. Do not download the model merely to edit documentation or run static checks.
 GPU integration tests require the documented model artifact, Docker GPU
 passthrough, and an RTX 5090.
 

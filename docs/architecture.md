@@ -169,8 +169,8 @@ The public environment surface is intentionally small.
 
 Internal ports and service DNS names are fixed implementation contracts. Changing a host-loopback
 port does not change Hermes's internal NInfer URL. Model ID and context values must agree at both
-ends; `python stack.py configure-hermes` applies those values through Hermes's supported configuration
-interface instead of relying on hand-edited live YAML.
+ends; the unified setup command automatically applies those values after the Hermes wizard through
+Hermes's supported configuration interface instead of relying on hand-edited live YAML.
 
 ## Startup and readiness
 

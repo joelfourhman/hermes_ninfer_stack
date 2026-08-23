@@ -125,33 +125,41 @@ Exact inspected versions and the limits of that evidence are recorded in
 git clone https://github.com/joelfourhman/hermes_ninfer_stack.git hermes-ninfer-stack
 cd hermes-ninfer-stack
 
-# Initializes the pinned submodule, local directories, reviewed Hermes
-# baseline, and random API secrets. Existing local state is preserved.
+# Complete interactive first run: local state, explicit model-download consent,
+# image builds, Hermes wizard, managed configuration, and service startup.
 python stack.py setup
 
-# One explicit ~20 GiB download; shows provenance and verifies SHA-256.
-python stack.py download-model
-
-docker compose build
-docker compose up -d --wait --wait-timeout 900 ninfer sandbox
-
-# Required once: configure Hermes identity and any intentional integrations.
-docker compose run --rm --no-deps hermes setup
-python stack.py configure-hermes
-
-docker compose up -d
+# Open the authenticated local dashboard after setup completes.
+python stack.py gui
 python stack.py verify
 ```
 
 `python stack.py setup` initializes NInfer when the initial clone omitted
 `--recurse-submodules`. It creates `.env` from `.env.example`, generates
 independent API and dashboard secrets, and copies `hermes/config.example.yaml` to the
-ignored live state only when no live configuration exists.
+ignored live state only when no live configuration exists. It then asks before
+downloading the 20.02 GiB model. Declining is safe: setup pauses without downloading,
+and the same command resumes later.
 
-The model is never downloaded by setup, the normal image build, or CI. The
-download command builds an isolated Compose utility image from the official,
-version-pinned `uv` image; `uv tool install` provisions the pinned Hugging Face
-client inside that image. Nothing is installed into the host Python environment.
+After explicit consent, setup uses an isolated Compose utility image based on the
+official version-pinned `uv` image, verifies the model checksum, builds the stack,
+runs the Hermes wizard, restores the reviewed NInfer and SSH-sandbox fields, and
+starts all services. Nothing is installed into the host Python environment. CI and
+normal image builds never download the model.
+
+Use these Hermes wizard choices for the default local stack:
+
+1. **Blank Slate**
+2. **ninfer (currently active)**
+3. **qwen-local**
+4. **Keep current (ssh)**
+5. **Start with everything disabled — finish now**
+
+The wizard's final “no inference provider” warning is expected in Blank Slate mode.
+The setup command automatically restores the pinned provider immediately afterward.
+Choose the extended configuration walk-through only when intentionally enabling a
+messaging integration or optional tool; setup still preserves the stack-managed
+provider and terminal settings.
 
 The complete first-run sequence, including WSL2 notes and failure recovery, is
 in [Installation](docs/installation.md).
@@ -241,7 +249,7 @@ python stack.py gui
 This starts Hermes if needed, opens `http://127.0.0.1:9119`, and prints the
 generated local username and password. Use `--no-open` on a headless host.
 
-The official first-run wizard can also configure an intentional gateway such
+The first-run wizard inside `python stack.py setup` can also configure an intentional gateway such
 as Telegram, Discord, or another supported Hermes integration. No gateway
 listener is published by this stack; the dashboard is the only Hermes host
 port. Tool commands see `/workspace` through the

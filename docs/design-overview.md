@@ -55,13 +55,15 @@ different cadence from the Compose project. Committing it to Git, placing it in 
 it into the NInfer image would make clones and image rebuilds unnecessarily expensive and would
 obscure which bytes were actually tested.
 
-Instead, model acquisition is an explicit local step:
+Instead, model acquisition requires explicit local consent:
 
-1. `python stack.py download-model` starts a uv-managed Compose utility that identifies the
+1. `python stack.py setup` identifies the large transfer and asks before starting it;
+   `python stack.py download-model` provides the same acquisition as a standalone recovery step.
+2. The accepted download starts a uv-managed Compose utility that identifies the
    repository, revision, filename, size, and destination before downloading.
-2. The helper verifies the published SHA-256 checksum.
-3. Compose mounts `./models` read-only into NInfer.
-4. Git ignores model formats and local download cache data.
+3. The helper verifies the published SHA-256 checksum.
+4. Compose mounts `./models` read-only into NInfer.
+5. Git ignores model formats and local download cache data.
 
 This makes a fresh clone intentionally incomplete until the owner opts into the large download. It
 also lets images be rebuilt without copying the artifact into the build context. The NInfer source
@@ -129,10 +131,10 @@ environment variables:
 - CPU, memory, and PID limits for Hermes and the sandbox.
 
 Service DNS names and internal ports stay fixed. They are implementation contracts, not user-facing
-deployment choices. The setup workflow generates random secrets, creates local state directories,
-and materializes the Hermes template. `python stack.py configure-hermes` then applies shared model and
-SSH values through Hermes's supported configuration command so model ID and context do not drift
-between the provider and server.
+deployment choices. The unified setup workflow generates random secrets, creates local state
+directories, asks before model acquisition, builds the images, runs the Hermes wizard, and applies
+shared model and SSH values through Hermes's supported configuration command so model ID and context
+do not drift between the provider and server.
 
 This division avoids a large environment surface while still covering real machine differences.
 Changing the model file to an artifact outside the documented release profile is possible, but it
