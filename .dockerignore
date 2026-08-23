@@ -1,0 +1,13 @@
+.git
+.github
+.env
+.env.*
+benchmarks
+docs
+hermes-data
+models
+workspace
+*.log
+*.ninfer
+*.gguf
+*.safetensors
