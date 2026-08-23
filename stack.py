@@ -152,6 +152,10 @@ def validate_env() -> None:
         "NINFER_MODEL_FILE",
         "NINFER_MODEL_ID",
         "NINFER_CONTEXT_LENGTH",
+        "NINFER_KV_CAPACITY",
+        "NINFER_MAX_CONCURRENCY",
+        "HERMES_COMPRESSION_ENABLED",
+        "HERMES_MAX_TURNS",
     ]
     missing = [key for key in required if not values.get(key)]
     if missing:
@@ -161,6 +165,20 @@ def validate_env() -> None:
             raise StackError(f"{key} must be a 64-character hexadecimal secret")
     if values["NINFER_API_KEY"] == values["HERMES_API_SERVER_KEY"]:
         raise StackError("NINFER_API_KEY and HERMES_API_SERVER_KEY must be distinct")
+    context = values["NINFER_CONTEXT_LENGTH"]
+    kv_capacity = values["NINFER_KV_CAPACITY"]
+    concurrency = values["NINFER_MAX_CONCURRENCY"]
+    max_turns = values["HERMES_MAX_TURNS"]
+    if not context.isdigit() or not 1024 <= int(context) <= 262144:
+        raise StackError("NINFER_CONTEXT_LENGTH must be from 1024 through 262144")
+    if not concurrency.isdigit() or not 1 <= int(concurrency) <= 8:
+        raise StackError("NINFER_MAX_CONCURRENCY must be from 1 through 8")
+    if not kv_capacity.isdigit() or not int(context) <= int(kv_capacity) <= int(context) * int(concurrency):
+        raise StackError("NINFER_KV_CAPACITY must be between context and context times concurrency")
+    if values["HERMES_COMPRESSION_ENABLED"] not in {"true", "false"}:
+        raise StackError("HERMES_COMPRESSION_ENABLED must be true or false")
+    if not max_turns.isdigit() or not 1 <= int(max_turns) <= 1000:
+        raise StackError("HERMES_MAX_TURNS must be from 1 through 1000")
 
 
 def initialize_local_state() -> None:
@@ -279,10 +297,10 @@ def configure_hermes(_: argparse.Namespace) -> None:
     values = read_env()
     model_id = values["NINFER_MODEL_ID"]
     context = values["NINFER_CONTEXT_LENGTH"]
+    compression = values["HERMES_COMPRESSION_ENABLED"]
+    max_turns = values["HERMES_MAX_TURNS"]
     if not re.fullmatch(r"[A-Za-z0-9._-]+", model_id):
         raise StackError("NINFER_MODEL_ID contains unsupported characters")
-    if not context.isdigit() or not 1024 <= int(context) <= 262144:
-        raise StackError("NINFER_CONTEXT_LENGTH must be from 1024 through 262144")
     config_file = ROOT / "hermes-data" / "config.yaml"
     hermes_env = ROOT / "hermes-data" / ".env"
     if not config_file.is_file():
@@ -305,6 +323,8 @@ def configure_hermes(_: argparse.Namespace) -> None:
         ("model.default", model_id),
         ("model.context_length", context),
         ("model.supports_vision", "false"),
+        ("compression.enabled", compression),
+        ("agent.max_turns", max_turns),
         ("terminal.backend", "ssh"),
         ("terminal.cwd", "/workspace"),
         ("terminal.timeout", "180"),

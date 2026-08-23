@@ -14,10 +14,11 @@ processes or broad host access.
 ```mermaid
 flowchart LR
     User[User, dashboard, or configured integration] <--> Hermes[Hermes Agent]
-    Host[Local verifier or API client] -. "127.0.0.1:${NINFER_HOST_PORT}" .-> NInfer
+    Host[Local verifier or API client] -. "127.0.0.1:${NINFER_HOST_PORT}" .-> Relay[Unprivileged loopback relay]
     Browser[Local browser] -. "127.0.0.1:${HERMES_DASHBOARD_HOST_PORT}\nauthenticated" .-> Hermes
 
     Hermes -- "OpenAI-compatible chat completions\ninference-net" --> NInfer[NInfer server]
+    Relay -- "TCP\ninference-net" --> NInfer
     NInfer --> Artifact["Qwen3.8-27B NVFP4\n/models/*.ninfer (read-only)"]
     NInfer --> GPU["NVIDIA RTX 5090\nsm_120a"]
 
@@ -36,8 +37,8 @@ flowchart LR
     Trust -->|"[sandbox]:2222 known_hosts"| State
 ```
 
-Only NInfer receives a GPU reservation. Only the sandbox receives a writable host workspace. Only
-Hermes joins the ordinary egress network.
+Only NInfer receives a GPU reservation. Only the sandbox receives a writable host workspace. Hermes
+and the credential-free loopback relay join the ordinary egress network.
 
 ## Component responsibilities
 
@@ -45,6 +46,7 @@ Hermes joins the ordinary egress network.
 |---|---|---|
 | Hermes | Agent loop, conversation state, provider selection, tool selection, integrations, and tool-result feedback | CUDA execution, model weights, or direct host command execution |
 | NInfer | Artifact validation and loading, tokenization/template resources embedded in the artifact, GPU memory, generation, and the supported OpenAI-compatible HTTP surface | Agent state, tool execution, or Hermes configuration |
+| Loopback relay | Byte-for-byte forwarding from host loopback to NInfer on `inference-net` | Credentials, request interpretation, model state, or tool execution |
 | SSH sandbox | Terminal, file, and code-execution commands requested by Hermes; writable workspace and persistent user home | Model inference, Docker control, GPU access, or unrestricted network access |
 | Key initializer | Creation and ownership of the persistent SSH client/authorized-key pair | Long-running service traffic |
 | Trust reconciler | Validation and installation of the sandbox's persisted public host key in Hermes `known_hosts` | Network key discovery, private host-key access, or global SSH policy changes |
@@ -81,14 +83,15 @@ Compose creates three project-scoped bridge networks.
 |---|---|---|---|
 | `inference-net` | Hermes, NInfer | Internal network | Authenticated provider traffic from Hermes to NInfer |
 | `sandbox-net` | Hermes, sandbox | Internal network | SSH tool dispatch from Hermes to the sandbox |
-| `control-net` | Hermes; one-shot model downloader when its profile is selected | Normal bridge egress | Hermes integrations and explicit artifact acquisition |
+| `control-net` | Hermes, NInfer loopback relay; one-shot model downloader when its profile is selected | Normal bridge egress | Hermes integrations, NInfer host-loopback publication on Docker Desktop, and explicit artifact acquisition |
 
-The key initializer uses `network_mode: none`. NInfer does not join `control-net`, and the sandbox
-does not join it either. The sandbox therefore cannot fetch packages or contact the LAN by default,
-even though its image contains common development clients.
+The key initializer uses `network_mode: none`. NInfer and the sandbox do not join `control-net`, so
+they cannot fetch packages or contact the LAN by default. A credential-free, unprivileged relay
+joins `inference-net` and `control-net`; its only job is to let Docker Desktop publish NInfer's
+authenticated loopback diagnostic port while NInfer remains internal-only.
 
-NInfer's container port `8080` and Hermes's dashboard port `9119` are bound to host loopback at
-`NINFER_HOST_PORT` and `HERMES_DASHBOARD_HOST_PORT`. The dashboard requires its generated basic-auth
+NInfer's authenticated API is relayed to host loopback at `NINFER_HOST_PORT`; Hermes's dashboard
+port `9119` is bound there at `HERMES_DASHBOARD_HOST_PORT`. The dashboard requires its generated basic-auth
 credentials. The sandbox SSH port is reachable only from `sandbox-net`. Hermes's separate local API
 is enabled on container loopback for health and verification but is not published to the host.
 
@@ -118,12 +121,12 @@ that runtime.
 
 The release profile uses:
 
-- a per-request context ceiling from `NINFER_CONTEXT_LENGTH` (`131072` by default);
-- automatic shared KV-capacity sizing;
+- a per-request context ceiling from `NINFER_CONTEXT_LENGTH` (`65536` by default);
+- an explicit shared KV pool from `NINFER_KV_CAPACITY` (`65536` by default);
 - INT8 KV storage;
 - a 1,024-token prefill chunk;
 - MTP speculative decoding with three draft tokens and the optimized proposal head; and
-- startup-fixed concurrency from `NINFER_MAX_CONCURRENCY` (`2` by default).
+- startup-fixed concurrency from `NINFER_MAX_CONCURRENCY` (`1` by default).
 
 The selected artifact contains multimodal resources, but this stack intentionally runs the
 long-context text profile without NInfer's `--vision` option. The Hermes template therefore marks
@@ -167,6 +170,7 @@ The public environment surface is intentionally small.
 | `NINFER_MODEL_FILE` | Artifact filename inside `./models` |
 | `NINFER_MODEL_ID` | HTTP model alias shared by NInfer and Hermes |
 | `NINFER_CONTEXT_LENGTH` | Per-request context ceiling shared by NInfer and Hermes metadata |
+| `NINFER_KV_CAPACITY` | Shared INT8 KV token pool retained by NInfer |
 | `NINFER_MAX_CONCURRENCY` | Startup-fixed request capacity for NInfer |
 | `HERMES_IMAGE` | Reviewed Hermes image tag |
 | `HERMES_UID`, `HERMES_GID` | Host-compatible ownership for bind mounts and SSH keys |

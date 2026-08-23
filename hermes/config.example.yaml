@@ -7,13 +7,17 @@ providers:
     default_model: qwen-local
     models:
       qwen-local:
-        context_length: 131072
+        context_length: 65536
         supports_vision: false
 model:
   provider: custom:ninfer
   default: qwen-local
-  context_length: 131072
+  context_length: 65536
   supports_vision: false
+agent:
+  max_turns: 40
+compression:
+  enabled: true
 terminal:
   backend: ssh
   cwd: /workspace

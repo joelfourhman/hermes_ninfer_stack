@@ -24,8 +24,8 @@ network by default.
   `feaf4dd0983fdaeb2ba4c06eec6da350e644fb3a` as a Git submodule.
 - Qwen3.8-27B NVFP4 in NInfer's version-2 artifact format, downloaded outside
   Git and verified by SHA-256.
-- A long-context text profile: 131,072 tokens, INT8 KV, automatic KV sizing,
-  concurrency 2, and MTP with three draft tokens.
+- An interactive text profile: 65,536 tokens, a 65,536-token INT8 KV pool,
+  concurrency 1, compression, and MTP with three draft tokens.
 - A key-only SSH sandbox for terminal, file, and code-execution tools.
 - `uv` and `uvx` in the tool sandbox; stack-owned images do not install or use pip.
 - Layered health checks, startup ordering, verification, and a local benchmark
@@ -62,12 +62,14 @@ flowchart LR
     subgraph Docker[Docker Compose project]
         Hermes["Hermes Agent<br/>orchestration"]
         NInfer["NInfer<br/>OpenAI-compatible API"]
+        Relay["Unprivileged loopback relay<br/>no credentials"]
         Qwen["Qwen3.8-27B NVFP4<br/>resident model"]
         GPU["RTX 5090<br/>Blackwell sm_120a"]
         Sandbox["SSH sandbox<br/>tool execution"]
         Keygen["One-shot SSH<br/>key initializer"]
 
         Hermes -->|authenticated HTTP<br/>inference-net| NInfer
+        Relay -->|TCP<br/>inference-net| NInfer
         NInfer --> Qwen --> GPU
         Hermes -->|key-only SSH<br/>sandbox-net| Sandbox
         Keygen -->|named key volumes| Hermes
@@ -75,14 +77,17 @@ flowchart LR
     end
 
     Models["models/ (read-only)"] --> NInfer
+    Diagnostics["Local diagnostics<br/>127.0.0.1:8080"] -.-> Relay
     HermesData["hermes-data/ (persistent private state)"] <--> Hermes
     Hermes -. read-only .-> Workspace["workspace/"]
     Sandbox <-->|read-write| Workspace
     SandboxHome["sandbox home + SSH host-key volumes"] <--> Sandbox
 ```
 
-The inference and sandbox networks are internal. Only Hermes also joins the
-normal control network for explicitly configured integrations. NInfer and the
+The inference and sandbox networks are internal. Hermes joins the normal
+control network for explicitly configured integrations. A credential-free,
+unprivileged relay joins both inference and control networks so Docker Desktop
+can publish NInfer diagnostics without giving NInfer egress. NInfer and the
 authenticated Hermes dashboard are published only on host loopback
 (`127.0.0.1:8080` and `127.0.0.1:9119` by default). Hermes's verification API
 remains on container loopback and the sandbox SSH port is never host-published.
@@ -174,8 +179,8 @@ in [Installation](docs/installation.md).
 | Size | 21,492,695,040 bytes (20.02 GiB) |
 | SHA-256 | `bb3360522a06e136e0367f5703414d26272b7285c8a6ab6194135c17dbd81b32` |
 | Deployment model ID | `qwen-local` |
-| Context ceiling | 131,072 tokens |
-| KV cache | INT8, automatically sized |
+| Context ceiling | 65,536 tokens |
+| KV cache | INT8, 65,536 shared tokens |
 | Speculation | MTP, three draft tokens, optimized proposal head |
 | Vision | Disabled by this stack |
 
@@ -194,7 +199,7 @@ python stack.py verify
 ```
 
 The verifier stops at the first broken boundary, prints a likely diagnostic,
-and exits non-zero. Its eleven layers cover:
+and exits non-zero. Its twelve layers cover:
 
 1. host prerequisites and configuration;
 2. Compose resolution and the NInfer source pin;
@@ -203,15 +208,16 @@ and exits non-zero. Its eleven layers cover:
 5. NInfer running-image revision/base provenance and RTX 5090 passthrough;
 6. model presence and SHA-256;
 7. NInfer application health;
-8. authenticated `/v1/models` and direct chat completion;
-9. Hermes health, configuration, DNS, and authenticated NInfer access;
-10. a complete Hermes-to-NInfer generation; and
-11. a real SSH-sandbox command verified by its workspace side effect.
+8. the authenticated `/v1/models` API;
+9. a direct NInfer chat completion;
+10. Hermes health, configuration, DNS, and authenticated NInfer access;
+11. a complete Hermes-to-NInfer generation; and
+12. a real SSH-sandbox command verified by its workspace side effect.
 
 Static validation is separate and requires no GPU or model:
 
 ```bash
-python3 scripts/validate.py
+python scripts/validate.py
 docker compose --env-file .env config --quiet
 ```
 
@@ -265,8 +271,11 @@ The supported tuning surface lives in the ignored `.env`:
 | `NINFER_GPU_DEVICE` | `0` | One RTX 5090 device ID |
 | `NINFER_MODEL_FILE` | `qwen3_8_27b_nvfp4.ninfer` | Basename under `models/` |
 | `NINFER_MODEL_ID` | `qwen-local` | Shared HTTP/Hermes alias |
-| `NINFER_CONTEXT_LENGTH` | `131072` | Shared NInfer/Hermes context limit |
-| `NINFER_MAX_CONCURRENCY` | `2` | Startup-fixed active requests |
+| `NINFER_CONTEXT_LENGTH` | `65536` | Shared NInfer/Hermes context limit |
+| `NINFER_KV_CAPACITY` | `65536` | Explicit shared INT8 KV pool |
+| `NINFER_MAX_CONCURRENCY` | `1` | Startup-fixed active requests |
+| `HERMES_COMPRESSION_ENABLED` | `true` | Compress long sessions before the ceiling |
+| `HERMES_MAX_TURNS` | `40` | Per-request agent-loop limit |
 | `HERMES_*`, `SANDBOX_*` limits | see `.env.example` | CPU, memory, PID, UID/GID controls |
 
 Changing the model ID or context requires reapplying Hermes configuration:

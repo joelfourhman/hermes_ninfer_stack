@@ -31,8 +31,11 @@ The setup helper populates `.env`. The values below are the supported public tun
 | `NINFER_GPU_DEVICE` | `0` | Single NVIDIA device ID assigned to NInfer. |
 | `NINFER_MODEL_FILE` | `qwen3_8_27b_nvfp4.ninfer` | Filename expected under `./models`. |
 | `NINFER_MODEL_ID` | `qwen-local` | Deployment alias advertised by NInfer and requested by Hermes. |
-| `NINFER_CONTEXT_LENGTH` | `131072` | NInfer sequence ceiling and matching Hermes context metadata. |
-| `NINFER_MAX_CONCURRENCY` | `2` | Startup-fixed maximum number of active NInfer requests. |
+| `NINFER_CONTEXT_LENGTH` | `65536` | NInfer sequence ceiling and matching Hermes context metadata. |
+| `NINFER_KV_CAPACITY` | `65536` | Shared INT8 KV pool across active and retained sequences. |
+| `NINFER_MAX_CONCURRENCY` | `1` | Startup-fixed maximum number of active NInfer requests. |
+| `HERMES_COMPRESSION_ENABLED` | `true` | Enables Hermes context compression before the sequence ceiling. |
+| `HERMES_MAX_TURNS` | `40` | Maximum agent/tool-loop turns within one request. |
 | `HERMES_CPUS` | `4.0` | Compose CPU limit for Hermes. |
 | `HERMES_MEMORY` | `8g` | Compose memory limit for Hermes. |
 | `HERMES_PIDS` | `512` | Compose PID limit for Hermes. |
@@ -46,12 +49,17 @@ integration or external service.
 
 ## Coupled NInfer and Hermes settings
 
-Three values must remain consistent across the inference and orchestration boundary:
+The model alias, context, and session controls must remain consistent across the inference and
+orchestration boundary:
 
 1. `NINFER_MODEL_ID` is the HTTP alias returned by `GET /v1/models`; Hermes must request that exact
    alias.
 2. `NINFER_CONTEXT_LENGTH` is both NInfer's sequence limit and Hermes's model metadata.
 3. `NINFER_API_KEY` must be present in the NInfer command and Hermes environment.
+4. `NINFER_KV_CAPACITY` must be between `NINFER_CONTEXT_LENGTH` and context multiplied by
+   `NINFER_MAX_CONCURRENCY`; it controls NInfer memory but is not advertised as Hermes context.
+5. `HERMES_COMPRESSION_ENABLED` and `HERMES_MAX_TURNS` are applied to live Hermes configuration by
+   `python stack.py configure-hermes`.
 
 After changing the model alias or context length, stop Hermes, reapply its managed fields, and
 recreate NInfer:
@@ -89,8 +97,9 @@ Hermes's fail-closed authentication gate. Do not change the host bind to `0.0.0.
 separate remote-access threat model and TLS termination.
 
 Hermes's verification API listens on container loopback and is not published to the host. The
-sandbox and inference networks are internal; only Hermes also joins the egress-capable control
-network.
+sandbox and inference networks are internal. Hermes joins the egress-capable control network. An
+unprivileged relay joins both networks so Docker Desktop can publish NInfer's authenticated
+loopback diagnostic port without giving NInfer egress.
 
 ## GPU selection
 
@@ -110,20 +119,25 @@ Only NInfer receives GPU access. Hermes and the sandbox must not be granted a GP
 
 The default profile combines:
 
-- 131,072 maximum tokens per sequence;
-- automatic shared KV-capacity sizing;
+- 65,536 maximum tokens per sequence;
+- a 65,536-token shared KV pool;
 - INT8 group-64 KV cache;
-- two active requests;
+- one active request;
 - a 1,024-token prefill chunk;
-- MTP with three draft tokens.
+- MTP with three draft tokens;
+- Hermes context compression using its pinned-version defaults; and
+- a 40-turn agent-loop ceiling.
 
-Context and concurrency compete for the VRAM left after model and runtime allocations. If startup
-fails with an out-of-memory error, first reduce `NINFER_MAX_CONCURRENCY` to `1`. If context must be
-reduced, update `NINFER_CONTEXT_LENGTH`, rerun `python stack.py configure-hermes`, recreate NInfer, and
-verify the entire route.
+Context and KV capacity compete for the VRAM left after model and runtime allocations. The explicit
+single-user pool supports one maximum-length sequence without consuming nearly all 32 GiB of VRAM.
+If startup fails with an out-of-memory error, context and KV capacity must be reduced together. If
+context changes, rerun
+`python stack.py configure-hermes`, recreate NInfer, and verify the entire route.
 
-Do not raise either value solely because NInfer accepts the flag. The resolved automatic KV
-capacity printed at startup is the authority for the selected GPU and software versions.
+Do not raise context, KV capacity, or concurrency solely because NInfer accepts the flag. The
+startup allocation and remaining VRAM printed by NInfer are the authority for the selected GPU and
+software versions. The prior automatic profile resolved 255,360 KV tokens and left only about
+616 MiB after startup on the audited RTX 5090, which is why the interactive default is explicit.
 
 ## Model file
 
@@ -143,6 +157,7 @@ the fields required by this stack:
 
 - custom NInfer provider endpoint and API-key environment name;
 - model alias, context length, and text-only capability metadata;
+- context compression and maximum agent turns;
 - SSH terminal backend host, user, port, and key path;
 - terminal working directory and timeout;
 - hard stops for repeated or no-progress tool loops.

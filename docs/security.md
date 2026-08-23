@@ -64,10 +64,12 @@ sandbox home and SSH identity volumes; ordinary `docker compose down` does not.
 
 ## Network boundaries
 
-The inference and sandbox networks are marked internal. NInfer cannot initiate
-internet access through its Compose network, and the sandbox cannot download
-packages or contact a LAN service by default. Hermes also joins a normal bridge
-network and therefore retains outbound access for orchestrator features.
+The inference and sandbox networks are marked internal. NInfer and the sandbox
+cannot initiate internet access through their Compose networks. Hermes joins a
+normal bridge for orchestrator features. A credential-free, unprivileged TCP
+relay joins the inference and control bridges because Docker Desktop does not
+publish ports for internal-only containers. It exposes only NInfer's already
+authenticated API on `127.0.0.1`; NInfer itself retains no-egress isolation.
 
 Do not change NInfer's host binding from `127.0.0.1` to `0.0.0.0` without an
 authenticated reverse proxy, firewall policy, TLS, request limits, and an

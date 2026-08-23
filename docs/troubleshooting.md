@@ -218,12 +218,12 @@ nvidia-smi
 docker compose logs --tail=200 ninfer
 ```
 
-Check NInfer's logged automatic KV capacity and other GPU processes.
+Check NInfer's logged KV capacity and other GPU processes.
 
 **Fix**
 
-Stop unrelated GPU workloads and first set `NINFER_MAX_CONCURRENCY=1`. If context must be reduced,
-change `NINFER_CONTEXT_LENGTH`, stop Hermes, rerun `python stack.py configure-hermes`, recreate NInfer,
+Stop unrelated GPU workloads. For the single-user profile, reduce `NINFER_CONTEXT_LENGTH` and
+`NINFER_KV_CAPACITY` together, stop Hermes, rerun `python stack.py configure-hermes`, recreate NInfer,
 and run verification. Do not claim the new profile as benchmarked until it is measured.
 
 ## Host port is already in use

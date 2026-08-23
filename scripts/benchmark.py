@@ -123,7 +123,7 @@ def main() -> int:
     parser.add_argument("--max-tokens", type=int, default=int(os.environ.get("BENCHMARK_MAX_TOKENS", "512")))
     args = parser.parse_args()
     values = read_env()
-    required = ["NINFER_API_KEY", "NINFER_HOST_PORT", "NINFER_MODEL_ID", "NINFER_MODEL_FILE", "NINFER_CONTEXT_LENGTH", "NINFER_MAX_CONCURRENCY", "HERMES_IMAGE"]
+    required = ["NINFER_API_KEY", "NINFER_HOST_PORT", "NINFER_MODEL_ID", "NINFER_MODEL_FILE", "NINFER_CONTEXT_LENGTH", "NINFER_KV_CAPACITY", "NINFER_MAX_CONCURRENCY", "HERMES_IMAGE"]
     missing = [key for key in required if not values.get(key)]
     if missing:
         die("missing .env values: " + ", ".join(missing))
@@ -184,6 +184,7 @@ def main() -> int:
         "model_sha256": EXPECTED_SHA,
         "quantization": "NVFP4",
         "context_length": int(values["NINFER_CONTEXT_LENGTH"]),
+        "kv_capacity": int(values["NINFER_KV_CAPACITY"]),
         "max_concurrency": int(values["NINFER_MAX_CONCURRENCY"]),
         "benchmark_runs": runs,
         "max_completion_tokens": max_tokens,

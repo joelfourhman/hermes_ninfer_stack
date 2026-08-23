@@ -16,6 +16,15 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   starts the finished stack.
 - Exact Blank Slate, `ninfer`, `qwen-local`, and SSH wizard guidance, including
   Hermes's transient no-provider warning.
+
+### Changed
+
+- Tune the single-user interactive profile to 65,536 context tokens, a 65,536-token
+  explicit INT8 KV pool, concurrency 1, Hermes compression, and a 40-turn agent cap.
+- Expose and validate `NINFER_KV_CAPACITY`, `HERMES_COMPRESSION_ENABLED`, and
+  `HERMES_MAX_TURNS` as supported cross-platform configuration.
+- Preserve NInfer's internal-only network isolation while publishing host-loopback
+  diagnostics through a credential-free, unprivileged Docker Desktop relay.
 - Cross-platform `python stack.py` control command for setup, Compose lifecycle,
   Hermes configuration, container shells, dashboard access, and verification.
 - Authenticated loopback-only Hermes web dashboard and a uv-managed Compose

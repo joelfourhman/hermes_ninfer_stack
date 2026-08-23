@@ -169,8 +169,10 @@ dashboard port for local browser access. Both are authenticated and neither is e
 Hermes's verification API and the sandbox SSH endpoint are not published. User interaction can use
 the dashboard, an in-container CLI session, or integrations selected during Hermes setup.
 
-NInfer and the sandbox attach only to internal networks. Hermes alone has ordinary egress because
-integrations and orchestrator-side services may require it. This does not make all Hermes activity
+NInfer and the sandbox attach only to internal networks. Hermes has ordinary egress because
+integrations and orchestrator-side services may require it. A credential-free, unprivileged relay
+bridges NInfer's authenticated API to host loopback because Docker Desktop does not publish a host
+port for an internal-only container. This does not make all Hermes activity
 sandboxed: plugins, hooks, MCP processes, and other orchestrator-side code still run with Hermes's
 own mounts and network access. Security documentation must preserve that distinction.
 
@@ -179,7 +181,8 @@ own mounts and network access. Security documentation must preserve that distinc
 The default profile prioritizes useful long-context local-agent behavior on 32 GiB of VRAM:
 
 - NVFP4 model weights reduce the resident model footprint.
-- INT8 KV storage and automatic KV sizing preserve context capacity.
+- INT8 KV storage and an explicit 65,536-token pool preserve useful context while leaving several
+  GiB of RTX 5090 headroom for desktop and runtime variability.
 - MTP with three draft tokens improves the qualified decode path.
 - Vision is disabled at runtime to avoid its fixed allocations.
 - Concurrency is fixed at startup, matching NInfer's bounded single-model scheduler.

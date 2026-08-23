@@ -15,7 +15,9 @@ ROOT = Path(__file__).resolve().parent.parent
 EXPECTED_NINFER_COMMIT = "feaf4dd0983fdaeb2ba4c06eec6da350e644fb3a"
 EXPECTED_MODEL_FILE = "qwen3_8_27b_nvfp4.ninfer"
 EXPECTED_MODEL_ID = "qwen-local"
-EXPECTED_CONTEXT = "131072"
+EXPECTED_CONTEXT = "65536"
+EXPECTED_KV_CAPACITY = "65536"
+EXPECTED_CONCURRENCY = "1"
 EXPECTED_MODEL_SHA256 = "bb3360522a06e136e0367f5703414d26272b7285c8a6ab6194135c17dbd81b32"
 
 errors: list[str] = []
@@ -67,6 +69,7 @@ required_paths = [
     "scripts/download-model.sh",
     "scripts/verify.sh",
     "scripts/verify.py",
+    "scripts/tcp_proxy.py",
     "scripts/benchmark.sh",
     "scripts/benchmark.py",
     "docs/architecture.md",
@@ -110,6 +113,10 @@ expected_env = {
     "NINFER_MODEL_FILE": EXPECTED_MODEL_FILE,
     "NINFER_MODEL_ID": EXPECTED_MODEL_ID,
     "NINFER_CONTEXT_LENGTH": EXPECTED_CONTEXT,
+    "NINFER_KV_CAPACITY": EXPECTED_KV_CAPACITY,
+    "NINFER_MAX_CONCURRENCY": EXPECTED_CONCURRENCY,
+    "HERMES_COMPRESSION_ENABLED": "true",
+    "HERMES_MAX_TURNS": "40",
 }
 for key, expected in expected_env.items():
     if env_values.get(key) != expected:
@@ -125,8 +132,8 @@ consistency_requirements = {
         "Keep current (ssh)",
         "repair-sandbox-trust",
     ],
-    "docker-compose.yml": [EXPECTED_NINFER_COMMIT, EXPECTED_MODEL_FILE, EXPECTED_MODEL_ID, EXPECTED_CONTEXT, "13.1.2-runtime-ubuntu24.04", "sandbox-trust"],
-    "hermes/config.example.yaml": [EXPECTED_MODEL_ID, EXPECTED_CONTEXT],
+    "docker-compose.yml": [EXPECTED_NINFER_COMMIT, EXPECTED_MODEL_FILE, EXPECTED_MODEL_ID, EXPECTED_CONTEXT, EXPECTED_KV_CAPACITY, "13.1.2-runtime-ubuntu24.04", "sandbox-trust"],
+    "hermes/config.example.yaml": [EXPECTED_MODEL_ID, EXPECTED_CONTEXT, "max_turns: 40", "enabled: true"],
     "scripts/setup.sh": [EXPECTED_NINFER_COMMIT],
     "model-downloader/download_model.py": [EXPECTED_MODEL_FILE, EXPECTED_MODEL_SHA256],
     "scripts/verify.py": [EXPECTED_NINFER_COMMIT, EXPECTED_MODEL_FILE, EXPECTED_MODEL_SHA256],

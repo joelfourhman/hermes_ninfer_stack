@@ -128,11 +128,11 @@ services:
       - --model-id
       - ${NINFER_MODEL_ID:-qwen-local}
       - --max-context
-      - ${NINFER_CONTEXT_LENGTH:-131072}
+      - ${NINFER_CONTEXT_LENGTH:-65536}
       - --kv-capacity
-      - auto
+      - ${NINFER_KV_CAPACITY:-65536}
       - --max-concurrency
-      - ${NINFER_MAX_CONCURRENCY:-2}
+      - ${NINFER_MAX_CONCURRENCY:-1}
       - --prefill-chunk
       - "1024"
       - --kv-dtype
@@ -150,8 +150,6 @@ services:
             - driver: nvidia
               device_ids: ["${NINFER_GPU_DEVICE:-0}"]
               capabilities: [gpu]
-    ports:
-      - 127.0.0.1:${NINFER_HOST_PORT:-8080}:8080
     volumes:
       - ./models:/models:ro
     shm_size: 2gb
@@ -171,12 +169,47 @@ services:
     networks:
       - inference-net
 
+  ninfer-loopback:
+    image: ${HERMES_IMAGE:-nousresearch/hermes-agent:v2026.8.19@sha256:f3cba6abf5ed80d47a271498d663ace5dda87f45000552afb8be8370a35df1b5}
+    entrypoint: ["/opt/hermes/.venv/bin/python", "/app/tcp_proxy.py"]
+    command: ["--target-host", "ninfer", "--target-port", "8080"]
+    restart: unless-stopped
+    depends_on:
+      ninfer:
+        condition: service_healthy
+    user: "65534:65534"
+    read_only: true
+    cpus: 0.25
+    mem_limit: 128m
+    pids_limit: 64
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - 127.0.0.1:${NINFER_HOST_PORT:-8080}:8080
+    volumes:
+      - ./scripts/tcp_proxy.py:/app/tcp_proxy.py:ro
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    healthcheck:
+      test: ["CMD", "/opt/hermes/.venv/bin/python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3).read()"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - inference-net
+      - control-net
+
   hermes:
     image: ${HERMES_IMAGE:-nousresearch/hermes-agent:v2026.8.19@sha256:f3cba6abf5ed80d47a271498d663ace5dda87f45000552afb8be8370a35df1b5}
     command: ["gateway", "run"]
     restart: unless-stopped
     depends_on:
       ninfer:
+        condition: service_healthy
+      ninfer-loopback:
         condition: service_healthy
       sandbox:
         condition: service_healthy

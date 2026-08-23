@@ -22,7 +22,7 @@ EXPECTED_COMMIT = "feaf4dd0983fdaeb2ba4c06eec6da350e644fb3a"
 EXPECTED_MODEL = "qwen3_8_27b_nvfp4.ninfer"
 EXPECTED_SHA = "bb3360522a06e136e0367f5703414d26272b7285c8a6ab6194135c17dbd81b32"
 EXPECTED_BASE = "docker.io/nvidia/cuda:13.1.2-runtime-ubuntu24.04"
-TOTAL = 11
+TOTAL = 12
 step = 0
 temp_dir = Path(tempfile.mkdtemp(prefix="hermes-ninfer-verify-"))
 
@@ -127,6 +127,10 @@ def main() -> int:
     model = values.get("NINFER_MODEL_FILE", "")
     model_id = values.get("NINFER_MODEL_ID", "")
     context = values.get("NINFER_CONTEXT_LENGTH", "")
+    kv_capacity = values.get("NINFER_KV_CAPACITY", "")
+    concurrency = values.get("NINFER_MAX_CONCURRENCY", "")
+    compression = values.get("HERMES_COMPRESSION_ENABLED", "")
+    max_turns = values.get("HERMES_MAX_TURNS", "")
 
     begin("Prerequisites and configuration")
     if not re.fullmatch(r"[0-9a-fA-F]{64}", api_key):
@@ -139,7 +143,13 @@ def main() -> int:
         raise Failure("GPU device or model filename is invalid", "compare .env with .env.example")
     if not re.fullmatch(r"[A-Za-z0-9._-]+", model_id) or not context.isdigit():
         raise Failure("Model ID or context length is invalid", "compare .env with .env.example")
-    passed(f"model={model_id} context={context} GPU device={gpu}")
+    if not concurrency.isdigit() or not 1 <= int(concurrency) <= 8:
+        raise Failure("NInfer concurrency must be from 1 through 8", "compare .env with .env.example")
+    if not kv_capacity.isdigit() or not int(context) <= int(kv_capacity) <= int(context) * int(concurrency):
+        raise Failure("KV capacity must be between context and context times concurrency", "compare .env with .env.example")
+    if compression not in {"true", "false"} or not max_turns.isdigit():
+        raise Failure("Hermes compression or maximum turns is invalid", "compare .env with .env.example")
+    passed(f"model={model_id} context={context} KV={kv_capacity} concurrency={concurrency} GPU={gpu}")
 
     begin("Compose and source pin")
     compose("config", "--quiet")
@@ -243,6 +253,8 @@ def main() -> int:
         "model.default": model_id,
         "model.context_length": context,
         "providers.ninfer.api": "http://ninfer:8080/v1",
+        "compression.enabled": compression,
+        "agent.max_turns": max_turns,
     }
     compose("exec", "-T", "hermes", "hermes", "config", "check")
     for key, expected in checks.items():

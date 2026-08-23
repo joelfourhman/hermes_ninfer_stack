@@ -90,7 +90,9 @@ The default `.env` values must then be:
 ```dotenv
 NINFER_MODEL_FILE=qwen3_8_27b_nvfp4.ninfer
 NINFER_MODEL_ID=qwen-local
-NINFER_CONTEXT_LENGTH=131072
+NINFER_CONTEXT_LENGTH=65536
+NINFER_KV_CAPACITY=65536
+NINFER_MAX_CONCURRENCY=1
 ```
 
 ## Storage and Git safety

@@ -2,20 +2,38 @@
 
 ## Result status
 
-No local end-to-end benchmark result was available during the 2026-08-23 repository audit. The
-model artifact was not present, so the inference services could not produce a valid stack
-measurement. This repository therefore does not claim local time-to-first-token, throughput,
-utilization, or model-loaded VRAM numbers.
+No formal local end-to-end benchmark result has been collected. The model is now present and the
+complete live verifier passes, but verification traffic is not a controlled benchmark campaign.
+This repository therefore does not claim local time-to-first-token or sustained throughput numbers.
 
 | Measurement scope | Status |
 |---|---|
 | Pinned NInfer and Qwen3.8-27B NVFP4 upstream campaign | Published upstream |
-| This Docker Compose stack on the audited host | Not collected |
+| This Docker Compose stack on the audited host | Integration verified; formal benchmark not collected |
 | Hermes orchestration overhead | Not collected |
 | SSH tool-execution latency | Not collected |
 
 This distinction is intentional. Upstream NInfer measurements are useful selection evidence but are
 not substitutes for measurements of the complete stack.
+
+## Tuned allocation validation
+
+The 2026-08-23 live startup with the default single-user profile reported the following operational
+figures. These validate that the requested allocation is active; they are not throughput results.
+
+| Setting or observation | Value |
+|---|---:|
+| Context / explicit INT8 KV capacity | 65,536 / 65,536 tokens |
+| Maximum concurrency | 1 |
+| NInfer-reported KV runtime allocation | 2.75 GiB |
+| NInfer-reported free VRAM after startup | 7.24 GiB |
+| NInfer-reported allocation slack | 7.72 GiB |
+| Model load time for the verified restart | 85.5181 s |
+| `nvidia-smi` after full verification | 24,914 MiB used / 7,274 MiB free |
+
+Hermes compression was enabled and its agent turn cap was set to 40 for this validation. The full
+verifier exercised authenticated direct generation, Hermes-routed generation, and SSH-sandbox tool
+execution successfully.
 
 ## Upstream same-model evidence
 
@@ -109,8 +127,8 @@ or warm-up policy as if they measured the same workload.
   without changing kernel speed.
 - **Concurrency** may improve aggregate throughput while worsening individual latency or exhausting
   KV capacity.
-- **Automatic KV capacity** depends on VRAM remaining after weights and runtime allocations; the
-  resolved value in NInfer's startup log belongs with the result.
+- **KV capacity** changes available context, concurrency, and VRAM headroom. Record whether it was
+  explicit or automatic and include NInfer's resolved startup value.
 - **Warm results** exclude image pull, compilation, model upload, and first-server startup unless
   explicitly stated otherwise.
 
