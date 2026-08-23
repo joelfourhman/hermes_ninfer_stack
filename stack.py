@@ -25,6 +25,8 @@ ENV_EXAMPLE = ROOT / ".env.example"
 COMPOSE_FILE = ROOT / "docker-compose.yml"
 NINFER_COMMIT = "feaf4dd0983fdaeb2ba4c06eec6da350e644fb3a"
 MODEL_FILE = "qwen3_8_27b_nvfp4.ninfer"
+MODEL_SIZE_GIB = "20.02"
+SETUP_MARKER = ROOT / "hermes-data" / ".stack-setup-complete"
 LEGACY_HERMES_IMAGE = "nousresearch/hermes-agent:v2026.8.19"
 PINNED_HERMES_IMAGE = (
     "nousresearch/hermes-agent:v2026.8.19@"
@@ -161,7 +163,7 @@ def validate_env() -> None:
         raise StackError("NINFER_API_KEY and HERMES_API_SERVER_KEY must be distinct")
 
 
-def setup(_: argparse.Namespace) -> None:
+def initialize_local_state() -> None:
     if not ENV_EXAMPLE.is_file():
         raise StackError("Missing .env.example")
     if not (ROOT / "ninfer" / ".git").exists():
@@ -188,8 +190,64 @@ def setup(_: argparse.Namespace) -> None:
     merge_env()
     validate_env()
     compose("config", "--quiet")
-    print("Setup complete. No global Python packages were installed.")
-    print("Next: python stack.py download-model")
+    print("Local configuration initialized. No global Python packages were installed.")
+
+
+def confirm_model_download() -> bool:
+    print()
+    print(f"The pinned model is not present: models/{MODEL_FILE}")
+    print(f"Download size: {MODEL_SIZE_GIB} GiB (at least 24 GiB free space required).")
+    print("The download runs through uv in an isolated Compose utility container.")
+    answer = input("Download and verify the model now? [y/N]: ").strip().lower()
+    return answer in {"y", "yes"}
+
+
+def run_hermes_wizard() -> None:
+    print()
+    print("Hermes setup wizard choices for this stack:")
+    print("  1. Blank Slate")
+    print("  2. ninfer (currently active)")
+    print("  3. qwen-local")
+    print("  4. Keep current (ssh)")
+    print("  5. Start with everything disabled - finish now")
+    print("The wizard may warn that no provider is configured; setup restores it afterward.")
+    input("Press Enter to open the Hermes wizard...")
+    compose("run", "--rm", "--no-deps", "hermes", "setup")
+
+
+def setup(args: argparse.Namespace) -> None:
+    initialize_local_state()
+
+    model_path = ROOT / "models" / MODEL_FILE
+    if not model_path.is_file() or model_path.stat().st_size == 0:
+        if not confirm_model_download():
+            print("Setup paused before the model download. Run 'python stack.py setup' when ready.")
+            return
+    # This downloads only after the explicit prompt above. If the artifact is
+    # already present, the utility verifies its checksum instead.
+    download_model(argparse.Namespace(yes=True))
+
+    # A prior completed installation may already have the long-running Hermes
+    # service active. The wizard and managed configuration both require it off.
+    compose("stop", "hermes")
+    print("Building the pinned stack images...")
+    compose("build")
+    print("Starting NInfer and the SSH sandbox; initial model loading can take several minutes...")
+    compose("up", "-d", "--wait", "--wait-timeout", "900", "ninfer", "sandbox")
+
+    if args.rerun_wizard or not SETUP_MARKER.is_file():
+        run_hermes_wizard()
+    else:
+        print("Hermes first-run wizard already completed; preserving its local choices.")
+
+    # The wizard deliberately resets provider and terminal fields in Blank Slate
+    # mode. Always reapply the reviewed integration boundary before startup.
+    configure_hermes(argparse.Namespace())
+    compose("up", "-d", "--wait", "--wait-timeout", "900")
+    atomic_write(SETUP_MARKER, "completed\n")
+    print()
+    print("Setup complete. Hermes, NInfer, and the SSH sandbox are running.")
+    print("Open Hermes with: python stack.py gui")
 
 
 def download_model(args: argparse.Namespace) -> None:
@@ -332,7 +390,16 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
 
-    sub.add_parser("setup", help="initialize submodule, local state, and secrets").set_defaults(func=setup)
+    setup_parser = sub.add_parser(
+        "setup",
+        help="run the complete interactive first-run workflow",
+    )
+    setup_parser.add_argument(
+        "--rerun-wizard",
+        action="store_true",
+        help="run the Hermes wizard again while preserving stack-managed fields afterward",
+    )
+    setup_parser.set_defaults(func=setup)
     download = sub.add_parser("download-model", help="download with uv inside a Compose utility container")
     download.add_argument("--yes", action="store_true", help="skip the 20 GiB confirmation")
     download.set_defaults(func=download_model)
@@ -342,7 +409,7 @@ def main() -> int:
     sub.add_parser("status", help="show Compose service status").set_defaults(func=passthrough(("ps",)))
     sub.add_parser("logs", help="follow all service logs").set_defaults(func=passthrough(("logs", "-f")))
     sub.add_parser("stop-hermes", help="stop Hermes before reconfiguration").set_defaults(func=passthrough(("stop", "hermes")))
-    sub.add_parser("setup-hermes", help="run the official interactive Hermes wizard").set_defaults(
+    sub.add_parser("setup-hermes", help="rerun only the Hermes wizard for advanced recovery").set_defaults(
         func=passthrough(("run", "--rm", "--no-deps", "hermes", "setup"))
     )
     sub.add_parser("configure-hermes", help="apply the reviewed NInfer and sandbox settings").set_defaults(

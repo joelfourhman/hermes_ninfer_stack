@@ -117,6 +117,13 @@ for key, expected in expected_env.items():
 
 
 consistency_requirements = {
+    "stack.py": [
+        EXPECTED_NINFER_COMMIT,
+        EXPECTED_MODEL_FILE,
+        "Download and verify the model now?",
+        "Blank Slate",
+        "Keep current (ssh)",
+    ],
     "docker-compose.yml": [EXPECTED_NINFER_COMMIT, EXPECTED_MODEL_FILE, EXPECTED_MODEL_ID, EXPECTED_CONTEXT, "13.1.2-runtime-ubuntu24.04"],
     "hermes/config.example.yaml": [EXPECTED_MODEL_ID, EXPECTED_CONTEXT],
     "scripts/setup.sh": [EXPECTED_NINFER_COMMIT],
