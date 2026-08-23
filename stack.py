@@ -181,6 +181,13 @@ def initialize_local_state() -> None:
 
     for directory in (ROOT / "hermes-data", ROOT / "workspace", ROOT / "models"):
         directory.mkdir(parents=True, exist_ok=True)
+    trust_directory = ROOT / "hermes-data" / ".ssh"
+    trust_directory.mkdir(exist_ok=True)
+    try:
+        trust_directory.chmod(0o700)
+    except OSError:
+        # Docker Desktop bind mounts may not implement POSIX mode changes.
+        pass
     config = ROOT / "hermes-data" / "config.yaml"
     if not config.exists():
         shutil.copy2(ROOT / "hermes" / "config.example.yaml", config)
@@ -234,6 +241,7 @@ def setup(args: argparse.Namespace) -> None:
     compose("build")
     print("Starting NInfer and the SSH sandbox; initial model loading can take several minutes...")
     compose("up", "-d", "--wait", "--wait-timeout", "900", "ninfer", "sandbox")
+    compose("run", "--rm", "--no-deps", "sandbox-trust")
 
     if args.rerun_wizard or not SETUP_MARKER.is_file():
         run_hermes_wizard()
@@ -367,6 +375,17 @@ def shell(args: argparse.Namespace) -> None:
         compose("exec", service, "bash")
 
 
+def repair_sandbox_trust(_: argparse.Namespace) -> None:
+    validate_env()
+    print("Stopping Hermes while its sandbox host trust is reconciled...", flush=True)
+    compose("stop", "hermes")
+    compose("build", "sandbox", "sandbox-trust")
+    compose("up", "-d", "--wait", "--wait-timeout", "120", "--force-recreate", "sandbox")
+    compose("run", "--rm", "--no-deps", "sandbox-trust")
+    compose("up", "-d", "hermes")
+    print("Sandbox host trust repaired. Hermes is starting again.", flush=True)
+
+
 def benchmark(args: argparse.Namespace) -> None:
     run(
         [
@@ -415,6 +434,10 @@ def main() -> int:
     sub.add_parser("configure-hermes", help="apply the reviewed NInfer and sandbox settings").set_defaults(
         func=configure_hermes
     )
+    sub.add_parser(
+        "repair-sandbox-trust",
+        help="safely refresh Hermes's persisted SSH host-key entry",
+    ).set_defaults(func=repair_sandbox_trust)
     shell_parser = sub.add_parser("shell", help="open Bash inside a running service")
     shell_parser.add_argument("service", nargs="?", choices=("hermes", "ninfer", "sandbox"), default="hermes")
     shell_parser.set_defaults(func=shell)

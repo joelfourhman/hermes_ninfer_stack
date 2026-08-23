@@ -20,6 +20,32 @@ case "$mode" in
     echo "Hermes sandbox client key is ready."
     ;;
 
+  trust-host)
+    host_key=/sandbox-host-key/ssh_host_ed25519_key.pub
+    known_hosts_dir=/hermes-trust
+    known_hosts="$known_hosts_dir/known_hosts"
+    host='[sandbox]:2222'
+
+    if [[ ! -s "$host_key" ]]; then
+      echo "Missing sandbox public host key; start the sandbox first." >&2
+      exit 1
+    fi
+    ssh-keygen -l -f "$host_key" >/dev/null
+    read -r key_type key_data _ < "$host_key"
+    if [[ "$key_type" != ssh-ed25519 || ! "$key_data" =~ ^[A-Za-z0-9+/]+={0,3}$ ]]; then
+      echo "Sandbox public host key is not a valid ED25519 key." >&2
+      exit 1
+    fi
+
+    umask 077
+    mkdir -p "$known_hosts_dir"
+    touch "$known_hosts"
+    ssh-keygen -f "$known_hosts" -R "$host" >/dev/null 2>&1
+    printf '%s %s %s\n' "$host" "$key_type" "$key_data" >> "$known_hosts"
+    rm -f "$known_hosts.old"
+    echo "Hermes trusts the persisted sandbox host key."
+    ;;
+
   serve)
     if [[ ! -s /run/hermes-authorized-key/authorized_keys ]]; then
       echo "Missing sandbox authorized key; run the sandbox-keygen service first." >&2
@@ -31,7 +57,9 @@ case "$mode" in
       /run/hermes-authorized-key/authorized_keys \
       /home/agent/.ssh/authorized_keys
 
-    install -d -m 0700 /etc/ssh/host-keys
+    # The directory is traversable so the unprivileged trust reconciler can
+    # read the 0644 public key. The private host key remains root-only at 0600.
+    install -d -m 0755 /etc/ssh/host-keys
     if [[ ! -s /etc/ssh/host-keys/ssh_host_ed25519_key \
       || ! -s /etc/ssh/host-keys/ssh_host_ed25519_key.pub ]]; then
       rm -f /etc/ssh/host-keys/ssh_host_ed25519_key \
@@ -40,6 +68,7 @@ case "$mode" in
     fi
     chmod 0600 /etc/ssh/host-keys/ssh_host_ed25519_key
     chmod 0644 /etc/ssh/host-keys/ssh_host_ed25519_key.pub
+    chmod 0755 /etc/ssh/host-keys
 
     install -d -m 0755 /run/sshd
     chown -R agent:agent /home/agent

@@ -250,7 +250,29 @@ def main() -> int:
         if actual != expected:
             raise Failure(f"Hermes {key} is {actual!r}, expected {expected!r}", "python stack.py configure-hermes")
     compose("exec", "-T", "hermes", "getent", "hosts", "ninfer")
-    passed(f"Hermes uses custom:ninfer / {model_id} / context {context}")
+    trust_result = compose(
+        "exec",
+        "--user",
+        "hermes",
+        "-T",
+        "hermes",
+        "ssh",
+        "-i",
+        "/ssh/id_ed25519",
+        "-p",
+        "2222",
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "StrictHostKeyChecking=yes",
+        "agent@sandbox",
+        "printf SANDBOX_TRUST_OK",
+        check=False,
+    )
+    if trust_result.returncode != 0 or trust_result.stdout != "SANDBOX_TRUST_OK":
+        detail = trust_result.stderr.strip() or "Hermes cannot verify the persisted sandbox host key"
+        raise Failure(detail, "python stack.py repair-sandbox-trust")
+    passed(f"Hermes uses custom:ninfer / {model_id}; strict sandbox host trust passes")
 
     def hermes_request(payload: dict, filename: str) -> dict:
         result = compose(

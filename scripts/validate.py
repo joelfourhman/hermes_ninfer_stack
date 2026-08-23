@@ -123,8 +123,9 @@ consistency_requirements = {
         "Download and verify the model now?",
         "Blank Slate",
         "Keep current (ssh)",
+        "repair-sandbox-trust",
     ],
-    "docker-compose.yml": [EXPECTED_NINFER_COMMIT, EXPECTED_MODEL_FILE, EXPECTED_MODEL_ID, EXPECTED_CONTEXT, "13.1.2-runtime-ubuntu24.04"],
+    "docker-compose.yml": [EXPECTED_NINFER_COMMIT, EXPECTED_MODEL_FILE, EXPECTED_MODEL_ID, EXPECTED_CONTEXT, "13.1.2-runtime-ubuntu24.04", "sandbox-trust"],
     "hermes/config.example.yaml": [EXPECTED_MODEL_ID, EXPECTED_CONTEXT],
     "scripts/setup.sh": [EXPECTED_NINFER_COMMIT],
     "model-downloader/download_model.py": [EXPECTED_MODEL_FILE, EXPECTED_MODEL_SHA256],
@@ -134,6 +135,7 @@ consistency_requirements = {
         "sha256:33ceb71981b602c1a7443a53469e4dba065f7503eab3078a2d7a57a2ab987517",
         "sha256:d1e005e6f5aac724b7554db95f1c128a77d8d35b59ebe70e188852b4bdad3a3d",
     ],
+    "sandbox/entrypoint.sh": ["trust-host", "[sandbox]:2222", "ssh_host_ed25519_key.pub"],
     "docs/models.md": [EXPECTED_MODEL_FILE, EXPECTED_MODEL_ID, EXPECTED_MODEL_SHA256],
 }
 for relative, values in consistency_requirements.items():

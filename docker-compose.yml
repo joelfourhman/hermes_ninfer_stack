@@ -89,6 +89,26 @@ services:
     networks:
       - sandbox-net
 
+  sandbox-trust:
+    <<: *sandbox-build
+    command: ["trust-host"]
+    restart: "no"
+    depends_on:
+      sandbox:
+        condition: service_healthy
+    user: "${HERMES_UID:-1000}:${HERMES_GID:-1000}"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    network_mode: none
+    volumes:
+      - ./hermes-data/.ssh:/hermes-trust
+      - sandbox-host-keys:/sandbox-host-key:ro
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+
   ninfer:
     build:
       context: ./ninfer
@@ -160,6 +180,8 @@ services:
         condition: service_healthy
       sandbox:
         condition: service_healthy
+      sandbox-trust:
+        condition: service_completed_successfully
     working_dir: /workspace
     cpus: ${HERMES_CPUS:-4.0}
     mem_limit: ${HERMES_MEMORY:-8g}
