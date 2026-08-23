@@ -38,18 +38,12 @@ Hermes stack. See [Performance](performance.md) for the distinction.
 
 ## Download with the helper
 
-Install the Hugging Face CLI in an isolated environment if necessary:
+Run the cross-platform downloader. It uses pinned `uv` and Hugging Face client
+versions inside a Compose utility container; it does not install anything on
+the host:
 
 ```bash
-python3 -m venv .venv-hf
-source .venv-hf/bin/activate
-python -m pip install --upgrade huggingface_hub
-```
-
-Then run:
-
-```bash
-./scripts/download-model.sh
+python stack.py download-model
 ```
 
 Before downloading, the helper reports the artifact, size, destination, and available space and
@@ -59,7 +53,7 @@ script fails if the final checksum differs from the value above.
 For explicitly approved non-interactive automation, the helper accepts:
 
 ```bash
-./scripts/download-model.sh --yes
+python stack.py download-model --yes
 ```
 
 Do not use that option in CI. Public runners must not download the model.
@@ -117,10 +111,10 @@ After changing the alias:
 
 ```bash
 docker compose stop hermes
-./scripts/configure-hermes.sh
+python stack.py configure-hermes
 docker compose up -d --force-recreate --wait --wait-timeout 900 ninfer
 docker compose up -d hermes
-./scripts/verify.sh
+python stack.py verify
 ```
 
 ## Replacing the model

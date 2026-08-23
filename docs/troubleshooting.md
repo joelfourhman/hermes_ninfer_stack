@@ -3,7 +3,7 @@
 Start with the layered verifier:
 
 ```bash
-./scripts/verify.sh
+python stack.py verify
 ```
 
 It stops at the first failed boundary. Use that layer and the cases below rather than changing
@@ -39,7 +39,7 @@ The expected revision is `feaf4dd0983fdaeb2ba4c06eec6da350e644fb3a`.
 
 **Symptom**
 
-`scripts/setup.sh` reports invalid or missing secrets, UID/GID, port, or another required value.
+`python stack.py setup` reports invalid or missing secrets, UID/GID, port, or another required value.
 
 **Likely cause**
 
@@ -153,7 +153,7 @@ was placed under `models/`.
 
 ```bash
 ls -lh models/
-./scripts/download-model.sh
+python stack.py download-model
 ```
 
 The expected SHA-256 is
@@ -211,7 +211,7 @@ Check NInfer's logged automatic KV capacity and other GPU processes.
 **Fix**
 
 Stop unrelated GPU workloads and first set `NINFER_MAX_CONCURRENCY=1`. If context must be reduced,
-change `NINFER_CONTEXT_LENGTH`, stop Hermes, rerun `scripts/configure-hermes.sh`, recreate NInfer,
+change `NINFER_CONTEXT_LENGTH`, stop Hermes, rerun `python stack.py configure-hermes`, recreate NInfer,
 and run verification. Do not claim the new profile as benchmarked until it is measured.
 
 ## Host port is already in use
@@ -279,7 +279,7 @@ runtime error, or the request uses the wrong model alias.
 
 ```bash
 docker compose logs --tail=200 ninfer
-./scripts/verify.sh
+python stack.py verify
 ```
 
 **Fix**
@@ -310,7 +310,7 @@ docker compose exec -T hermes sh -lc '
 
 **Fix**
 
-Stop Hermes, run `./scripts/configure-hermes.sh`, and start it again. The provider endpoint must be
+Stop Hermes, run `python stack.py configure-hermes`, and start it again. The provider endpoint must be
 `http://ninfer:8080/v1`, not a host-loopback URL.
 
 ## Container DNS fails
@@ -361,7 +361,7 @@ docker compose run --rm --no-deps hermes hermes config get model
 
 **Fix**
 
-Stop the Hermes service and rerun `./scripts/configure-hermes.sh`. Recreate NInfer if its alias also
+Stop the Hermes service and rerun `python stack.py configure-hermes`. Recreate NInfer if its alias also
 changed, then run full verification.
 
 ## Tool calls are returned but not executed
@@ -381,12 +381,12 @@ configured, or the sandbox is unhealthy. NInfer parses tool calls but never exec
 docker compose logs --tail=200 ninfer
 docker compose logs --tail=200 hermes
 docker compose ps sandbox
-./scripts/verify.sh
+python stack.py verify
 ```
 
 **Fix**
 
-Repair sandbox health first, rerun `scripts/configure-hermes.sh`, and use the verifier's real
+Repair sandbox health first, rerun `python stack.py configure-hermes`, and use the verifier's real
 filesystem-side-effect check. A model statement that a command ran is not proof of execution.
 
 ## Sandbox is unhealthy or SSH fails
@@ -479,7 +479,7 @@ volumes as a generic restart remedy; that deletes sandbox identities and home st
 
 **Symptom**
 
-`verify.sh` exits non-zero and prints a temporary response directory.
+`python stack.py verify` exits non-zero and prints a temporary response directory.
 
 **Likely cause**
 

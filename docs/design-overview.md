@@ -57,8 +57,8 @@ obscure which bytes were actually tested.
 
 Instead, model acquisition is an explicit local step:
 
-1. `scripts/download-model.sh` identifies the repository, revision, filename, size, and destination
-   before downloading.
+1. `python stack.py download-model` starts a uv-managed Compose utility that identifies the
+   repository, revision, filename, size, and destination before downloading.
 2. The helper verifies the published SHA-256 checksum.
 3. Compose mounts `./models` read-only into NInfer.
 4. Git ignores model formats and local download cache data.
@@ -66,6 +66,7 @@ Instead, model acquisition is an explicit local step:
 This makes a fresh clone intentionally incomplete until the owner opts into the large download. It
 also lets images be rebuilt without copying the artifact into the build context. The NInfer source
 submodule is pinned independently, so source and artifact compatibility remain reviewable facts.
+The utility runs from a digest-pinned official `uv` image and installs no host package.
 
 ## Why only NInfer receives the GPU
 
@@ -92,6 +93,9 @@ to a fixed unprivileged account over an internal network. The sandbox has a read
 filesystem, bounded temporary filesystems, no sudo, no GPU, no Docker socket, no host port, and no
 default egress. Its only writable host bind is the project workspace; its home and SSH identity use
 project-scoped named volumes.
+
+Python package workflows inside that sandbox use digest-pinned `uv` and `uvx` binaries. The
+stack-owned image does not install pip.
 
 This is containment, not a claim that arbitrary commands are safe. A generated command can destroy
 workspace files, corrupt the persistent sandbox home, consume its allowed resources, or act on data
@@ -126,7 +130,7 @@ environment variables:
 
 Service DNS names and internal ports stay fixed. They are implementation contracts, not user-facing
 deployment choices. The setup workflow generates random secrets, creates local state directories,
-and materializes the Hermes template. `scripts/configure-hermes.sh` then applies shared model and
+and materializes the Hermes template. `python stack.py configure-hermes` then applies shared model and
 SSH values through Hermes's supported configuration command so model ID and context do not drift
 between the provider and server.
 
@@ -156,9 +160,10 @@ restarting the entire stack for every downstream interruption.
 
 ## Exposure decisions
 
-The host receives one loopback-only NInfer port for direct diagnostics and local API clients. It is
-authenticated even though it is not exposed to the LAN. Hermes's API and sandbox SSH endpoint are
-not published. User interaction normally occurs through integrations selected during Hermes setup.
+The host receives a loopback-only NInfer port for direct diagnostics and a loopback-only Hermes
+dashboard port for local browser access. Both are authenticated and neither is exposed to the LAN.
+Hermes's verification API and the sandbox SSH endpoint are not published. User interaction can use
+the dashboard, an in-container CLI session, or integrations selected during Hermes setup.
 
 NInfer and the sandbox attach only to internal networks. Hermes alone has ordinary egress because
 integrations and orchestrator-side services may require it. This does not make all Hermes activity

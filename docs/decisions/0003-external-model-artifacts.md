@@ -17,7 +17,7 @@ and would make offline or checksum-aware operation harder to reason about.
 
 Keep model artifacts in the ignored host `models/` directory and mount that directory read-only at
 `/models` in NInfer. Make model acquisition an explicit user action through
-`scripts/download-model.sh`.
+`python stack.py download-model`.
 
 For the default release profile, pin the Hugging Face repository revision, expected filename, byte
 size, and SHA-256 checksum. Refuse a checksum mismatch. Do not download a model during CI, Docker

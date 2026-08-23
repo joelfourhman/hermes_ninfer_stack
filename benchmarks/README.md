@@ -1,6 +1,6 @@
 # Local benchmark results
 
-`../scripts/benchmark.sh` writes timestamped result directories here. Results
+`python stack.py benchmark` writes timestamped result directories here. Results
 include prompts, model responses, raw SSE timing, and GPU samples, so everything
 under this directory except this file is ignored by Git.
 

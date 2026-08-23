@@ -11,14 +11,17 @@ security boundary against a hostile Docker administrator.
 | --- | --- | --- | --- | --- |
 | Hermes | Read/write `hermes-data`; read-only `workspace`; read-only sandbox client key | NInfer, sandbox, and outbound egress | Configuration, memory, sessions, skills, and logs | Prompt injection or plugin code can act with orchestrator privileges |
 | NInfer | Read-only model directory; GPU device | Internal inference network and host-loopback published API | None in the Compose definition | Native parser/runtime or GPU-driver compromise |
+| Model downloader (explicit profile) | Read/write model directory | Temporary outbound access | Hugging Face staging cache under `models/` | Supply-chain input or corrupted partial download; final artifact is checksum-verified |
 | SSH sandbox | Read/write `workspace`; named home and SSH host-key volumes | Internal sandbox network only | Workspace, sandbox home, and SSH identity | Model-generated commands can alter all sandbox-visible data |
 | Sandbox key generator | Named SSH key volumes only | No network | Sandbox client and authorized keys | One-shot root process creates a long-lived credential |
 | Docker daemon | Full control of containers, images, networks, and volumes | Host-dependent | All Docker-managed state | Docker access is effectively host-administrator access |
 
 Only NInfer receives GPU access. No service mounts the Docker socket, uses
 privileged mode, joins the host network or PID namespace, or mounts a broad host
-filesystem path. Hermes and the sandbox publish no host ports. NInfer's API is
-published on host loopback only and requires a bearer key.
+filesystem path. The sandbox publishes no host port. NInfer's API and Hermes's
+authenticated dashboard are published on host loopback only. NInfer requires a
+bearer key; the dashboard uses a separate generated username, password, and
+session-signing secret.
 
 ## Request and tool flow
 

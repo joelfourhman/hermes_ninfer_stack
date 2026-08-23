@@ -15,7 +15,7 @@ network by default.
 > **Status:** `v0.1.0` release candidate. The configuration targets one exact
 > NInfer commit and one checksum-pinned Qwen3.8-27B NVFP4 artifact. Normal CI
 > validates the repository without GPU hardware; complete inference and tool
-> checks run locally with `./scripts/verify.sh`.
+> checks run locally with `python stack.py verify`.
 
 ## What this repository provides
 
@@ -27,6 +27,7 @@ network by default.
 - A long-context text profile: 131,072 tokens, INT8 KV, automatic KV sizing,
   concurrency 2, and MTP with three draft tokens.
 - A key-only SSH sandbox for terminal, file, and code-execution tools.
+- `uv` and `uvx` in the tool sandbox; stack-owned images do not install or use pip.
 - Layered health checks, startup ordering, verification, and a local benchmark
   harness that retains auditable raw measurements.
 - Public-release safeguards for secrets, runtime state, model weights, logs,
@@ -56,7 +57,7 @@ sandbox rather than the inference or orchestration service.
 
 ```mermaid
 flowchart LR
-    User["User: CLI or gateway integration"] --> Hermes
+    User["User: CLI, dashboard, or gateway integration"] --> Hermes
 
     subgraph Docker[Docker Compose project]
         Hermes["Hermes Agent<br/>orchestration"]
@@ -81,10 +82,10 @@ flowchart LR
 ```
 
 The inference and sandbox networks are internal. Only Hermes also joins the
-normal control network for explicitly configured integrations. NInfer alone is
-published to the host, and only on loopback (`127.0.0.1:8080` by default).
-Hermes's verification API remains on container loopback and the sandbox SSH
-port is never host-published.
+normal control network for explicitly configured integrations. NInfer and the
+authenticated Hermes dashboard are published only on host loopback
+(`127.0.0.1:8080` and `127.0.0.1:9119` by default). Hermes's verification API
+remains on container loopback and the sandbox SSH port is never host-published.
 
 See [Architecture](docs/architecture.md) for request flow, storage,
 healthchecks, failure behavior, and service ownership. The rationale is in
@@ -96,13 +97,14 @@ healthchecks, failure behavior, and service ownership. The rationale is in
 - NVIDIA GeForce RTX 5090 with 32 GiB VRAM.
 - A driver capable of running CUDA 13.1 containers.
 - 64-bit x86-64 Linux containers through native Docker Engine or Docker
-  Desktop's WSL2 backend.
+  Desktop. Docker Desktop may use WSL2 internally on Windows, but no WSL shell
+  or Linux host tooling is part of this workflow.
 - NVIDIA Container Toolkit configured for Docker.
 - Docker Engine and Docker Compose 2.17 or newer.
-- Bash, Git, `curl`, `jq`, and either OpenSSL or Python 3; `make` is optional.
+- Python 3.11 or newer and Git. No host Bash, PowerShell, `pip`, `uv`, `curl`,
+  `jq`, or `make` installation is required.
 - At least 24 GiB free in the model filesystem for the 20.02 GiB artifact and
   staging, plus separate Docker storage for CUDA images and build layers.
-- The Hugging Face `hf` CLI only for the model-download step.
 
 NInfer's upstream Dockerfile uses CUDA 13.1.2 on Ubuntu 24.04 and compiles only
 for `sm_120a`. A successful host `nvidia-smi` is not enough; confirm Docker can
@@ -125,36 +127,31 @@ cd hermes-ninfer-stack
 
 # Initializes the pinned submodule, local directories, reviewed Hermes
 # baseline, and random API secrets. Existing local state is preserved.
-./scripts/setup.sh
+python stack.py setup
 
 # One explicit ~20 GiB download; shows provenance and verifies SHA-256.
-./scripts/download-model.sh
+python stack.py download-model
 
 docker compose build
 docker compose up -d --wait --wait-timeout 900 ninfer sandbox
 
 # Required once: configure Hermes identity and any intentional integrations.
 docker compose run --rm --no-deps hermes setup
-./scripts/configure-hermes.sh
+python stack.py configure-hermes
 
 docker compose up -d
-./scripts/verify.sh
+python stack.py verify
 ```
 
-`setup.sh` initializes NInfer even when the initial clone omitted
-`--recurse-submodules`. It creates `.env` from `.env.example`, generates two
-distinct 64-character secrets, and copies `hermes/config.example.yaml` to the
+`python stack.py setup` initializes NInfer when the initial clone omitted
+`--recurse-submodules`. It creates `.env` from `.env.example`, generates
+independent API and dashboard secrets, and copies `hermes/config.example.yaml` to the
 ignored live state only when no live configuration exists.
 
-The model is never downloaded by setup, Docker build, or CI. If `hf` is not
-installed, use a local virtual environment:
-
-```bash
-python3 -m venv .venv-hf
-source .venv-hf/bin/activate
-python -m pip install --upgrade huggingface_hub
-./scripts/download-model.sh
-```
+The model is never downloaded by setup, the normal image build, or CI. The
+download command builds an isolated Compose utility image from the official,
+version-pinned `uv` image; `uv tool install` provisions the pinned Hugging Face
+client inside that image. Nothing is installed into the host Python environment.
 
 The complete first-run sequence, including WSL2 notes and failure recovery, is
 in [Installation](docs/installation.md).
@@ -185,9 +182,7 @@ rules, native artifact identity, and the model-ID consistency contract.
 ## Verification
 
 ```bash
-./scripts/verify.sh
-# or
-make verify
+python stack.py verify
 ```
 
 The verifier stops at the first broken boundary, prints a likely diagnostic,
@@ -230,9 +225,26 @@ For an interactive terminal session:
 docker compose exec -it hermes hermes chat
 ```
 
+The cross-platform control command opens Bash *inside* the running Hermes
+container without requiring Bash on the host:
+
+```text
+python stack.py shell
+```
+
+Hermes's authenticated web dashboard is published only on host loopback:
+
+```text
+python stack.py gui
+```
+
+This starts Hermes if needed, opens `http://127.0.0.1:9119`, and prints the
+generated local username and password. Use `--no-open` on a headless host.
+
 The official first-run wizard can also configure an intentional gateway such
 as Telegram, Discord, or another supported Hermes integration. No gateway
-port is published by this stack. Tool commands see `/workspace` through the
+listener is published by this stack; the dashboard is the only Hermes host
+port. Tool commands see `/workspace` through the
 SSH sandbox; Hermes itself mounts that path read-only.
 
 ## Configuration
@@ -253,9 +265,9 @@ Changing the model ID or context requires reapplying Hermes configuration:
 
 ```bash
 docker compose stop hermes
-./scripts/configure-hermes.sh
+python stack.py configure-hermes
 docker compose up -d --force-recreate ninfer hermes
-./scripts/verify.sh
+python stack.py verify
 ```
 
 Do not change Hermes's internal endpoint to `localhost`; inside its container,
@@ -266,31 +278,29 @@ procedures.
 ## Routine operation
 
 ```bash
-make help
-make build
-make up
-make status
-make logs-ninfer
-make logs-hermes
-make shell-hermes
-make shell-ninfer
-make shell-sandbox
-make restart
-make down
+python stack.py build
+python stack.py up
+python stack.py status
+python stack.py logs
+python stack.py shell
+python stack.py shell ninfer
+python stack.py shell sandbox
+python stack.py gui
+python stack.py down
 ```
 
-`make clean` stops the project and removes only its locally built images. It
-preserves `models/`, `hermes-data/`, `workspace/`, benchmark results, and all
-named volumes. Do not run `docker compose down -v` unless deleting the sandbox
-home and SSH identities is intentional.
+The optional Makefile remains as a convenience for Unix contributors, but it
+is not part of the installation or operation contract. `python stack.py down`
+preserves all bind-mounted data and named volumes. Do not run `docker compose
+down -v` unless deleting the sandbox home and SSH identities is intentional.
 
 ## Benchmarking
 
 After full verification passes:
 
 ```bash
-./scripts/benchmark.sh
-# BENCHMARK_RUNS=5 BENCHMARK_MAX_TOKENS=1024 make benchmark
+python stack.py benchmark
+python stack.py benchmark --runs 5 --max-tokens 1024
 ```
 
 The harness records model/configuration metadata, the verified running-image
@@ -313,7 +323,8 @@ Notable controls:
 
 - no privileged mode, host networking, Docker socket, or broad host mount;
 - GPU access only for NInfer;
-- host publication only for NInfer and only on loopback;
+- host publication only for NInfer and the authenticated Hermes dashboard,
+  both on loopback;
 - separate internal inference and sandbox networks;
 - read-only Hermes view of the workspace;
 - key-only, unprivileged SSH sandbox with a read-only root filesystem,

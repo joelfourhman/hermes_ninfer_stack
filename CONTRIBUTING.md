@@ -29,11 +29,11 @@ If the repository was cloned without submodules:
 git submodule update --init --recursive
 ```
 
-Run the setup helper from Linux or WSL2 to create local configuration and
+Run the cross-platform Python setup helper to create local configuration and
 directories:
 
 ```bash
-./scripts/setup.sh
+python stack.py setup
 ```
 
 Do not download the model merely to edit documentation or run static checks.

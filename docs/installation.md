@@ -11,13 +11,13 @@ not a generic CUDA or CPU deployment.
 
 - A 64-bit Linux container environment:
   - native Linux with Docker Engine and NVIDIA Container Toolkit; or
-  - Docker Desktop using its WSL2 backend.
+  - Docker Desktop (its Linux backend is managed by Docker Desktop; no WSL shell is required).
 - NVIDIA GeForce RTX 5090 with a driver capable of running CUDA 13.1 containers.
 - Docker Engine and Docker Compose. Compose 2.17.0 or newer is required for `up --wait-timeout`;
   Compose 5.3.0 is the locally audited version.
-- Bash, Git, `curl`, `jq`, `make` (optional), and either OpenSSL or Python 3.
+- Python 3.11 or newer and Git. The host does not need Bash, PowerShell, `pip`, `uv`, `curl`,
+  `jq`, or `make`.
 - About 24 GiB of free disk space for the 20.02 GiB model plus download staging.
-- A Hugging Face `hf` CLI installation only for model download.
 
 See [Compatibility](compatibility.md) for the exact host versions that were inspected.
 
@@ -69,7 +69,7 @@ check also exercises Docker's NVIDIA runtime integration.
 Run the idempotent setup helper:
 
 ```bash
-./scripts/setup.sh
+python stack.py setup
 ```
 
 The helper prepares the local directories, creates `.env` from the reviewed example, generates two
@@ -99,22 +99,13 @@ The helper displays the exact artifact, destination, size, and available disk sp
 for confirmation:
 
 ```bash
-./scripts/download-model.sh
+python stack.py download-model
 ```
 
-If the `hf` command is not installed, create an isolated environment rather than installing a
-project-wide Python dependency:
-
-```bash
-python3 -m venv .venv-hf
-source .venv-hf/bin/activate
-python -m pip install --upgrade huggingface_hub
-./scripts/download-model.sh
-```
-
-The helper pins the Hugging Face revision and verifies the final SHA-256 checksum. No model is
-downloaded by setup, image build, or CI. See [Models](models.md) for exact provenance and manual
-download instructions.
+The helper builds and runs the `model-downloader` Compose profile. That utility image is based on a
+digest-pinned official `uv` image and uses `uv tool install` with a pinned Hugging Face client. It pins the
+model revision and verifies the final SHA-256 checksum. Nothing is installed into the host Python
+environment, and no model is downloaded by setup, the normal image build, or CI.
 
 ## 5. Build the images
 
@@ -156,7 +147,7 @@ Those answers are written under ignored `hermes-data/` and are not repository co
 The wizard may update model settings. Reapply the stack-owned NInfer and SSH sandbox fields:
 
 ```bash
-./scripts/configure-hermes.sh
+python stack.py configure-hermes
 ```
 
 The helper uses the supported `hermes config` interface and checks the result. Run it while the
@@ -166,12 +157,30 @@ long-running Hermes service is stopped.
 
 ```bash
 docker compose up -d
-./scripts/verify.sh
+python stack.py verify
 ```
 
 Verification checks the GPU, model checksum, NInfer health and API, Hermes-to-NInfer inference,
 sandbox networking, and a real terminal tool side effect. A healthy container alone is not treated
 as proof that inference or tool execution works.
+
+## Shell and web dashboard access
+
+Open Bash inside Hermes while remaining in the host's normal terminal:
+
+```text
+python stack.py shell
+```
+
+Start and open the authenticated Hermes dashboard:
+
+```text
+python stack.py gui
+```
+
+The dashboard maps `127.0.0.1:9119` to the container by default. Setup generates its independent
+username, password, and session-signing secret in the ignored `.env` file. It is not exposed to the
+LAN.
 
 ## Routine operation
 

@@ -30,7 +30,7 @@ the NInfer image saw the RTX 5090, and a real key-only SSH sandbox command creat
 workspace side effect as the unprivileged `agent` user. No local model artifact was available, so
 the audit does **not** claim that the model loaded, NInfer served a completion, Hermes completed a
 request, or a local benchmark passed on this exact host. Those remaining claims require
-`scripts/verify.sh` and, for performance, `scripts/benchmark.sh` after model acquisition.
+`python stack.py verify` and, for performance, `python stack.py benchmark` after model acquisition.
 
 ## Required compatibility envelope
 
@@ -101,7 +101,7 @@ Then validate the Docker GPU path and full stack:
 docker run --rm --gpus all \
   nvidia/cuda:13.1.2-base-ubuntu24.04 \
   nvidia-smi
-./scripts/verify.sh
+python stack.py verify
 ```
 
 Record a component as “tested” only when the relevant command actually succeeds. Update this

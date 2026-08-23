@@ -8,6 +8,10 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Cross-platform `python stack.py` control command for setup, Compose lifecycle,
+  Hermes configuration, container shells, dashboard access, and verification.
+- Authenticated loopback-only Hermes web dashboard and a uv-managed Compose
+  utility for the revision- and checksum-pinned model download.
 - Reproducible Docker Compose topology for Hermes Agent, NInfer, and a separate
   SSH execution sandbox.
 - Pinned Qwen3.8-27B NVFP4 model acquisition with revision and checksum
@@ -25,6 +29,9 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Security
 
+- Generated independent dashboard credentials and session-signing secret; the
+  dashboard redirects unauthenticated requests to its login gate.
+- Replaced pip in the tool sandbox with digest-pinned `uv` and `uvx` binaries.
 - Kept the NInfer host API on loopback and authenticated it with a generated
   bearer key.
 - Isolated model-generated commands in a resource-limited, no-egress sandbox

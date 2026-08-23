@@ -13,8 +13,9 @@ processes or broad host access.
 
 ```mermaid
 flowchart LR
-    User[User or configured integration] <--> Hermes[Hermes Agent]
+    User[User, dashboard, or configured integration] <--> Hermes[Hermes Agent]
     Host[Local verifier or API client] -. "127.0.0.1:${NINFER_HOST_PORT}" .-> NInfer
+    Browser[Local browser] -. "127.0.0.1:${HERMES_DASHBOARD_HOST_PORT}\nauthenticated" .-> Hermes
 
     Hermes -- "OpenAI-compatible chat completions\ninference-net" --> NInfer[NInfer server]
     NInfer --> Artifact["Qwen3.8-27B NVFP4\n/models/*.ninfer (read-only)"]
@@ -77,19 +78,24 @@ Compose creates three project-scoped bridge networks.
 |---|---|---|---|
 | `inference-net` | Hermes, NInfer | Internal network | Authenticated provider traffic from Hermes to NInfer |
 | `sandbox-net` | Hermes, sandbox | Internal network | SSH tool dispatch from Hermes to the sandbox |
-| `control-net` | Hermes | Normal bridge egress | Hermes integrations and explicitly configured external services |
+| `control-net` | Hermes; one-shot model downloader when its profile is selected | Normal bridge egress | Hermes integrations and explicit artifact acquisition |
 
 The key initializer uses `network_mode: none`. NInfer does not join `control-net`, and the sandbox
 does not join it either. The sandbox therefore cannot fetch packages or contact the LAN by default,
 even though its image contains common development clients.
 
-The only published service port is NInfer's container port `8080`, bound to host loopback at
-`NINFER_HOST_PORT`. The sandbox SSH port is reachable only from `sandbox-net`. Hermes's local API is
-enabled on container loopback for health and verification but is not published to the host.
+NInfer's container port `8080` and Hermes's dashboard port `9119` are bound to host loopback at
+`NINFER_HOST_PORT` and `HERMES_DASHBOARD_HOST_PORT`. The dashboard requires its generated basic-auth
+credentials. The sandbox SSH port is reachable only from `sandbox-net`. Hermes's separate local API
+is enabled on container loopback for health and verification but is not published to the host.
 
 Network placement limits reachability; it does not replace authentication. NInfer requires the
 random `NINFER_API_KEY`, and the container-local Hermes API uses the distinct
-`HERMES_API_SERVER_KEY`.
+`HERMES_API_SERVER_KEY`. The dashboard uses another independent password and session-signing secret.
+
+The `model-downloader` profile is not a long-running role. When explicitly invoked, it receives
+egress plus a writable `models/` bind, downloads one revision-pinned artifact through a uv-managed
+client, verifies its SHA-256 digest, and exits.
 
 ## GPU and model ownership
 
@@ -163,7 +169,7 @@ The public environment surface is intentionally small.
 
 Internal ports and service DNS names are fixed implementation contracts. Changing a host-loopback
 port does not change Hermes's internal NInfer URL. Model ID and context values must agree at both
-ends; `scripts/configure-hermes.sh` applies those values through Hermes's supported configuration
+ends; `python stack.py configure-hermes` applies those values through Hermes's supported configuration
 interface instead of relying on hand-edited live YAML.
 
 ## Startup and readiness

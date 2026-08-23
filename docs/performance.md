@@ -57,20 +57,17 @@ upstream NInfer results, not as measurements from this repository or the audited
 First require the complete integration test to pass:
 
 ```bash
-./scripts/verify.sh
+python stack.py verify
 ```
 
 Then run the benchmark:
 
 ```bash
-./scripts/benchmark.sh
+python stack.py benchmark
 ```
 
-or:
-
-```bash
-make benchmark
-```
+For a longer run or output cap, use `python stack.py benchmark --runs 5
+--max-tokens 1024`.
 
 The benchmark is a local GPU integration workload and is intentionally excluded from GitHub-hosted
 CI. It warms the persistent server with a separate request, then starts each measured user prompt
