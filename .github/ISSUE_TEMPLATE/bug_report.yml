@@ -1,0 +1,92 @@
+name: Bug report
+description: Report a reproducible defect in the stack.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve the project. Search existing issues first.
+        Do not report vulnerabilities or include secrets here; use GitHub private vulnerability reporting from the Security tab.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What failed, and at which stack layer?
+      placeholder: NInfer becomes unhealthy after model loading...
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      description: Provide the smallest complete sequence that reproduces the issue.
+      placeholder: |
+        1. Run ...
+        2. Configure ...
+        3. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include the failing verification layer and exact error, if available.
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Do not paste a complete environment-variable dump.
+      placeholder: |
+        - Stack commit:
+        - OS / WSL version:
+        - Docker and Compose versions:
+        - GPU:
+        - NVIDIA driver:
+        - NInfer submodule commit:
+        - Model artifact and checksum result:
+    validations:
+      required: true
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Redacted diagnostics
+      description: Add only relevant log excerpts or command output. Remove keys, tokens, private prompts, usernames, and personal paths.
+      render: shell
+
+  - type: dropdown
+    id: regression
+    attributes:
+      label: Regression
+      options:
+        - Not sure
+        - Yes, this worked previously
+        - No, this has never worked
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues and the troubleshooting guide.
+          required: true
+        - label: I removed secrets, private data, and machine-specific personal paths.
+          required: true
+        - label: This is not a security vulnerability.
+          required: true

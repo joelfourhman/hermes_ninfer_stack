@@ -1,0 +1,61 @@
+name: Feature request
+description: Propose a focused improvement to the stack.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the user problem before the implementation. Engine-level NInfer features should normally be proposed upstream.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What workflow or limitation should be improved, and who encounters it?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: Describe the desired behavior and where responsibility should live.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Include workarounds or simpler designs you evaluated.
+    validations:
+      required: true
+
+  - type: textarea
+    id: impact
+    attributes:
+      label: Security and reproducibility impact
+      description: Note effects on ports, networks, mounts, privileges, secrets, persistent state, downloads, GPU requirements, and fresh-clone setup.
+    validations:
+      required: true
+
+  - type: textarea
+    id: validation
+    attributes:
+      label: Acceptance criteria
+      description: What observable checks would demonstrate that the feature works?
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues and documentation for this request.
+          required: true
+        - label: This request belongs in the integration stack rather than wholly in an upstream dependency.
+          required: true
+        - label: I have not included a vulnerability or private information.
+          required: true

@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          submodules: false
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Exercise first-run initialization
+        shell: bash
+        run: ./scripts/setup.sh
+
+      - name: Create CI-only environment
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          cp .env.example .env.ci
+          ninfer_key="$(openssl rand -hex 32)"
+          hermes_key="$(openssl rand -hex 32)"
+          sed -i "s|^NINFER_API_KEY=.*|NINFER_API_KEY=${ninfer_key}|" .env.ci
+          sed -i "s|^HERMES_API_SERVER_KEY=.*|HERMES_API_SERVER_KEY=${hermes_key}|" .env.ci
+          chmod 0600 .env.ci
+
+      - name: Check generated and tracked text
+        shell: bash
+        run: git diff --check
+
+      - name: Validate repository invariants
+        shell: bash
+        run: python3 scripts/validate.py
+
+      - name: Validate Compose configuration
+        shell: bash
+        run: docker compose --env-file .env.ci config --quiet
+
+      - name: Check Bash syntax
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mapfile -d '' shell_files < <(
+            find . \
+              -path './.git' -prune -o \
+              -path './ninfer' -prune -o \
+              -type f -name '*.sh' -print0
+          )
+          ((${#shell_files[@]} > 0))
+          bash -n "${shell_files[@]}"
+
+      - name: Run ShellCheck
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          shellcheck --version
+          mapfile -d '' shell_files < <(
+            find . \
+              -path './.git' -prune -o \
+              -path './ninfer' -prune -o \
+              -type f -name '*.sh' -print0
+          )
+          ((${#shell_files[@]} > 0))
+          shellcheck "${shell_files[@]}"
+
+      - name: Build sandbox image
+        shell: bash
+        run: docker compose --env-file .env.ci build sandbox
