@@ -147,9 +147,11 @@ The startup graph checks useful readiness rather than container existence:
 
 - the key initializer must finish successfully before the sandbox starts;
 - the sandbox must have a valid authorized key, valid SSH configuration, and running daemon;
+- the networkless trust reconciler must validate the persisted sandbox public host key and update
+  only Hermes's `[sandbox]:2222` entry;
 - NInfer must finish loading the model and answer its HTTP health endpoint; and
-- Hermes starts only after both downstream services are healthy, then exposes its own loopback
-  health endpoint.
+- Hermes starts only after both downstream services are healthy and trust reconciliation succeeds,
+  then exposes its own loopback health endpoint.
 
 The long NInfer start period acknowledges that loading a 20 GiB artifact and initializing GPU
 state can take minutes. Graceful-stop windows give inference and orchestration time to finish
@@ -209,3 +211,5 @@ Changes should preserve these properties unless an ADR explicitly supersedes the
 5. The model artifact and NInfer source revision remain independently pinned and verifiable.
 6. Hermes and NInfer use the same public model alias and context ceiling.
 7. Healthchecks test service readiness, and the verifier tests a real end-to-end tool side effect.
+8. Hermes keeps strict SSH host-key checking; trust comes from the persisted Docker volume rather
+   than an unauthenticated network scan.

@@ -34,6 +34,12 @@ A one-shot, networkless initializer creates the persistent client key and author
 receives the client key read-only, while the sandbox receives the authorized key read-only. Hermes
 itself sees the shared workspace read-only; mutations occur through the SSH boundary.
 
+A second networkless, unprivileged one-shot service runs after sandbox health. It validates the
+ED25519 public host key from the persistent `sandbox-host-keys` volume, removes only the stale
+`[sandbox]:2222` record from Hermes's `known_hosts`, and installs the persisted public key. Hermes
+waits for this reconciliation and retains strict host-key checking. The reconciler receives neither
+network access nor read permission to the private host key.
+
 ## Alternatives considered
 
 - **Mount `/var/run/docker.sock` into Hermes.** Rejected because model-directed behavior could then

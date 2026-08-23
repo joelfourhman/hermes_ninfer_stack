@@ -414,26 +414,24 @@ workspace ownership no longer matches `HERMES_UID`/`HERMES_GID`.
 
 **Diagnosis**
 
-```bash
-docker compose ps
-docker compose logs --tail=100 sandbox-keygen sandbox
-docker compose exec -T hermes \
-  ssh -i /ssh/id_ed25519 -p 2222 \
-  -o BatchMode=yes -o StrictHostKeyChecking=accept-new \
-  agent@sandbox 'uname -r'
+```text
+python stack.py status
+python stack.py verify
 ```
 
 **Fix**
 
-Reconcile `sandbox-keygen` and `sandbox` with `docker compose up -d`. If volumes were deliberately
-deleted and only the old known-host entry remains, remove that one entry:
+Normal startup runs a network-isolated trust reconciler before Hermes. If volumes were deliberately
+deleted, a host-key mismatch remains from an older release, or verification reports stale trust, run:
 
-```bash
-docker compose exec hermes \
-  ssh-keygen -f /opt/data/home/.ssh/known_hosts -R '[sandbox]:2222'
+```text
+python stack.py repair-sandbox-trust
 ```
 
-Do not disable host-key checking globally.
+The command stops Hermes, rebuilds the two small sandbox services, verifies the public ED25519 key
+from the persisted `sandbox-host-keys` volume, replaces only `[sandbox]:2222` in
+`hermes-data/.ssh/known_hosts`, and starts Hermes again. It does not trust a key obtained from the
+network. Do not delete `known_hosts` or disable host-key checking globally.
 
 ## Model file permissions prevent loading
 

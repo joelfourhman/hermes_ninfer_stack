@@ -1,9 +1,9 @@
 # Architecture
 
-This repository packages four runtime roles into one Docker Compose project: Hermes Agent for
-orchestration, NInfer for local model serving, an SSH sandbox for agent-controlled command
-execution, and a one-shot key initializer for the sandbox. The release profile is deliberately
-specialized for one NVIDIA GeForce RTX 5090 and one resident Qwen3.8-27B NVFP4 model.
+This repository packages Hermes Agent for orchestration, NInfer for local model serving, an SSH
+sandbox for agent-controlled command execution, and networkless one-shot helpers for sandbox key
+initialization and host-trust reconciliation into one Docker Compose project. The release profile
+is deliberately specialized for one NVIDIA GeForce RTX 5090 and one resident Qwen3.8-27B NVFP4 model.
 
 The stack keeps orchestration, inference, and tool execution in separate trust and resource
 boundaries. They communicate through narrow network and filesystem interfaces rather than sharing
@@ -32,6 +32,8 @@ flowchart LR
     AuthorizedKey -. "read-only" .-> Sandbox
     Sandbox <--> SandboxHome[(Sandbox home)]
     Sandbox <--> HostKeys[(SSH host keys)]
+    HostKeys -. "public key only" .-> Trust[One-shot trust reconciler]
+    Trust -->|"[sandbox]:2222 known_hosts"| State
 ```
 
 Only NInfer receives a GPU reservation. Only the sandbox receives a writable host workspace. Only
@@ -45,6 +47,7 @@ Hermes joins the ordinary egress network.
 | NInfer | Artifact validation and loading, tokenization/template resources embedded in the artifact, GPU memory, generation, and the supported OpenAI-compatible HTTP surface | Agent state, tool execution, or Hermes configuration |
 | SSH sandbox | Terminal, file, and code-execution commands requested by Hermes; writable workspace and persistent user home | Model inference, Docker control, GPU access, or unrestricted network access |
 | Key initializer | Creation and ownership of the persistent SSH client/authorized-key pair | Long-running service traffic |
+| Trust reconciler | Validation and installation of the sandbox's persisted public host key in Hermes `known_hosts` | Network key discovery, private host-key access, or global SSH policy changes |
 | Host project | Compose definition, reviewed configuration template, model download workflow, and persistent bind-mount directories | Model weights in Git or live Hermes state in Git |
 
 NInfer may return structured tool calls, but it never executes them. Hermes validates and dispatches
@@ -133,11 +136,13 @@ runtime choice, not a claim that the artifact itself is text-only.
 |---|---|---|---|
 | `./models` | NInfer `/models` | Read-only | User-managed; excluded from Git |
 | `./hermes-data` | Hermes `/opt/data` | Read-write | Live config, secrets, sessions, memory, skills, and logs; fully excluded from Git |
+| `./hermes-data/.ssh` | Trust reconciler `/hermes-trust` | Read-write | Narrow host-trust update scope; no access to other Hermes state |
 | `./workspace` | Sandbox `/workspace` | Read-write | User and agent work; generated content excluded from Git |
 | `./workspace` | Hermes `/workspace` | Read-only | Context and path authorization without direct orchestrator writes |
 | `sandbox-client-key` | Hermes `/ssh` | Read-only | Docker named volume; survives recreation |
 | `sandbox-authorized-key` | Sandbox runtime | Read-only | Docker named volume; survives recreation |
 | `sandbox-host-keys` | Sandbox `/etc/ssh/host-keys` | Read-write | Stable SSH host identity |
+| `sandbox-host-keys` | Trust reconciler `/sandbox-host-key` | Read-only | Public key source; private key remains mode `0600` |
 | `sandbox-home` | Sandbox `/home/agent` | Read-write | Persistent user packages, caches, and shell state |
 
 `hermes/config.example.yaml` is the reviewed, non-secret configuration template. The setup and
@@ -177,7 +182,9 @@ Hermes's supported configuration interface instead of relying on hand-edited liv
 Startup has two independent branches before Hermes can run:
 
 1. `sandbox-keygen` creates or reuses the SSH client key and publishes its public key. `sandbox`
-   starts only after that one-shot service exits successfully.
+   starts only after that one-shot service exits successfully. Once the sandbox is healthy,
+   `sandbox-trust` validates its persisted ED25519 public host key and replaces only the
+   `[sandbox]:2222` entry in Hermes's `known_hosts`; Hermes waits for that one-shot service to finish.
 2. NInfer starts independently, validates and loads the artifact, initializes its GPU allocations,
    and then begins serving HTTP.
 

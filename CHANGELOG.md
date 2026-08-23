@@ -8,6 +8,9 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Automatic, network-isolated reconciliation of Hermes's strict SSH `known_hosts`
+  entry from the sandbox's persisted public host key, plus
+  `python stack.py repair-sandbox-trust` for explicit recovery.
 - Complete resumable `python stack.py setup` workflow that explicitly asks before
   downloading the model, guides the Hermes wizard, reapplies managed settings, and
   starts the finished stack.

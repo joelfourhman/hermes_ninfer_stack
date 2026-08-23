@@ -14,6 +14,7 @@ security boundary against a hostile Docker administrator.
 | Model downloader (explicit profile) | Read/write model directory | Temporary outbound access | Hugging Face staging cache under `models/` | Supply-chain input or corrupted partial download; final artifact is checksum-verified |
 | SSH sandbox | Read/write `workspace`; named home and SSH host-key volumes | Internal sandbox network only | Workspace, sandbox home, and SSH identity | Model-generated commands can alter all sandbox-visible data |
 | Sandbox key generator | Named SSH key volumes only | No network | Sandbox client and authorized keys | One-shot root process creates a long-lived credential |
+| Sandbox trust reconciler | Read-only sandbox host-key volume; read/write only `hermes-data/.ssh` | No network | One `[sandbox]:2222` public-key entry | A corrupted host-key volume could redirect Hermes tool execution; the service validates key type and never reads network key material |
 | Docker daemon | Full control of containers, images, networks, and volumes | Host-dependent | All Docker-managed state | Docker access is effectively host-administrator access |
 
 Only NInfer receives GPU access. No service mounts the Docker socket, uses
@@ -53,6 +54,9 @@ than the SSH sandbox.
 - The sandbox home, client key, authorized key, and host key are Docker named
   volumes. The home is shared across sessions, so shell configuration,
   installed packages, and other state can influence later runs.
+- Hermes keeps strict host-key checking enabled. A network-isolated, unprivileged
+  one-shot service reads the persisted public host key and reconciles only the
+  sandbox entry before Hermes starts; it cannot access the private host key.
 
 Do not place irreplaceable files or credentials in the workspace. Maintain
 backups outside every mounted directory. `docker compose down -v` deletes the

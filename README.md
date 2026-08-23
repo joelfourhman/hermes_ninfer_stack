@@ -294,8 +294,14 @@ python stack.py shell
 python stack.py shell ninfer
 python stack.py shell sandbox
 python stack.py gui
+python stack.py repair-sandbox-trust
 python stack.py down
 ```
+
+Normal startup reconciles Hermes's strict SSH trust entry with the sandbox's
+persisted public host key before Hermes starts. Use `repair-sandbox-trust` only
+after an intentional Docker volume reset or a reported host-key mismatch; it
+verifies the persisted key, replaces only `[sandbox]:2222`, and restarts Hermes.
 
 The optional Makefile remains as a convenience for Unix contributors, but it
 is not part of the installation or operation contract. `python stack.py down`
