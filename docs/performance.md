@@ -78,7 +78,9 @@ with a different word so the first run is not mixed with later full-prompt cache
 shared chat-template prefixes can still be reused and are disclosed in the report. Missing GPU
 samples, an early sampler exit, a model checksum mismatch, or incomplete SSE usage data makes the
 run fail instead of producing zero-valued measurements. Preserve the complete report—including
-per-run prompts, raw SSE timing, GPU samples, and NInfer logs—for any result you publish.
+per-run prompts, finish reasons, raw SSE timing, GPU samples, and NInfer logs—for any result you
+publish. The harness also requires the running image's OCI revision and CUDA-base labels to match
+the clean pinned NInfer worktree before it records that commit as provenance.
 
 ## Required result metadata
 

@@ -27,7 +27,8 @@ def error(message: str) -> None:
 
 def read_text(path: Path) -> str:
     try:
-        return path.read_text(encoding="utf-8")
+        with path.open("r", encoding="utf-8", newline="") as handle:
+            return handle.read()
     except (OSError, UnicodeDecodeError) as exc:
         error(f"cannot read {path.relative_to(ROOT)}: {exc}")
         return ""
@@ -106,11 +107,13 @@ for key, expected in expected_env.items():
 
 
 consistency_requirements = {
-    "docker-compose.yml": [EXPECTED_MODEL_FILE, EXPECTED_MODEL_ID, EXPECTED_CONTEXT],
+    "docker-compose.yml": [EXPECTED_NINFER_COMMIT, EXPECTED_MODEL_FILE, EXPECTED_MODEL_ID, EXPECTED_CONTEXT, "13.1.2-runtime-ubuntu24.04"],
     "hermes/config.example.yaml": [EXPECTED_MODEL_ID, EXPECTED_CONTEXT],
     "scripts/setup.sh": [EXPECTED_NINFER_COMMIT],
     "scripts/download-model.sh": [EXPECTED_MODEL_FILE, EXPECTED_MODEL_SHA256],
     "scripts/verify.sh": [EXPECTED_NINFER_COMMIT, EXPECTED_MODEL_FILE, EXPECTED_MODEL_SHA256],
+    "scripts/benchmark.sh": [EXPECTED_NINFER_COMMIT, EXPECTED_MODEL_SHA256],
+    "sandbox/Dockerfile": ["sha256:33ceb71981b602c1a7443a53469e4dba065f7503eab3078a2d7a57a2ab987517"],
     "docs/models.md": [EXPECTED_MODEL_FILE, EXPECTED_MODEL_ID, EXPECTED_MODEL_SHA256],
 }
 for relative, values in consistency_requirements.items():
@@ -152,10 +155,19 @@ for markdown in markdown_files:
             error(f"broken local link in {markdown.relative_to(ROOT)}: {target}")
 
 
-skip_roots = {".git", "ninfer", "hermes-data"}
+tracked_result = git("ls-files", "-z", check=False)
+if tracked_result.returncode != 0:
+    error("could not enumerate tracked repository files")
+    tracked_relatives: list[str] = []
+else:
+    tracked_relatives = [item for item in tracked_result.stdout.split("\0") if item]
+
 public_text_files: list[Path] = []
 text_names = {
     "Makefile",
+    "LICENSE",
+    "Dockerfile",
+    "sshd_config",
     ".env.example",
     ".gitignore",
     ".gitattributes",
@@ -163,19 +175,11 @@ text_names = {
     ".dockerignore",
 }
 text_suffixes = {".md", ".yml", ".yaml", ".sh", ".py", ".txt"}
-for path in ROOT.rglob("*"):
+for relative_name in tracked_relatives:
+    path = ROOT / relative_name
     if not path.is_file():
         continue
-    relative = path.relative_to(ROOT)
-    if any(part in skip_roots for part in relative.parts):
-        continue
-    if relative.parts and relative.parts[0] == "models" and relative.name != ".gitkeep":
-        continue
-    if relative.parts and relative.parts[0] == "workspace" and relative.name != "README.md":
-        continue
-    if relative.parts and relative.parts[0] == "benchmarks" and relative.name != "README.md":
-        continue
-    if path.name in text_names or path.suffix.lower() in text_suffixes or path.name == "Dockerfile":
+    if path.name in text_names or path.suffix.lower() in text_suffixes:
         public_text_files.append(path)
 
 machine_patterns = [
@@ -208,19 +212,12 @@ for path in public_text_files:
             error(f"trailing whitespace in {path.relative_to(ROOT)}:{number}")
 
 
-for path in ROOT.iterdir():
-    if path.name in {".git", "ninfer"}:
-        continue
-    if path.is_file() and path.stat().st_size > 50 * 1024 * 1024:
-        error(f"unexpected file larger than 50 MiB: {path.name}")
-for path in ROOT.rglob("*"):
+for relative_name in tracked_relatives:
+    path = ROOT / relative_name
     if not path.is_file():
         continue
-    relative = path.relative_to(ROOT)
-    if relative.parts and relative.parts[0] in {".git", "ninfer", "hermes-data"}:
-        continue
     if path.stat().st_size > 50 * 1024 * 1024:
-        error(f"unexpected public file larger than 50 MiB: {relative}")
+        error(f"unexpected tracked file larger than 50 MiB: {relative_name}")
 
 
 ignore_probes = [

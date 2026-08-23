@@ -5,6 +5,8 @@
 .venv/
 .venv-*/
 venv/
+__pycache__/
+*.py[cod]
 
 # Application-owned state. The reviewed baseline lives under hermes/.
 hermes-data/

@@ -9,7 +9,7 @@ die() {
   exit 1
 }
 
-for command_name in docker curl jq awk grep git date mktemp sed head tr; do
+for command_name in docker curl jq awk grep git date mktemp head tr; do
   command -v "$command_name" >/dev/null 2>&1 || die "missing required command: $command_name"
 done
 [[ -f .env ]] || die 'missing .env; run ./scripts/setup.sh'
@@ -83,11 +83,18 @@ gpu_line="$("${compose[@]}" exec -T ninfer nvidia-smi \
 gpu_name="$(awk -F, '{gsub(/^[ \t]+|[ \t]+$/, "", $1); print $1}' <<<"$gpu_line")"
 driver_version="$(awk -F, '{gsub(/^[ \t]+|[ \t]+$/, "", $2); print $2}' <<<"$gpu_line")"
 vram_total_mib="$(awk -F, '{gsub(/^[ \t]+|[ \t]+$/, "", $3); print $3}' <<<"$gpu_line")"
-ninfer_commit="$(git -C ninfer rev-parse HEAD)"
+expected_ninfer_commit='feaf4dd0983fdaeb2ba4c06eec6da350e644fb3a'
+source_commit="$(git -C ninfer rev-parse HEAD)"
+[[ "$source_commit" == "$expected_ninfer_commit" ]] || die "NInfer source is $source_commit; expected $expected_ninfer_commit"
+[[ -z "$(git -C ninfer status --porcelain --untracked-files=all)" ]] || die 'NInfer source has local or untracked changes'
 docker_version="$(docker version --format '{{.Server.Version}}')"
 compose_version="$(docker compose version --short)"
-cuda_base="$(grep -m1 -E '^FROM nvidia/cuda:' ninfer/Dockerfile | sed -E 's/^FROM nvidia\/cuda:([^ ]+).*/\1/')"
 image_id="$(docker inspect --format '{{.Image}}' "$ninfer_id")"
+image_revision="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$image_id")"
+cuda_base="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.base.name" }}' "$image_id")"
+[[ "$image_revision" == "$source_commit" ]] || die "running NInfer image revision is '$image_revision'; rebuild from $source_commit"
+[[ "$cuda_base" == 'docker.io/nvidia/cuda:13.1.2-runtime-ubuntu24.04' ]] || die "running NInfer image has unexpected base metadata: '$cuda_base'"
+ninfer_commit="$image_revision"
 model_path="$root_dir/models/$model_file"
 [[ -s "$model_path" ]] || die "model file is missing: models/$model_file"
 if command -v sha256sum >/dev/null 2>&1; then
@@ -109,6 +116,7 @@ jq -n \
   --arg compose "$compose_version" \
   --arg cuda_base "$cuda_base" \
   --arg ninfer_commit "$ninfer_commit" \
+  --arg source_commit "$source_commit" \
   --arg image_id "$image_id" \
   --arg model_id "$model_id" \
   --arg model_file "$model_file" \
@@ -128,7 +136,9 @@ jq -n \
     docker_compose:$compose,
     cuda_image:$cuda_base,
     ninfer_commit:$ninfer_commit,
+    source_worktree_commit:$source_commit,
     ninfer_image_id:$image_id,
+    image_provenance:"running OCI revision/base labels match the clean pinned worktree",
     model_id:$model_id,
     model_file:$model_file,
     model_sha256:$model_sha256,
@@ -157,8 +167,10 @@ curl --fail --silent --show-error --max-time 600 \
   "http://127.0.0.1:${host_port}/v1/chat/completions" \
   > "$result_dir/warmup.json" \
   || die 'warm-up request failed'
+jq -e '((.choices[0].message.content // "") | contains("WARMUP_OK"))' "$result_dir/warmup.json" >/dev/null \
+  || die 'warm-up request returned an unexpected response'
 
-printf 'run,prompt_tokens,completion_tokens,ttft_ms,total_seconds,generation_tokens_per_second,gpu_samples,gpu_utilization_mean_pct,gpu_utilization_max_pct,vram_max_mib\n' \
+printf 'run,prompt_tokens,completion_tokens,finish_reason,ttft_ms,total_seconds,generation_tokens_per_second,gpu_samples,gpu_utilization_mean_pct,gpu_utilization_max_pct,vram_max_mib\n' \
   > "$result_dir/runs.csv"
 
 for ((run = 1; run <= runs; run++)); do
@@ -209,6 +221,7 @@ for ((run = 1; run <= runs; run++)); do
   first_token_ns=''
   prompt_tokens=''
   completion_tokens=''
+  finish_reason=''
   while IFS=$'\t' read -r event_ns line; do
     [[ "$line" == data:* ]] || continue
     data="${line#data: }"
@@ -222,13 +235,16 @@ for ((run = 1; run <= runs; run++)); do
       <<<"$data" >> "$response_file" 2>/dev/null || true
     usage_prompt="$(jq -r '.usage.prompt_tokens // empty' <<<"$data" 2>/dev/null || true)"
     usage_completion="$(jq -r '.usage.completion_tokens // empty' <<<"$data" 2>/dev/null || true)"
+    event_finish_reason="$(jq -r '.choices[0].finish_reason // empty' <<<"$data" 2>/dev/null || true)"
     [[ -z "$usage_prompt" ]] || prompt_tokens="$usage_prompt"
     [[ -z "$usage_completion" ]] || completion_tokens="$usage_completion"
+    [[ -z "$event_finish_reason" ]] || finish_reason="$event_finish_reason"
   done < "$timed_sse"
 
   [[ "$first_token_ns" =~ ^[0-9]+$ ]] || die "request $run emitted no token-bearing SSE event"
   [[ "$prompt_tokens" =~ ^[0-9]+$ ]] || die "request $run emitted no prompt-token usage"
   [[ "$completion_tokens" =~ ^[0-9]+$ ]] || die "request $run emitted no completion-token usage"
+  [[ "$finish_reason" =~ ^[A-Za-z0-9_-]+$ ]] || die "request $run emitted no valid finish_reason"
 
   read -r ttft_ms total_seconds generation_tps < <(
     awk -v start="$start_ns" -v first="$first_token_ns" -v end="$end_ns" -v tokens="$completion_tokens" \
@@ -258,8 +274,8 @@ for ((run = 1; run <= runs; run++)); do
   )" || die "request $run produced no valid GPU samples; inspect run-$run_id.gpu.log"
   read -r gpu_sample_count gpu_mean gpu_max vram_max <<<"$gpu_metrics"
 
-  printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
-    "$run" "$prompt_tokens" "$completion_tokens" "$ttft_ms" "$total_seconds" \
+  printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
+    "$run" "$prompt_tokens" "$completion_tokens" "$finish_reason" "$ttft_ms" "$total_seconds" \
     "$generation_tps" "$gpu_sample_count" "$gpu_mean" "$gpu_max" "$vram_max" \
     >> "$result_dir/runs.csv"
 done
@@ -268,9 +284,10 @@ done
   || echo 'Warning: could not capture NInfer logs for this benchmark.' >&2
 
 read -r mean_ttft mean_tps peak_vram < <(
-  awk -F, 'NR>1 {n++; ttft+=$4; tps+=$6; if ($10>vram) vram=$10} END {printf "%.2f %.2f %.0f\n", ttft/n, tps/n, vram}' \
+  awk -F, 'NR>1 {n++; ttft+=$5; tps+=$7; if ($11>vram) vram=$11} END {printf "%.2f %.2f %.0f\n", ttft/n, tps/n, vram}' \
     "$result_dir/runs.csv"
 )
+length_stops="$(awk -F, 'NR>1 && $4 == "length" {n++} END {print n+0}' "$result_dir/runs.csv")"
 
 {
   echo '# Local NInfer benchmark'
@@ -287,6 +304,7 @@ read -r mean_ttft mean_tps peak_vram < <(
   echo "- Runtime profile: INT8 automatic KV, concurrency $max_concurrency, prefill 1024, MTP3, prefix reuse enabled"
   echo "- Timing: client-observed SSE wall clock on a warm persistent server"
   echo "- Cache control: each measured request begins with a different user word; shared chat-template prefixes may remain reusable"
+  echo "- Output limits: $length_stops of $runs runs ended with finish_reason=length; all reasons are in runs.csv"
   echo
   echo '| Runs | Mean TTFT | Mean generation | Peak VRAM |'
   echo '|---:|---:|---:|---:|'

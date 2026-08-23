@@ -96,6 +96,8 @@ actual_commit="$(git -C ninfer rev-parse HEAD 2>/dev/null)" \
 expected_commit='feaf4dd0983fdaeb2ba4c06eec6da350e644fb3a'
 [[ "$actual_commit" == "$expected_commit" ]] \
   || fail "NInfer is at $actual_commit, expected $expected_commit" 'git submodule update --init --recursive --checkout'
+[[ -z "$(git -C ninfer status --porcelain --untracked-files=all)" ]] \
+  || fail 'The NInfer worktree has local or untracked changes' 'preserve or remove them, then rebuild the image'
 pass "NInfer ${actual_commit:0:12}; Compose resolves"
 
 begin 'Docker daemon'
@@ -112,12 +114,28 @@ grep -q 'nvidia' <<<"$runtime_json" \
 pass 'NVIDIA runtime is registered with Docker'
 
 begin 'RTX 5090 GPU passthrough'
+ninfer_image_ref="$("${compose[@]}" config --images ninfer)" \
+  || fail 'Could not resolve the NInfer image name' 'docker compose --env-file .env config --images ninfer'
+[[ -n "$ninfer_image_ref" ]] \
+  || fail 'Compose did not resolve an image name for NInfer' 'docker compose --env-file .env config'
+ninfer_image_id="$(docker image inspect --format '{{.Id}}' "$ninfer_image_ref" 2>/dev/null)" \
+  || fail 'The NInfer image has not been built' 'docker compose build ninfer'
+[[ -n "$ninfer_image_id" ]] \
+  || fail 'The NInfer image has not been built' 'docker compose build ninfer'
+image_revision="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$ninfer_image_id" 2>/dev/null)" \
+  || fail 'The NInfer image metadata is unavailable' 'docker compose build --no-cache ninfer'
+image_base="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.base.name" }}' "$ninfer_image_id" 2>/dev/null)" \
+  || fail 'The NInfer base-image metadata is unavailable' 'docker compose build --no-cache ninfer'
+[[ "$image_revision" == "$expected_commit" ]] \
+  || fail "NInfer image revision is '$image_revision', expected $expected_commit" 'docker compose build ninfer'
+[[ "$image_base" == 'docker.io/nvidia/cuda:13.1.2-runtime-ubuntu24.04' ]] \
+  || fail "NInfer image base is '$image_base', expected CUDA 13.1.2 runtime" 'docker compose build ninfer'
 gpu_output="$("${compose[@]}" run --rm --no-deps -T --entrypoint nvidia-smi ninfer \
   --query-gpu=name,driver_version,memory.total --format=csv,noheader 2>&1)" \
   || fail 'A NInfer container could not access the selected GPU' 'docker compose run --rm --no-deps --entrypoint nvidia-smi ninfer'
 grep -qi 'RTX 5090' <<<"$gpu_output" \
   || fail "The selected container GPU is not an RTX 5090: $gpu_output" 'set NINFER_GPU_DEVICE in .env to the RTX 5090 index'
-pass "$gpu_output"
+pass "image ${image_revision:0:12}; $gpu_output"
 
 begin 'Pinned model artifact'
 model_file="$root_dir/models/$model_name"
@@ -135,6 +153,10 @@ pass 'Qwen3.8-27B NVFP4 checksum matches'
 begin 'NInfer container health'
 ninfer_id="$("${compose[@]}" ps -q ninfer)"
 [[ -n "$ninfer_id" ]] || fail 'NInfer is not running' 'docker compose up -d --wait --wait-timeout 900 ninfer'
+running_image_id="$(docker inspect --format '{{.Image}}' "$ninfer_id")" \
+  || fail "Could not inspect NInfer container $ninfer_id" 'docker compose up -d --force-recreate ninfer'
+[[ "$running_image_id" == "$ninfer_image_id" ]] \
+  || fail 'NInfer is running an older local image than the one just inspected' 'docker compose up -d --force-recreate ninfer'
 ninfer_health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}missing{{end}}' "$ninfer_id")" \
   || fail "Could not inspect NInfer container $ninfer_id" 'docker compose ps && docker compose logs --tail=100 ninfer'
 if [[ "$ninfer_health" != healthy ]]; then

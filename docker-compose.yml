@@ -70,6 +70,10 @@ services:
   ninfer:
     build:
       context: ./ninfer
+      labels:
+        org.opencontainers.image.source: https://github.com/Neroued/ninfer
+        org.opencontainers.image.revision: feaf4dd0983fdaeb2ba4c06eec6da350e644fb3a
+        org.opencontainers.image.base.name: docker.io/nvidia/cuda:13.1.2-runtime-ubuntu24.04
     command:
       - ninfer-serve
       - /models/${NINFER_MODEL_FILE:-qwen3_8_27b_nvfp4.ninfer}

@@ -123,7 +123,9 @@ docker compose build
 ```
 
 This compiles the pinned NInfer source with its CUDA 13.1.2 build image and builds the SSH sandbox.
-The model is mounted read-only at runtime and is not copied into either image.
+Compose stamps the NInfer image with the pinned source revision and runtime-base provenance; the
+verifier rejects a stale or differently labeled image. The model is mounted read-only at runtime
+and is not copied into either image.
 
 ## 6. Start NInfer and the sandbox
 

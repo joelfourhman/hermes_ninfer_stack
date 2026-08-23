@@ -197,7 +197,7 @@ and exits non-zero. Its eleven layers cover:
 2. Compose resolution and the NInfer source pin;
 3. Docker daemon access;
 4. NVIDIA runtime registration;
-5. RTX 5090 passthrough from the NInfer image;
+5. NInfer running-image revision/base provenance and RTX 5090 passthrough;
 6. model presence and SHA-256;
 7. NInfer application health;
 8. authenticated `/v1/models` and direct chat completion;
@@ -293,11 +293,11 @@ After full verification passes:
 # BENCHMARK_RUNS=5 BENCHMARK_MAX_TOKENS=1024 make benchmark
 ```
 
-The harness records model/configuration metadata, prompt and completion token
-counts, client-observed streaming TTFT, generation throughput, sampled GPU
-utilization, peak VRAM, driver, CUDA image, Docker version, and NInfer commit.
-Raw SSE timing, GPU samples, prompts, and responses stay under ignored
-`benchmarks/` for review.
+The harness records model/configuration metadata, the verified running-image
+revision and CUDA base, prompt and completion token counts, finish reasons,
+client-observed streaming TTFT, generation throughput, sampled GPU utilization,
+peak VRAM, driver, and Docker versions. Raw SSE timing, GPU samples, prompts,
+responses, and NInfer logs stay under ignored `benchmarks/` for review.
 
 No benchmark is fabricated or inferred from service health. The
 [Performance guide](docs/performance.md) clearly separates local results from

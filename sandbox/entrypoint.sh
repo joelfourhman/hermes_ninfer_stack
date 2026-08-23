@@ -32,7 +32,10 @@ case "$mode" in
       /home/agent/.ssh/authorized_keys
 
     install -d -m 0700 /etc/ssh/host-keys
-    if [[ ! -s /etc/ssh/host-keys/ssh_host_ed25519_key ]]; then
+    if [[ ! -s /etc/ssh/host-keys/ssh_host_ed25519_key \
+      || ! -s /etc/ssh/host-keys/ssh_host_ed25519_key.pub ]]; then
+      rm -f /etc/ssh/host-keys/ssh_host_ed25519_key \
+        /etc/ssh/host-keys/ssh_host_ed25519_key.pub
       ssh-keygen -q -t ed25519 -N "" -f /etc/ssh/host-keys/ssh_host_ed25519_key
     fi
     chmod 0600 /etc/ssh/host-keys/ssh_host_ed25519_key

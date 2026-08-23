@@ -18,7 +18,8 @@ Audit date: 2026-08-23.
 | Docker Engine | 29.6.1 | Docker daemon version query |
 | Docker Compose | 5.3.0 | Compose version query |
 | NInfer CUDA images | CUDA 13.1.2 on Ubuntu 24.04 | Pinned upstream Dockerfile |
-| NInfer source | `feaf4dd0983fdaeb2ba4c06eec6da350e644fb3a` | Pinned clean submodule; image build passed |
+| Sandbox base | Ubuntu 24.04, `sha256:33ceb719…` | Digest-pinned Dockerfile base |
+| NInfer source | `feaf4dd0983fdaeb2ba4c06eec6da350e644fb3a` | Clean submodule; image build and OCI revision-label check passed |
 | Hermes Agent | 0.20.5, tag/image `v2026.8.19` | Exact digest pulled; container CLI version checked |
 | Model | Qwen3.8-27B NVFP4 NInfer v2 artifact | Pinned download metadata |
 | Model SHA-256 | `bb3360522a06e136e0367f5703414d26272b7285c8a6ab6194135c17dbd81b32` | Published artifact metadata |
@@ -45,6 +46,13 @@ NInfer currently requires:
 The source build rejects CUDA architectures other than `120a`. RTX 4090, other Ada GPUs, older CUDA
 toolchains, CPU-only execution, multi-GPU sharding, and non-NVIDIA accelerators are not supported by
 this repository.
+
+The pinned NInfer commit's upstream Dockerfile names its CUDA build and runtime bases by versioned
+tag rather than digest. The audited build resolved those tags to platform manifests
+`sha256:b9f64abf…` (devel) and `sha256:bff001d3…` (runtime). A future registry retag can therefore
+change lower layers even while the NInfer source pin remains fixed; review build provenance on
+rebuilds. The stack-owned sandbox base is digest-pinned, although its `apt` package transaction is
+still a time-varying supply-chain input.
 
 ## What is Blackwell-specific
 

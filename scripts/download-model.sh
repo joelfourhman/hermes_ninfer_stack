@@ -4,10 +4,20 @@ set -Eeuo pipefail
 root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 model_dir="$root_dir/models"
 model_name='qwen3_8_27b_nvfp4.ninfer'
+
+if (( $# > 1 )) || { (( $# == 1 )) && [[ "$1" != "--yes" ]]; }; then
+  echo "Usage: ./scripts/download-model.sh [--yes]" >&2
+  exit 2
+fi
+
 if [[ -f "$root_dir/.env" ]]; then
-  configured_name="$(grep -E '^NINFER_MODEL_FILE=' "$root_dir/.env" | tail -n 1 | tr -d '\r' | cut -d= -f2-)"
-  [[ -z "$configured_name" || "$configured_name" == "$model_name" ]] \
-    || { echo "This helper downloads only the tested $model_name artifact; .env selects $configured_name." >&2; exit 1; }
+  if ! configured_line="$(grep -E '^NINFER_MODEL_FILE=' "$root_dir/.env" | tail -n 1 | tr -d '\r')"; then
+    echo "NINFER_MODEL_FILE is missing from .env; compare it with .env.example." >&2
+    exit 1
+  fi
+  configured_name="${configured_line#*=}"
+  [[ "$configured_name" == "$model_name" ]] \
+    || { echo "This helper downloads only the tested $model_name artifact; .env selects ${configured_name:-an empty value}." >&2; exit 1; }
 fi
 model_file="$model_dir/$model_name"
 repo='neroued/Qwen3.8-27B-nvfp4-NInfer'
@@ -39,11 +49,6 @@ if [[ -s "$model_file" ]]; then
   echo "Model already exists; verifying it instead of downloading again."
   verify_checksum
   exit 0
-fi
-
-if (( $# > 1 )) || { (( $# == 1 )) && [[ "$1" != "--yes" ]]; }; then
-  echo "Usage: ./scripts/download-model.sh [--yes]" >&2
-  exit 2
 fi
 
 if ! command -v hf >/dev/null 2>&1 || ! hf download --help >/dev/null 2>&1; then
