@@ -1,5 +1,8 @@
 FROM ubuntu:24.04@sha256:33ceb71981b602c1a7443a53469e4dba065f7503eab3078a2d7a57a2ab987517
 
+COPY --from=ghcr.io/astral-sh/uv:0.12.5-python3.13-trixie-slim@sha256:d1e005e6f5aac724b7554db95f1c128a77d8d35b59ebe70e188852b4bdad3a3d \
+    /usr/local/bin/uv /usr/local/bin/uvx /usr/local/bin/
+
 ARG DEBIAN_FRONTEND=noninteractive
 ARG SANDBOX_UID=1000
 ARG SANDBOX_GID=1000
@@ -19,8 +22,6 @@ RUN apt-get update \
         openssh-server \
         procps \
         python3 \
-        python3-pip \
-        python3-venv \
         ripgrep \
         tar \
         tini \
@@ -55,6 +56,9 @@ RUN apt-get update \
        fi \
     && usermod --groups "" agent \
     && passwd --delete agent
+
+ENV UV_CACHE_DIR=/tmp/uv-cache \
+    UV_PYTHON_DOWNLOADS=0
 
 COPY sshd_config /etc/ssh/sshd_config
 COPY entrypoint.sh /usr/local/bin/hermes-sandbox-entrypoint

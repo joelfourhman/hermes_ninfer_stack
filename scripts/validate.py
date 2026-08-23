@@ -55,6 +55,9 @@ required_paths = [
     ".gitignore",
     ".gitmodules",
     "docker-compose.yml",
+    "stack.py",
+    "model-downloader/Dockerfile",
+    "model-downloader/download_model.py",
     "Makefile",
     "hermes/config.example.yaml",
     "sandbox/Dockerfile",
@@ -63,7 +66,9 @@ required_paths = [
     "scripts/configure-hermes.sh",
     "scripts/download-model.sh",
     "scripts/verify.sh",
+    "scripts/verify.py",
     "scripts/benchmark.sh",
+    "scripts/benchmark.py",
     "docs/architecture.md",
     "docs/installation.md",
     "docs/configuration.md",
@@ -92,7 +97,12 @@ if missing_env:
     error("Compose variables missing from .env.example: " + ", ".join(missing_env))
 
 env_values = dict(env_pairs)
-for secret_name in ("NINFER_API_KEY", "HERMES_API_SERVER_KEY"):
+for secret_name in (
+    "NINFER_API_KEY",
+    "HERMES_API_SERVER_KEY",
+    "HERMES_DASHBOARD_PASSWORD",
+    "HERMES_DASHBOARD_SECRET",
+):
     if env_values.get(secret_name) != "":
         error(f"{secret_name} must be empty in .env.example so Compose fails closed")
 
@@ -110,10 +120,13 @@ consistency_requirements = {
     "docker-compose.yml": [EXPECTED_NINFER_COMMIT, EXPECTED_MODEL_FILE, EXPECTED_MODEL_ID, EXPECTED_CONTEXT, "13.1.2-runtime-ubuntu24.04"],
     "hermes/config.example.yaml": [EXPECTED_MODEL_ID, EXPECTED_CONTEXT],
     "scripts/setup.sh": [EXPECTED_NINFER_COMMIT],
-    "scripts/download-model.sh": [EXPECTED_MODEL_FILE, EXPECTED_MODEL_SHA256],
-    "scripts/verify.sh": [EXPECTED_NINFER_COMMIT, EXPECTED_MODEL_FILE, EXPECTED_MODEL_SHA256],
-    "scripts/benchmark.sh": [EXPECTED_NINFER_COMMIT, EXPECTED_MODEL_SHA256],
-    "sandbox/Dockerfile": ["sha256:33ceb71981b602c1a7443a53469e4dba065f7503eab3078a2d7a57a2ab987517"],
+    "model-downloader/download_model.py": [EXPECTED_MODEL_FILE, EXPECTED_MODEL_SHA256],
+    "scripts/verify.py": [EXPECTED_NINFER_COMMIT, EXPECTED_MODEL_FILE, EXPECTED_MODEL_SHA256],
+    "scripts/benchmark.py": [EXPECTED_NINFER_COMMIT, EXPECTED_MODEL_SHA256],
+    "sandbox/Dockerfile": [
+        "sha256:33ceb71981b602c1a7443a53469e4dba065f7503eab3078a2d7a57a2ab987517",
+        "sha256:d1e005e6f5aac724b7554db95f1c128a77d8d35b59ebe70e188852b4bdad3a3d",
+    ],
     "docs/models.md": [EXPECTED_MODEL_FILE, EXPECTED_MODEL_ID, EXPECTED_MODEL_SHA256],
 }
 for relative, values in consistency_requirements.items():
@@ -274,7 +287,7 @@ if stage.returncode != 0 or not stage.stdout.strip():
 else:
     for line in stage.stdout.splitlines():
         mode, _, _, name = line.split(maxsplit=3)
-        if (name.startswith("scripts/") and name.endswith((".sh", ".py"))) or name == "sandbox/entrypoint.sh":
+        if (name.startswith("scripts/") and name.endswith(".sh")) or name == "sandbox/entrypoint.sh":
             if mode != "100755":
                 error(f"executable must be committed with mode 100755: {name} (is {mode})")
 

@@ -6,6 +6,28 @@ x-sandbox-build: &sandbox-build
       SANDBOX_GID: ${HERMES_GID:-1000}
 
 services:
+  model-downloader:
+    profiles: [tools]
+    build:
+      context: ./model-downloader
+    restart: "no"
+    user: "${HERMES_UID:-1000}:${HERMES_GID:-1000}"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    environment:
+      HOME: /tmp
+      HF_HOME: /models/.cache/huggingface
+      HF_TOKEN: ${HF_TOKEN:-}
+    volumes:
+      - ./models:/models
+    tmpfs:
+      - /tmp:size=512m,mode=1777
+    networks:
+      - control-net
+
   sandbox-keygen:
     <<: *sandbox-build
     command: ["init-key"]
@@ -82,7 +104,7 @@ services:
       - --port
       - "8080"
       - --api-key
-      - ${NINFER_API_KEY:?Run ./scripts/setup.sh to create .env}
+      - ${NINFER_API_KEY:?Run python stack.py setup to create .env}
       - --model-id
       - ${NINFER_MODEL_ID:-qwen-local}
       - --max-context
@@ -147,10 +169,18 @@ services:
       HERMES_UID: ${HERMES_UID:-1000}
       HERMES_GID: ${HERMES_GID:-1000}
       HERMES_WRITE_SAFE_ROOT: /opt/data:/workspace
-      NINFER_API_KEY: ${NINFER_API_KEY:?Run ./scripts/setup.sh to create .env}
+      NINFER_API_KEY: ${NINFER_API_KEY:?Run python stack.py setup to create .env}
       API_SERVER_ENABLED: "true"
       API_SERVER_HOST: 127.0.0.1
-      API_SERVER_KEY: ${HERMES_API_SERVER_KEY:?Run ./scripts/setup.sh to create .env}
+      API_SERVER_KEY: ${HERMES_API_SERVER_KEY:?Run python stack.py setup to create .env}
+      HERMES_DASHBOARD: ${HERMES_DASHBOARD_ENABLED:-true}
+      HERMES_DASHBOARD_HOST: 0.0.0.0
+      HERMES_DASHBOARD_PORT: "9119"
+      HERMES_DASHBOARD_BASIC_AUTH_USERNAME: ${HERMES_DASHBOARD_USERNAME:?Run python stack.py setup to create .env}
+      HERMES_DASHBOARD_BASIC_AUTH_PASSWORD: ${HERMES_DASHBOARD_PASSWORD:?Run python stack.py setup to create .env}
+      HERMES_DASHBOARD_BASIC_AUTH_SECRET: ${HERMES_DASHBOARD_SECRET:?Run python stack.py setup to create .env}
+    ports:
+      - 127.0.0.1:${HERMES_DASHBOARD_HOST_PORT:-9119}:9119
     volumes:
       - ./hermes-data:/opt/data
       - ./workspace:/workspace:ro

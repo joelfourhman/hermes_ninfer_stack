@@ -19,14 +19,14 @@ help:
 	@echo "  clean              stop containers and remove local images only; preserve all data"
 
 setup:
-	cd "$(STACK_DIR)" && ./scripts/setup.sh
+	cd "$(STACK_DIR)" && python3 stack.py setup
 
 init:
 	@echo "'make init' is retained as an alias for 'make setup'."
 	$(MAKE) setup
 
 download-model:
-	cd "$(STACK_DIR)" && ./scripts/download-model.sh
+	cd "$(STACK_DIR)" && python3 stack.py download-model
 
 build:
 	$(COMPOSE) build
@@ -76,13 +76,13 @@ setup-hermes:
 	$(COMPOSE) run --rm --no-deps hermes setup
 
 configure-hermes:
-	cd "$(STACK_DIR)" && ./scripts/configure-hermes.sh
+	cd "$(STACK_DIR)" && python3 stack.py configure-hermes
 
 verify:
-	cd "$(STACK_DIR)" && ./scripts/verify.sh
+	cd "$(STACK_DIR)" && python3 stack.py verify
 
 benchmark:
-	cd "$(STACK_DIR)" && ./scripts/benchmark.sh
+	cd "$(STACK_DIR)" && python3 stack.py benchmark
 
 validate:
 	cd "$(STACK_DIR)" && python3 ./scripts/validate.py

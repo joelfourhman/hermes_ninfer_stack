@@ -38,8 +38,12 @@ jobs:
           cp .env.example .env.ci
           ninfer_key="$(openssl rand -hex 32)"
           hermes_key="$(openssl rand -hex 32)"
+          dashboard_password="$(openssl rand -hex 24)"
+          dashboard_secret="$(openssl rand -hex 32)"
           sed -i "s|^NINFER_API_KEY=.*|NINFER_API_KEY=${ninfer_key}|" .env.ci
           sed -i "s|^HERMES_API_SERVER_KEY=.*|HERMES_API_SERVER_KEY=${hermes_key}|" .env.ci
+          sed -i "s|^HERMES_DASHBOARD_PASSWORD=.*|HERMES_DASHBOARD_PASSWORD=${dashboard_password}|" .env.ci
+          sed -i "s|^HERMES_DASHBOARD_SECRET=.*|HERMES_DASHBOARD_SECRET=${dashboard_secret}|" .env.ci
           chmod 0600 .env.ci
 
       - name: Check generated and tracked text
