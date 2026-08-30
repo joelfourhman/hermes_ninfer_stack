@@ -200,8 +200,8 @@ if (
     or 'max-file: "3"' not in ninfer_service
 ):
     error("NInfer logs must be bounded to avoid silently filling the Docker disk")
-if "internal: true" not in compose_text:
-    error("the persistent NInfer network must remain isolated from external networks")
+if "internal: true" in compose_text:
+    error("NInfer's host-loopback port cannot use an internal Docker network")
 
 unsafe_compose_patterns = {
     r"(?m)^\s*privileged:\s*true\s*$": "privileged containers",

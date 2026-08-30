@@ -16,13 +16,15 @@ modifying or deleting files the current user can modify or delete.
 | Component | Host access | Network access | Persistent data | Principal risk |
 | --- | --- | --- | --- | --- |
 | Native Hermes Desktop/runtime | Everything allowed to the current user | NInfer loopback endpoint and any egress allowed to the user | Standard Hermes config, secrets, sessions, memory, skills, logs | Prompt injection, unsafe tools, plugins, or compromised runtime acting with user authority |
-| NInfer container | Read-only model directory and GPU device | Authenticated loopback-published API | No application state in Compose | Native parser/runtime or GPU-driver compromise |
+| NInfer container | Read-only model directory and GPU device | Authenticated loopback-published API; ordinary outbound bridge access | No application state in Compose | Native parser/runtime, outbound access, or GPU-driver compromise |
 | Model downloader | Read/write `models/` during explicit acquisition | Temporary outbound Hugging Face access | Partial download/cache beneath `models/` | Supply-chain input or corrupted partial file; final artifact is checksum-verified |
 | Docker daemon | Container, image, network, volume, and GPU control | Host-dependent | Docker-managed state | Docker access is effectively administrative for this deployment |
 
 NInfer is the only long-running container. No Docker socket, broad host path,
 host network, host PID namespace, or privileged mode is exposed to it. The
-model is mounted read-only.
+model is mounted read-only. Its bridge is not an `internal` Docker network
+because Docker Desktop cannot publish an internal-network service to the host
+loopback interface; therefore the container is not an egress sandbox.
 
 There is no active SSH sandbox. Historical documentation describing one is
 retained only in the superseded ADR.

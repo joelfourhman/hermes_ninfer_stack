@@ -966,16 +966,17 @@ def setup(args: argparse.Namespace) -> None:
 
 def start_ninfer(values: dict[str, str]) -> None:
     print("Starting the model. This can take several minutes the first time...")
+    up_command = (
+        "up",
+        "-d",
+        "--remove-orphans",
+        "--wait",
+        "--wait-timeout",
+        "900",
+        "ninfer",
+    )
     try:
-        compose(
-            "up",
-            "-d",
-            "--remove-orphans",
-            "--wait",
-            "--wait-timeout",
-            "900",
-            "ninfer",
-        )
+        compose(*up_command)
     except StackError as exc:
         raise StackError(
             "The local AI service did not become ready. Docker Desktop shows the container "
@@ -984,6 +985,23 @@ def start_ninfer(values: dict[str, str]) -> None:
         ) from exc
     try:
         require_ninfer_api(values)
+    except StackError:
+        # Docker Desktop can occasionally create a healthy container without
+        # activating its requested host-port forwarding. A former internal
+        # network configuration can also remain until its network is removed.
+        print("The model is healthy but its private localhost connection is missing.")
+        print("Recreating the Docker network once to repair port forwarding...")
+        try:
+            compose("down", "--remove-orphans")
+            compose(*up_command)
+            require_ninfer_api(values)
+        except StackError as exc:
+            raise StackError(
+                f"The model is healthy inside Docker but is not reachable at "
+                f"{ninfer_endpoint(values)}. Restart Docker Desktop, then rerun "
+                "'python ninfer.py up'."
+            ) from exc
+    try:
         print("Asking the model for a short test answer...")
         require_ninfer_generation(values)
     except StackError as exc:

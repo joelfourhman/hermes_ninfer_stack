@@ -95,4 +95,3 @@ services:
 networks:
   inference-net:
     driver: bridge
-    internal: true

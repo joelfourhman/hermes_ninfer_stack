@@ -30,6 +30,9 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   signed-in host user.
 - Published the authenticated NInfer API on host loopback for native Hermes,
   without exposing it to the LAN.
+- Removed the contradictory internal-network flag so Docker Desktop can
+  actually publish that loopback port, and added one automatic network
+  recreation when a healthy container has no reachable localhost endpoint.
 - Tuned the single-user interactive profile to 65,536 context tokens, a
   65,536-token INT8 KV pool, concurrency 1, MTP speculative decoding, and three
   draft tokens.

@@ -532,6 +532,29 @@ class BeginnerRecoveryTests(unittest.TestCase):
         self.assertLess(events.index("api-ready"), events.index("generation-ready"))
         self.assertIn("READY", output.getvalue())
 
+    def test_start_recreates_network_once_when_loopback_api_is_missing(self) -> None:
+        compose_calls: list[tuple[str, ...]] = []
+
+        def fake_compose(*args: str, **_: object) -> subprocess.CompletedProcess[str]:
+            compose_calls.append(args)
+            return subprocess.CompletedProcess(["docker"], 0, stdout="", stderr="")
+
+        api_check = mock.Mock(side_effect=[ninfer.StackError("connection refused"), None])
+        with (
+            mock.patch.object(ninfer, "compose", side_effect=fake_compose),
+            mock.patch.object(ninfer, "require_ninfer_api", api_check),
+            mock.patch.object(ninfer, "require_ninfer_generation") as generation,
+            redirect_stdout(StringIO()) as output,
+        ):
+            ninfer.start_ninfer(sample_values())
+
+        self.assertEqual(len(compose_calls), 3)
+        self.assertEqual(compose_calls[1], ("down", "--remove-orphans"))
+        self.assertEqual(compose_calls[0], compose_calls[2])
+        self.assertEqual(api_check.call_count, 2)
+        generation.assert_called_once_with(sample_values())
+        self.assertIn("Recreating the Docker network once", output.getvalue())
+
     def test_hermes_is_relaunched_after_configuration_on_windows(self) -> None:
         values = sample_values()
         with tempfile.TemporaryDirectory() as temporary:

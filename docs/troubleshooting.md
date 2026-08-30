@@ -190,6 +190,12 @@ A 401 normally means the request omitted or used the wrong project key. A model
 list that lacks `NINFER_MODEL_ID` normally means the running container was not
 recreated after an alias change.
 
+If Docker reports the container as healthy but `127.0.0.1` refuses the
+connection, rerun `python ninfer.py up`. The helper recreates the project
+network once to repair missing Docker Desktop port forwarding. Releases before
+this recovery existed incorrectly used an internal Docker network, which could
+not publish its port to the Windows host.
+
 Use `python ninfer.py verify` rather than printing the key or constructing a
 diagnostic command that exposes it in command history. For service state and
 output, use:
@@ -316,6 +322,11 @@ python ninfer.py logs
 
 Stop NInfer, correct the first startup error, and start it again. Do not delete
 the model or project `.env` as a generic restart remedy.
+
+One early `CUDA Graph preparation consumed ... exceeding the planned
+allowance` message followed by a successful restart and `listening on` message
+is self-recovered. If that graph error repeats without a later successful
+listener, capture the logs and report it as an NInfer compatibility problem.
 
 ## Verification retained diagnostic responses
 

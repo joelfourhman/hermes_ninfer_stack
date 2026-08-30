@@ -26,7 +26,8 @@ branch are expected to receive security fixes.
 - **NInfer is the only long-running application container.** Its API is bound to
   host loopback and requires the generated bearer key. It receives GPU access
   and a read-only model mount, but no Docker socket or broad host-filesystem
-  access.
+  access. Its normal Docker bridge permits outbound traffic; it is not an
+  egress sandbox.
 - **The model downloader is a one-shot utility container.** It writes only to the
   local model directory. Model revisions and checksums are pinned, but operators
   should still treat downloaded artifacts as third-party code or data.

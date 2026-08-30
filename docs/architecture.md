@@ -83,7 +83,11 @@ address, never the former container-only hostname `ninfer`.
 
 NInfer does not need a Docker network shared with Hermes because Hermes is not
 in Docker. No relay container is required, and no Docker socket is exposed to
-Hermes.
+Hermes. The bridge is intentionally not marked `internal`: Docker Desktop does
+not connect internal networks to host interfaces, so doing so silently defeats
+the required loopback publication on Windows. This means NInfer can initiate
+ordinary outbound connections through Docker's bridge. Its host access remains
+limited to the read-only model bind mount and selected GPU.
 
 ## Configuration boundary
 
