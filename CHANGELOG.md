@@ -8,50 +8,62 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- Automatic, network-isolated reconciliation of Hermes's strict SSH `known_hosts`
-  entry from the sandbox's persisted public host key, plus
-  `python stack.py repair-sandbox-trust` for explicit recovery.
-- Complete resumable `python stack.py setup` workflow that explicitly asks before
-  downloading the model, guides the Hermes wizard, reapplies managed settings, and
-  starts the finished stack.
-- Exact Blank Slate, `ninfer`, `qwen-local`, and SSH wizard guidance, including
-  Hermes's transient no-provider warning.
+- Cross-platform `python ninfer.py setup` workflow that creates local
+  configuration, explicitly asks before downloading the model, starts NInfer,
+  and then offers to install and configure stock Hermes Desktop.
+- `python ninfer.py install-hermes` helper that directs users to the official
+  stock installer when needed, then configures Hermes's custom
+  OpenAI-compatible provider for the local NInfer endpoint.
+- Beginner preflight checks for Python, disk space, Git, the RTX 5090 driver,
+  Docker Compose, a running Docker engine, and Linux-container mode. On
+  Windows, setup starts an installed Docker Desktop application when needed.
+- Automatic RTX 5090 device selection for fresh multi-GPU installations, with
+  an early error when an existing `.env` points at another GPU.
+- Pinned Qwen3.8-27B NVFP4 model acquisition with revision and checksum
+  verification through a uv-managed one-shot Compose utility.
+- Layered validation, direct-NInfer verification, and RTX 5090 benchmark helpers.
 
 ### Changed
 
-- Tune the single-user interactive profile to 65,536 context tokens, a 65,536-token
-  explicit INT8 KV pool, concurrency 1, Hermes compression, and a 40-turn agent cap.
-- Expose and validate `NINFER_KV_CAPACITY`, `HERMES_COMPRESSION_ENABLED`, and
-  `HERMES_MAX_TURNS` as supported cross-platform configuration.
-- Preserve NInfer's internal-only network isolation while publishing host-loopback
-  diagnostics through a credential-free, unprivileged Docker Desktop relay.
-- Cross-platform `python stack.py` control command for setup, Compose lifecycle,
-  Hermes configuration, container shells, dashboard access, and verification.
-- Authenticated loopback-only Hermes web dashboard and a uv-managed Compose
-  utility for the revision- and checksum-pinned model download.
-- Reproducible Docker Compose topology for Hermes Agent, NInfer, and a separate
-  SSH execution sandbox.
-- Pinned Qwen3.8-27B NVFP4 model acquisition with revision and checksum
-  verification.
-- Local secret generation, Hermes configuration, layered verification, and
-  benchmark helpers.
-- GPU ownership, internal network, persistent-state, healthcheck, and startup
-  ordering configuration.
-- Architecture, installation, configuration, model, security, compatibility,
-  performance, troubleshooting, and design documentation.
-- Non-GPU continuous integration for static validation, Compose rendering,
-  shell analysis, and the sandbox image build.
-- Public issue templates, contribution guidance, a security policy, and an
-  Apache-2.0 license for stack-authored files.
+- Simplified the runtime architecture so NInfer is the only long-running
+  application container; stock Hermes Desktop or native Hermes now runs as the
+  signed-in host user.
+- Published the authenticated NInfer API on host loopback for native Hermes,
+  without exposing it to the LAN.
+- Tuned the single-user interactive profile to 65,536 context tokens, a
+  65,536-token INT8 KV pool, concurrency 1, MTP speculative decoding, and three
+  draft tokens.
+- Made `python ninfer.py` the single supported control surface for setup,
+  lifecycle, Hermes integration, validation, verification, and benchmarking.
+- Made Enter accept both normal first-run choices, added numbered progress and
+  resumable error guidance, and made `up` wait until the authenticated model
+  API is actually ready and returns a short generated answer.
+- Added a stock Hermes close/reload handoff and automatic Windows Desktop
+  relaunch when the standard executable is available. The Hermes-only recovery
+  command also starts Docker and an already-configured NInfer service when
+  needed.
+- Removed the legacy Bash wrappers, container-Hermes configuration, loopback
+  relay, and SSH-sandbox build assets.
+- Updated architecture, installation, configuration, model, security,
+  compatibility, performance, troubleshooting, and design documentation for the
+  native-Hermes boundary.
+- Simplified non-GPU continuous integration around Python validation, Compose
+  rendering, and the one-shot model-downloader image.
 
 ### Security
 
-- Generated independent dashboard credentials and session-signing secret; the
-  dashboard redirects unauthenticated requests to its login gate.
-- Replaced pip in the tool sandbox with digest-pinned `uv` and `uvx` binaries.
 - Kept the NInfer host API on loopback and authenticated it with a generated
   bearer key.
-- Isolated model-generated commands in a resource-limited, no-egress sandbox
-  without Docker-socket, privileged, GPU, or broad host-filesystem access.
-- Excluded secrets, model weights, Hermes runtime state, logs, SSH material,
-  and workspace output from Git.
+- Restricted the NInfer service to its model mount and GPU; it receives no broad
+  host-filesystem mount, Docker socket, privileged mode, or host networking.
+- Dropped container capabilities, enabled no-new-privileges and init handling,
+  and bounded NInfer logs so they cannot grow without limit.
+- Configured and verified Hermes `approvals.mode: manual` for the native
+  beginner profile instead of relying on the stock smart-approval default.
+- Configured Hermes's local terminal to start in `workspace/` and restricted
+  direct file-write tools to that folder plus its own profile with
+  `HERMES_WRITE_SAFE_ROOT`.
+- Documented that native Hermes has the signed-in user's filesystem authority and
+  that UAC protects administrator elevation, not ordinary same-user files.
+- Excluded secrets, model weights, local Hermes configuration, logs, and
+  benchmark output from Git.

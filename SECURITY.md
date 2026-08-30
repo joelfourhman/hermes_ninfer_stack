@@ -1,21 +1,42 @@
 # Security policy
 
-This repository runs a tool-capable agent and a GPU inference service. Treat
-model output, tool requests, downloaded content, and persistent agent state as
-untrusted. Docker narrows the blast radius, but it does not make autonomous
-execution inherently safe.
+This repository connects a tool-capable native agent to a GPU inference service.
+Treat model output, tool requests, downloaded content, and persistent agent state
+as untrusted. NInfer is containerized; Hermes Desktop/native Hermes is not.
 
 ## Supported versions
 
 Before the first stable release, security fixes are applied to the default
-branch. After releases begin, only the latest minor release line and the
-default branch are expected to receive security fixes.
+branch. After releases begin, only the latest minor release line and the default
+branch are expected to receive security fixes.
 
 | Version | Supported |
 | --- | --- |
 | Default branch | Yes |
 | Latest minor release | Yes |
 | Older releases | No |
+
+## Trust boundaries
+
+- **Hermes Desktop/native Hermes runs as the signed-in host user.** It can read,
+  modify, or delete anything that user can access. UAC can stop an unapproved
+  administrator elevation, but it does not protect ordinary same-user files.
+  Limit the folders and tools you grant to Hermes, review sensitive actions, and
+  maintain tested backups or snapshots.
+- **NInfer is the only long-running application container.** Its API is bound to
+  host loopback and requires the generated bearer key. It receives GPU access
+  and a read-only model mount, but no Docker socket or broad host-filesystem
+  access.
+- **The model downloader is a one-shot utility container.** It writes only to the
+  local model directory. Model revisions and checksums are pinned, but operators
+  should still treat downloaded artifacts as third-party code or data.
+- **Docker remains a privileged trust dependency.** Anyone who controls the
+  Docker daemon or can change this repository's Compose files can change the
+  container boundary.
+
+Run Hermes from a normal, non-administrator account. Keep NInfer on loopback,
+use a unique generated API key, and do not weaken mounts, capabilities, or
+networking merely to work around a configuration problem.
 
 ## Report a vulnerability privately
 
@@ -27,18 +48,18 @@ public issue or discussion.
 Include, when available:
 
 - the affected commit or release;
-- the affected service and configuration;
+- the affected component and configuration;
 - prerequisites and reproduction steps;
 - observed and expected behavior;
 - the potential impact and affected trust boundary;
 - a minimal proof of concept with secrets and personal data removed; and
 - any mitigation already tested.
 
-Reports about the stack's integration, Compose policy, sandbox boundary, or
-stack-authored scripts belong here. Report vulnerabilities wholly within
-Hermes Agent, NInfer, NVIDIA CUDA images, Qwen artifacts, or another dependency
-to that upstream project. If an upstream issue becomes exploitable specifically
-because of this stack's configuration, report it here as well.
+Reports about the Hermes-to-NInfer integration, Compose policy, loopback API, or
+stack-authored Python belong here. Report vulnerabilities wholly within Hermes,
+NInfer, NVIDIA CUDA images, Qwen artifacts, or another dependency to that
+upstream project. If an upstream issue becomes exploitable specifically because
+of this project's configuration, report it here as well.
 
 Maintainers will acknowledge a complete report as practical, investigate it,
 coordinate remediation and disclosure, and credit reporters who request credit.

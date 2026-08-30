@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Describe the user problem before the implementation. Engine-level NInfer features should normally be proposed upstream.
+        Describe the user problem before the implementation. Hermes and NInfer features should normally be proposed to their respective upstream projects.
 
   - type: textarea
     id: problem
@@ -55,7 +55,7 @@ body:
       options:
         - label: I searched existing issues and documentation for this request.
           required: true
-        - label: This request belongs in the integration stack rather than wholly in an upstream dependency.
+        - label: This request belongs in the Hermes-to-NInfer integration rather than wholly in an upstream dependency.
           required: true
         - label: I have not included a vulnerability or private information.
           required: true

@@ -1,7 +1,11 @@
 # ADR 0002: Use an OpenAI-compatible inference boundary
 
-- Status: Accepted
+- Status: Accepted, amended for native Hermes
 - Date: 2026-08-23
+
+The protocol decision remains active. The original internal Compose network is
+historical; native Hermes now reaches authenticated NInfer at
+`http://127.0.0.1:${NINFER_HOST_PORT}/v1`.
 
 ## Context
 
@@ -15,9 +19,11 @@ instead needs a stable provider-facing name that can remain simple and local to 
 
 ## Decision
 
-Connect Hermes to NInfer through NInfer's authenticated OpenAI-compatible chat-completions API on
-`inference-net`. Use `NINFER_MODEL_ID` as a shared HTTP alias, `qwen-local` by default, while leaving
-the artifact's embedded model identity unchanged.
+Connect native Hermes to NInfer through NInfer's authenticated
+OpenAI-compatible chat-completions API at
+`http://127.0.0.1:${NINFER_HOST_PORT}/v1`. Use `NINFER_MODEL_ID` as a shared
+HTTP alias, `qwen-local` by default, while leaving the artifact's embedded
+model identity unchanged.
 
 Use only the protocol surface exercised by the repository's verification workflow. NInfer may
 render tool definitions and return parsed tool calls, but Hermes owns validation and execution of
@@ -45,7 +51,7 @@ those calls. “OpenAI-compatible” does not imply support for every OpenAI end
   compatible.
 - A future router or remote inference host could occupy the same provider boundary without moving
   agent logic into the inference process.
-- The API key, model alias, context metadata, and supported request fields must agree across both
-  services.
+- The API key, model alias, context metadata, and supported request fields must
+  agree across the native Hermes and NInfer processes.
 - Protocol compatibility must be verified at runtime; a successful TCP connection or model load
   does not prove that generated tool calls are usable by Hermes.

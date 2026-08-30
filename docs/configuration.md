@@ -1,182 +1,203 @@
 # Configuration
 
-The repository separates reviewed defaults from live state:
+## Configuration owners
 
-- `.env.example` documents the supported Compose inputs and contains no secrets.
-- `.env` is generated locally by `python stack.py setup` and ignored by Git.
-- `hermes/config.example.yaml` is the reviewed Hermes baseline.
-- `hermes-data/config.yaml` is the live, ignored copy that Hermes may migrate or personalize.
-- `hermes-data/.env` contains Hermes-managed secrets and SSH backend values and is also ignored.
+Two independent systems are configured:
 
-Do not commit either live file under `hermes-data/`.
+- `.env.example` documents the NInfer deployment inputs.
+- `.env` is generated locally by `python ninfer.py setup`, contains the
+  NInfer bearer key, and is ignored by Git.
+- Stock Hermes owns its normal per-user `config.yaml`, `.env`, sessions,
+  skills, memory, and other application data.
 
-## Environment variables
+This repository does not maintain a second Hermes configuration tree. The
+`install-hermes` helper changes the NInfer provider, selected model, the two
+documented long-session controls, and command approval mode through Hermes's
+supported configuration command.
 
-The setup helper populates `.env`. The values below are the supported public tuning surface.
+## NInfer settings
 
-| Variable | Default | Purpose |
-|---|---|---|
-| `HERMES_IMAGE` | `nousresearch/hermes-agent:v2026.8.19@sha256:f3cba6ab...` | Digest-pinned linux/amd64 Hermes image, version 0.20.5. |
-| `HERMES_UID` | `1000` | Linux UID used for bind-mounted workspace ownership. |
-| `HERMES_GID` | `1000` | Linux GID used for bind-mounted workspace ownership. |
-| `NINFER_API_KEY` | generated | Bearer secret shared only by Hermes and NInfer. |
-| `HERMES_API_SERVER_KEY` | generated | Secret for Hermes's loopback API used by verification. |
-| `HERMES_DASHBOARD_ENABLED` | `true` | Enables the built-in authenticated Hermes dashboard. |
-| `HERMES_DASHBOARD_HOST_PORT` | `9119` | Host-loopback dashboard port. |
-| `HERMES_DASHBOARD_USERNAME` | `hermes` | Local dashboard login name. |
-| `HERMES_DASHBOARD_PASSWORD` | generated | Independent local dashboard password. |
-| `HERMES_DASHBOARD_SECRET` | generated | Dashboard session-signing secret. |
-| `HF_TOKEN` | empty | Optional token passed only to the model-downloader utility. |
-| `NINFER_HOST_PORT` | `8080` | Host-loopback port mapped to NInfer's fixed internal port 8080. |
-| `NINFER_GPU_DEVICE` | `0` | Single NVIDIA device ID assigned to NInfer. |
-| `NINFER_MODEL_FILE` | `qwen3_8_27b_nvfp4.ninfer` | Filename expected under `./models`. |
-| `NINFER_MODEL_ID` | `qwen-local` | Deployment alias advertised by NInfer and requested by Hermes. |
-| `NINFER_CONTEXT_LENGTH` | `65536` | NInfer sequence ceiling and matching Hermes context metadata. |
-| `NINFER_KV_CAPACITY` | `65536` | Shared INT8 KV pool across active and retained sequences. |
-| `NINFER_MAX_CONCURRENCY` | `1` | Startup-fixed maximum number of active NInfer requests. |
-| `HERMES_COMPRESSION_ENABLED` | `true` | Enables Hermes context compression before the sequence ceiling. |
-| `HERMES_MAX_TURNS` | `40` | Maximum agent/tool-loop turns within one request. |
-| `HERMES_CPUS` | `4.0` | Compose CPU limit for Hermes. |
-| `HERMES_MEMORY` | `8g` | Compose memory limit for Hermes. |
-| `HERMES_PIDS` | `512` | Compose PID limit for Hermes. |
-| `SANDBOX_CPUS` | `4.0` | Compose CPU limit for the SSH sandbox. |
-| `SANDBOX_MEMORY` | `8g` | Compose memory limit for the SSH sandbox. |
-| `SANDBOX_PIDS` | `512` | Compose PID limit for the SSH sandbox. |
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `NINFER_API_KEY` | generated | Bearer secret required by NInfer and stored in the native Hermes secret file |
+| `HF_TOKEN` | empty | Optional Hugging Face token used only by the explicit downloader |
+| `MODEL_DOWNLOAD_UID` / `MODEL_DOWNLOAD_GID` | `1000` | Utility-container identity; setup uses the creating user's IDs on POSIX hosts |
+| `NINFER_HOST_PORT` | `8080` | Host-loopback port mapped to NInfer's container port 8080 |
+| `NINFER_GPU_DEVICE` | detected (`0` normally) | NVIDIA device reserved for NInfer; fresh setup saves the detected 5090 index |
+| `NINFER_MODEL_FILE` | `qwen3_8_27b_nvfp4.ninfer` | Filename beneath `models/` mounted read-only |
+| `NINFER_MODEL_ID` | `qwen-local` | Public API alias selected in Hermes |
+| `NINFER_CONTEXT_LENGTH` | `65536` | Maximum sequence length for one request |
+| `NINFER_KV_CAPACITY` | `65536` | Total resident KV-token allocation |
+| `NINFER_MAX_CONCURRENCY` | `1` | Maximum simultaneous requests |
+| `HERMES_COMPRESSION_ENABLED` | `true` | Compression setting applied to native Hermes |
+| `HERMES_MAX_TURNS` | `40` | Agent turn cap applied to native Hermes |
 
-The API keys and dashboard secrets are intentionally empty in `.env.example`. `python stack.py
-setup` fills them with independent random values. Do not reuse any of them for a messaging
-integration or external service.
+`.env.example` deliberately leaves `NINFER_API_KEY` empty. Setup generates a
+random value so Compose fails closed when local initialization has not run.
 
-## Coupled NInfer and Hermes settings
+The Python control command validates that:
 
-The model alias, context, and session controls must remain consistent across the inference and
-orchestration boundary:
+- the key has the expected secret format;
+- the port is from 1 through 65535;
+- the GPU selection is valid for the supported shape;
+- the model file is a filename rather than an arbitrary host path;
+- the model ID contains only supported alias characters;
+- context, KV capacity, and concurrency form a valid allocation.
 
-1. `NINFER_MODEL_ID` is the HTTP alias returned by `GET /v1/models`; Hermes must request that exact
-   alias.
-2. `NINFER_CONTEXT_LENGTH` is both NInfer's sequence limit and Hermes's model metadata.
-3. `NINFER_API_KEY` must be present in the NInfer command and Hermes environment.
-4. `NINFER_KV_CAPACITY` must be between `NINFER_CONTEXT_LENGTH` and context multiplied by
-   `NINFER_MAX_CONCURRENCY`; it controls NInfer memory but is not advertised as Hermes context.
-5. `HERMES_COMPRESSION_ENABLED` and `HERMES_MAX_TURNS` are applied to live Hermes configuration by
-   `python stack.py configure-hermes`.
+## Endpoint mapping
 
-After changing the model alias or context length, stop Hermes, reapply its managed fields, and
-recreate NInfer:
-
-```bash
-docker compose stop hermes
-python stack.py configure-hermes
-docker compose up -d --force-recreate --wait --wait-timeout 900 ninfer
-docker compose up -d hermes
-python stack.py verify
-```
-
-The artifact's native identity is `qwen3.8-27b`; `qwen-local` is only a deployment alias. Changing
-the alias does not convert the artifact or select another NInfer execution target.
-
-## Ports and networking
-
-`NINFER_HOST_PORT` changes only the host-side loopback mapping:
+NInfer's internal address is fixed at port 8080. Compose publishes only host
+loopback:
 
 ```text
-127.0.0.1:${NINFER_HOST_PORT} -> ninfer:8080
+http://127.0.0.1:${NINFER_HOST_PORT}/v1
 ```
 
-Hermes must continue to use `http://ninfer:8080/v1` on the internal Compose network. Never replace
-that address with `localhost`: inside the Hermes container, `localhost` is Hermes itself.
+Native Hermes must use this host address. `http://ninfer:8080/v1` was valid
+only when Hermes shared a Compose network and is not valid in the current
+architecture. Do not replace `127.0.0.1` with `0.0.0.0`; the latter is a listen
+address, not an appropriate client destination, and broad host publication
+would change the exposure boundary.
 
-`HERMES_DASHBOARD_HOST_PORT` maps host loopback to the dashboard's fixed internal port:
+The loopback bind and bearer key serve different purposes. Loopback limits
+network reachability; authentication rejects unauthorized local requests.
+
+## Hermes provider lifecycle
+
+Run the native integration step with:
 
 ```text
-127.0.0.1:${HERMES_DASHBOARD_HOST_PORT} -> hermes:9119
+python ninfer.py install-hermes
 ```
 
-The container listens on all of its own interfaces so Docker can publish the port, which activates
-Hermes's fail-closed authentication gate. Do not change the host bind to `0.0.0.0` without a
-separate remote-access threat model and TLS termination.
+If stock Hermes Desktop is missing, the helper opens the official download
+page and asks the user to complete that installation. It does not download or
+build a project-specific executable.
 
-Hermes's verification API listens on container loopback and is not published to the host. The
-sandbox and inference networks are internal. Hermes joins the egress-capable control network. An
-unprivileged relay joins both networks so Docker Desktop can publish NInfer's authenticated
-loopback diagnostic port without giving NInfer egress.
+Once the stock `hermes` command is available, the helper stores
+`NINFER_API_KEY` through Hermes's secret writer and applies a named provider
+equivalent to:
 
-## GPU selection
+```yaml
+providers:
+  ninfer:
+    api: http://127.0.0.1:8080/v1
+    key_env: NINFER_API_KEY
+    transport: chat_completions
+    default_model: qwen-local
+    models:
+      qwen-local:
+        context_length: 65536
+        supports_vision: false
 
-`NINFER_GPU_DEVICE` selects one Docker-visible GPU by device ID. NInfer's current product model is
-one resident model on one RTX 5090; comma-separated devices and multi-GPU execution are not
-supported by this stack.
+model:
+  provider: custom:ninfer
+  default: qwen-local
+  context_length: 65536
+  supports_vision: false
 
-Changing the device requires NInfer recreation:
+compression:
+  enabled: true
 
-```bash
-docker compose up -d --force-recreate --wait --wait-timeout 900 ninfer
+agent:
+  max_turns: 40
+
+terminal:
+  backend: local
+  cwd: <this repository>/workspace
+
+approvals:
+  mode: manual
 ```
 
-Only NInfer receives GPU access. Hermes and the sandbox must not be granted a GPU reservation.
+The shown port and model values are examples of the defaults; the helper reads
+the actual `.env` values. The key stays in Hermes's secret file because the
+provider references `key_env`. It is not embedded in provider YAML or emitted
+in normal output.
 
-## Context length and concurrency
+The operation is narrow and idempotent. It preserves unrelated providers,
+tool selections, gateway integrations, sessions, skills, and user preferences.
+It intentionally changes `approvals.mode` to `manual` because Hermes's stock
+`smart` default can automatically approve commands it classifies as low risk;
+this native same-user setup requires the operator to decide on flagged
+commands. It also sets `terminal.backend: local`, starts tool sessions in this
+repository's `workspace/`, and stores `HERMES_WRITE_SAFE_ROOT` in Hermes's
+private environment with two allowed roots: `workspace/` and the Hermes
+profile. That environment guard hard-blocks the direct `write_file` and `patch`
+tools outside those roots. It does not restrict same-user terminal commands.
+Stock Hermes remains free to migrate its own schema during official updates.
 
-The default profile combines:
+## Coupled settings
 
-- 65,536 maximum tokens per sequence;
-- a 65,536-token shared KV pool;
-- INT8 group-64 KV cache;
-- one active request;
+The following values must agree across NInfer and Hermes:
+
+1. `NINFER_MODEL_ID` is returned by NInfer's model API and selected by Hermes.
+2. `NINFER_CONTEXT_LENGTH` is NInfer's request ceiling and Hermes's model
+   metadata.
+3. `NINFER_API_KEY` is the server bearer key and the secret referenced by the
+   `ninfer` provider.
+4. `NINFER_HOST_PORT` determines the base URL saved in the provider.
+5. Vision remains disabled because the tested NInfer profile is text-only.
+
+`NINFER_KV_CAPACITY` and `NINFER_MAX_CONCURRENCY` affect server memory but are
+not independent Hermes context settings. With concurrency one, the default KV
+capacity equals the full context ceiling.
+
+After changing a coupled value, recreate NInfer as needed and reapply Hermes:
+
+```text
+python ninfer.py down
+python ninfer.py up
+python ninfer.py install-hermes
+python ninfer.py verify
+```
+
+## Memory-sensitive NInfer settings
+
+The reviewed profile includes:
+
+- INT8 KV cache;
 - a 1,024-token prefill chunk;
-- MTP with three draft tokens;
-- Hermes context compression using its pinned-version defaults; and
-- a 40-turn agent-loop ceiling.
+- MTP speculation with three draft tokens;
+- the optimized draft head;
+- one active request;
+- explicit 65,536-token context and KV capacity.
 
-Context and KV capacity compete for the VRAM left after model and runtime allocations. The explicit
-single-user pool supports one maximum-length sequence without consuming nearly all 32 GiB of VRAM.
-If startup fails with an out-of-memory error, context and KV capacity must be reduced together. If
-context changes, rerun
-`python stack.py configure-hermes`, recreate NInfer, and verify the entire route.
+These are a group, not isolated tuning switches. Increasing context,
+concurrency, or KV capacity can exhaust VRAM even when the model loads. Changing
+KV dtype or speculative settings changes both memory and performance. Record
+the complete resolved startup profile for any benchmark comparison.
 
-Do not raise context, KV capacity, or concurrency solely because NInfer accepts the flag. The
-startup allocation and remaining VRAM printed by NInfer are the authority for the selected GPU and
-software versions. The prior automatic profile resolved 255,360 KV tokens and left only about
-616 MiB after startup on the audited RTX 5090, which is why the interactive default is explicit.
+## Model artifact setting
 
-## Model file
+`NINFER_MODEL_FILE` must name the registered artifact provided by this
+repository's downloader. Compose mounts `./models` read-only at `/models`.
+Using an arbitrary absolute path would make the setup machine-specific and
+bypass the reviewed checksum mapping.
 
-`NINFER_MODEL_FILE` is a filename, not an arbitrary host path. Compose mounts `./models` read-only
-at `/models`, and NInfer opens `/models/${NINFER_MODEL_FILE}`.
+Model bytes remain outside image layers. Building or removing the NInfer image
+does not remove them.
 
-Keep model files under `models/`; absolute paths and Windows-user-specific paths are intentionally
-unsupported. See [Models](models.md) before selecting a different artifact.
+## Secret handling
 
-## Hermes configuration lifecycle
+- Never commit `.env` or the stock Hermes secret file.
+- Do not paste the NInfer key into screenshots, bug reports, or benchmark
+  metadata.
+- Do not put the key inline in `config.yaml`; keep `key_env: NINFER_API_KEY`.
+- Anyone with access to the user's Hermes state or Docker container metadata
+  may be able to recover the local key.
+- Rotate the key after suspected disclosure, recreate NInfer, and rerun
+  `python ninfer.py install-hermes`.
 
-`python stack.py setup` copies the reviewed template only when live configuration is absent, then
-runs the first-run wizard as part of the complete workflow. The wizard may add identity, messaging,
-pairing, or provider information to the ignored live tree. Setup automatically invokes the same
-managed configuration step exposed separately as `python stack.py configure-hermes`; it owns only
-the fields required by this stack:
+## Inspecting configuration
 
-- custom NInfer provider endpoint and API-key environment name;
-- model alias, context length, and text-only capability metadata;
-- context compression and maximum agent turns;
-- SSH terminal backend host, user, port, and key path;
-- terminal working directory and timeout;
-- hard stops for repeated or no-progress tool loops.
+Safe project-side checks include:
 
-Do not replace live configuration with the example after completing the wizard. To inspect a value,
-use the supported Hermes CLI rather than editing generated schema fields blindly.
-
-## Validate changes safely
-
-Check interpolation without printing the rendered configuration, which can contain secrets:
-
-```bash
+```text
+python ninfer.py status
 docker compose --env-file .env config --quiet
+python ninfer.py verify
 ```
 
-Then recreate only affected services and run:
-
-```bash
-python stack.py verify
-```
-
-For common configuration failures, see [Troubleshooting](troubleshooting.md).
+Use stock Hermes's own commands to inspect non-secret provider values. Avoid
+commands that print complete environments or request headers.

@@ -1,112 +1,131 @@
 # Compatibility
 
-This project has a deliberately narrow hardware target. The table below separates facts inspected
-on the host from components merely selected in configuration. It does not imply that a complete
-model load, inference request, or benchmark passed during the audit.
+This project has a deliberately narrow inference target and a deliberately
+loose Hermes lifecycle. NInfer, CUDA, and the model are pinned as one reviewed
+profile; Hermes Desktop is the stock per-user application maintained by its
+official installer.
 
-## Audited host and selected stack
+## Audited host
 
 Audit date: 2026-08-23.
 
 | Component | Audited value | Evidence scope |
-|---|---|---|
+| --- | --- | --- |
 | GPU | NVIDIA GeForce RTX 5090, 32,607 MiB reported | Host and NInfer-container queries |
 | NVIDIA driver | 610.88 | Host driver query |
 | Windows | 10.0.26200.9168 | Host OS query |
-| WSL | 2.7.10.0 | Host WSL query |
-| Docker Desktop Linux kernel | 6.18.33.2 | Docker Desktop WSL2 environment query |
-| Docker Engine | 29.6.1 | Docker daemon version query |
-| Docker Compose | 5.3.0 | Compose version query |
-| NInfer CUDA images | CUDA 13.1.2 on Ubuntu 24.04 | Pinned upstream Dockerfile |
-| Sandbox base | Ubuntu 24.04, `sha256:33ceb719…` | Digest-pinned Dockerfile base |
-| NInfer source | `feaf4dd0983fdaeb2ba4c06eec6da350e644fb3a` | Clean submodule; image build and OCI revision-label check passed |
-| Hermes Agent | 0.20.5, tag/image `v2026.8.19` | Exact digest pulled; container CLI version checked |
-| Model | Qwen3.8-27B NVFP4 NInfer v2 artifact | Pinned download metadata |
-| Model SHA-256 | `bb3360522a06e136e0367f5703414d26272b7285c8a6ab6194135c17dbd81b32` | Published artifact metadata |
-| SSH sandbox | Healthy, read-only root; key-authenticated command ran as UID/GID 1000 | Local Compose smoke test |
+| WSL | 2.7.10.0 | Docker Desktop backend evidence; not a required user shell |
+| Docker Desktop Linux kernel | 6.18.33.2 | Docker-managed environment query |
+| Docker Engine | 29.6.1 | Docker daemon query |
+| Docker Compose | 5.3.0 | Compose query |
+| NInfer CUDA base | CUDA 13.1.2 on Ubuntu 24.04 | Pinned upstream Dockerfile |
+| NInfer source | `feaf4dd0983fdaeb2ba4c06eec6da350e644fb3a` | Clean submodule, image build, and OCI revision-label check |
+| Model | Qwen3.8-27B NVFP4 NInfer v2 artifact | Pinned repository revision and checksum |
+| Model SHA-256 | `bb3360522a06e136e0367f5703414d26272b7285c8a6ab6194135c17dbd81b32` | Registered project metadata and local verification |
+| Native client target | Official Hermes Desktop for Windows | Upstream installer/config documentation; native route not rerun during this refactor |
 
-The exact NInfer and sandbox images built successfully (with reusable Docker layers already cached),
-the NInfer image saw the RTX 5090, and a real key-only SSH sandbox command created a verified
-workspace side effect as the unprivileged `agent` user. No local model artifact was available, so
-the audit does **not** claim that the model loaded, NInfer served a completion, Hermes completed a
-request, or a local benchmark passed on this exact host. Those remaining claims require
-`python stack.py verify` and, for performance, `python stack.py benchmark` after model acquisition.
+The NInfer image built successfully and saw the RTX 5090. A later live run with
+the pinned artifact completed the then-current layered inference verifier. The
+new native Hermes route still requires a live rerun after Desktop installation;
+formal throughput evidence is documented separately in
+[Performance](performance.md).
 
-## Required compatibility envelope
+## Required NInfer envelope
 
 NInfer currently requires:
 
-- 64-bit Linux execution, including Linux containers under the tested Docker Desktop WSL2 path;
+- a 64-bit Linux container environment;
 - NVIDIA GeForce RTX 5090 (`sm_120a`);
-- a driver capable of CUDA 13.1 containers;
+- a driver capable of running CUDA 13.1 containers;
 - the pinned NInfer source revision or a deliberately reviewed replacement;
-- a registered version-2 `.ninfer` artifact;
+- the registered version-2 `.ninfer` artifact;
 - one CUDA device and one resident model instance.
 
-The source build rejects CUDA architectures other than `120a`. RTX 4090, other Ada GPUs, older CUDA
-toolchains, CPU-only execution, multi-GPU sharding, and non-NVIDIA accelerators are not supported by
-this repository.
+The source build rejects CUDA architectures other than `120a`. RTX 4090 and
+other Ada GPUs, older CUDA toolchains, CPU-only execution, multi-GPU sharding,
+and non-NVIDIA accelerators are outside this repository's supported profile.
 
-The pinned NInfer commit's upstream Dockerfile names its CUDA build and runtime bases by versioned
-tag rather than digest. The audited build resolved those tags to platform manifests
-`sha256:b9f64abf…` (devel) and `sha256:bff001d3…` (runtime). A future registry retag can therefore
-change lower layers even while the NInfer source pin remains fixed; review build provenance on
-rebuilds. The stack-owned sandbox base is digest-pinned, although its `apt` package transaction is
-still a time-varying supply-chain input.
+## Native Hermes envelope
 
-## What is Blackwell-specific
+Use the official Hermes Desktop distribution for the host operating system.
+The helper depends on stock Hermes capabilities that support:
 
-- NInfer's CUDA kernels and build configuration target `sm_120a`.
-- The selected mixed NVFP4/FP8 artifact and its optimized execution profiles are NInfer-specific.
-- The CUDA 13.1.2 build/runtime images and driver requirement follow the NInfer target.
-- GPU reservation belongs only to the NInfer service.
+- `hermes config set`, `get`, and `check`;
+- named entries beneath `providers:`;
+- `key_env` secret references;
+- `transport: chat_completions`;
+- durable `custom:<name>` provider selection.
 
-Hermes orchestration, the OpenAI-compatible HTTP boundary, the SSH sandbox, internal networks, and
-persistent-state layout are not inherently Blackwell-specific. They are nevertheless verified here
-only as part of this RTX 5090 deployment design.
+If an old Hermes installation lacks those capabilities, update it through the
+official Desktop lifecycle and rerun:
 
-## WSL2 status
+```text
+python ninfer.py install-hermes
+```
 
-NInfer documents 64-bit Linux and RTX 5090; it does not separately certify every WSL2 or Docker
-Desktop release. The audited environment uses Docker Desktop's WSL2 Linux backend. The decisive
-compatibility checks are therefore container-level GPU visibility, a successful NInfer build and
-model load, and the full integration verifier.
+This repository does not pin, replace, or downgrade stock Hermes. Run complete
+verification after a Hermes update because provider behavior can evolve even
+when NInfer is unchanged.
 
-Prefer a native WSL2/Linux filesystem for build performance when practical. If the checkout remains
-on a Windows-mounted path, verify Docker file sharing and model readability; do not embed an
-absolute Windows username or drive path in repository configuration.
+On Windows, the official native installation is supported on Windows 10/11 and
+normally stores its shared runtime and user data under
+`%LOCALAPPDATA%\hermes`. The project's helper checks the installed CLI there as
+well as on `PATH`.
 
-## Reproduce the compatibility check
+## Docker Desktop and WSL2
+
+NInfer documents 64-bit Linux and RTX 5090; it does not separately certify
+every Docker Desktop or WSL2 release. The audited Windows environment uses
+Docker Desktop's WSL2 Linux backend. The decisive checks are container-level
+GPU visibility, a successful NInfer build and load, and authenticated
+generation.
+
+The Docker backend does not create a requirement for the user to open a WSL
+shell. `python ninfer.py setup` is a host Python command, and stock Hermes runs
+natively. If the checkout is on a Windows path, Docker Desktop must be able to
+read it and the large model file.
+
+## Blackwell-specific pieces
+
+- NInfer's CUDA kernels and build target are `sm_120a`.
+- The mixed NVFP4/FP8 artifact and execution profiles are NInfer-specific.
+- CUDA 13.1.2 build/runtime images follow the NInfer target.
+- Only the NInfer container receives GPU access.
+
+The OpenAI-compatible protocol and native Hermes provider are not inherently
+Blackwell-specific, but this repository verifies them only with the stated
+RTX 5090 profile.
+
+## Supply-chain variability
+
+The pinned NInfer commit's upstream Dockerfile names CUDA images by versioned
+tag rather than full digest. The audited build resolved specific platform
+manifests, but a future registry retag can change lower layers while the source
+pin stays fixed. Review image provenance when rebuilding.
+
+Stock Hermes is another independently updated input. Using the official
+installer establishes distribution ownership, not permanent compatibility.
+Keep the provider configuration narrow and rerun verification after updates.
+
+## Reproduce the checks
 
 Collect platform evidence without exposing secrets:
 
-```bash
+```text
 nvidia-smi
 docker version
 docker compose version
 docker info
-uname -r
 git -C ninfer rev-parse HEAD
 ```
 
-From PowerShell, WSL version information is available with:
+Then run:
 
-```powershell
-wsl --version
+```text
+python ninfer.py validate
+python ninfer.py verify
 ```
 
-Then validate the Docker GPU path and full stack:
-
-```bash
-docker run --rm --gpus all \
-  nvidia/cuda:13.1.2-base-ubuntu24.04 \
-  nvidia-smi
-python stack.py verify
-```
-
-Record a component as “tested” only when the relevant command actually succeeds. Update this
-document after dependency upgrades rather than assuming a newer driver, Docker release, Hermes
-image, NInfer commit, or artifact remains compatible.
-
-See [Installation](installation.md) for the supported setup sequence and
-[Performance](performance.md) for the separate benchmark evidence standard.
+Record a component as tested only when the relevant check actually succeeds.
+Do not infer NInfer compatibility from host `nvidia-smi` alone, or Hermes
+compatibility from a successful Desktop launch alone.

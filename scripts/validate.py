@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import os
 import re
 import subprocess
 import sys
@@ -57,21 +56,13 @@ required_paths = [
     ".gitignore",
     ".gitmodules",
     "docker-compose.yml",
-    "stack.py",
+    "ninfer.py",
     "model-downloader/Dockerfile",
     "model-downloader/download_model.py",
     "Makefile",
-    "hermes/config.example.yaml",
-    "sandbox/Dockerfile",
-    "sandbox/entrypoint.sh",
-    "scripts/setup.sh",
-    "scripts/configure-hermes.sh",
-    "scripts/download-model.sh",
-    "scripts/verify.sh",
     "scripts/verify.py",
-    "scripts/tcp_proxy.py",
-    "scripts/benchmark.sh",
     "scripts/benchmark.py",
+    "tests/test_ninfer.py",
     "docs/architecture.md",
     "docs/installation.md",
     "docs/configuration.md",
@@ -81,6 +72,7 @@ required_paths = [
     "docs/performance.md",
     "docs/compatibility.md",
     "docs/design-overview.md",
+    "docs/decisions/0005-stock-native-hermes-desktop.md",
     ".github/workflows/ci.yml",
 ]
 for relative in required_paths:
@@ -100,16 +92,15 @@ if missing_env:
     error("Compose variables missing from .env.example: " + ", ".join(missing_env))
 
 env_values = dict(env_pairs)
-for secret_name in (
-    "NINFER_API_KEY",
-    "HERMES_API_SERVER_KEY",
-    "HERMES_DASHBOARD_PASSWORD",
-    "HERMES_DASHBOARD_SECRET",
-):
+for secret_name in ("NINFER_API_KEY", "HF_TOKEN"):
     if env_values.get(secret_name) != "":
-        error(f"{secret_name} must be empty in .env.example so Compose fails closed")
+        error(f"{secret_name} must be empty in the reviewed .env.example template")
 
 expected_env = {
+    "NINFER_API_KEY": "",
+    "HF_TOKEN": "",
+    "NINFER_HOST_PORT": "8080",
+    "NINFER_GPU_DEVICE": "0",
     "NINFER_MODEL_FILE": EXPECTED_MODEL_FILE,
     "NINFER_MODEL_ID": EXPECTED_MODEL_ID,
     "NINFER_CONTEXT_LENGTH": EXPECTED_CONTEXT,
@@ -117,32 +108,161 @@ expected_env = {
     "NINFER_MAX_CONCURRENCY": EXPECTED_CONCURRENCY,
     "HERMES_COMPRESSION_ENABLED": "true",
     "HERMES_MAX_TURNS": "40",
+    "MODEL_DOWNLOAD_UID": "1000",
+    "MODEL_DOWNLOAD_GID": "1000",
 }
 for key, expected in expected_env.items():
     if env_values.get(key) != expected:
         error(f".env.example {key} must be {expected!r}")
+if set(env_keys) != set(expected_env):
+    unexpected = sorted(set(env_keys) - set(expected_env))
+    omitted = sorted(set(expected_env) - set(env_keys))
+    details = []
+    if unexpected:
+        details.append("unexpected: " + ", ".join(unexpected))
+    if omitted:
+        details.append("missing: " + ", ".join(omitted))
+    error(".env.example must contain only the reviewed setup keys (" + "; ".join(details) + ")")
+
+
+services_match = re.search(r"(?ms)^services:\s*\n(.*?)(?=^[^ \t\r\n]|\Z)", compose_text)
+if services_match is None:
+    error("docker-compose.yml has no services block")
+else:
+    services = set(re.findall(r"(?m)^  ([a-z0-9][a-z0-9-]*):\s*$", services_match.group(1)))
+    expected_services = {"model-downloader", "ninfer"}
+    if services != expected_services:
+        error(
+            "Compose services must be exactly model-downloader and ninfer; found "
+            + ", ".join(sorted(services))
+        )
+
+
+def service_block(name: str) -> str:
+    if services_match is None:
+        return ""
+    match = re.search(
+        rf"(?ms)^  {re.escape(name)}:\s*\n(.*?)(?=^  [a-z0-9][a-z0-9-]*:\s*$|\Z)",
+        services_match.group(1),
+    )
+    if match is None:
+        error(f"cannot inspect Compose service: {name}")
+        return ""
+    return match.group(1)
+
+
+downloader_service = service_block("model-downloader")
+ninfer_service = service_block("ninfer")
+
+networks_match = re.search(r"(?ms)^networks:\s*\n(.*?)(?=^[^ \t\r\n]|\Z)", compose_text)
+if networks_match is None:
+    error("docker-compose.yml has no networks block")
+else:
+    networks = set(re.findall(r"(?m)^  ([a-z0-9][a-z0-9-]*):\s*$", networks_match.group(1)))
+    if networks != {"inference-net"}:
+        error("Compose networks must contain only inference-net")
+
+if re.search(r"(?m)^volumes:\s*$", compose_text):
+    error("Compose must not declare container-era named volumes")
+if "HERMES_" in compose_text or re.search(r"(?im)^\s*(?:hermes|sandbox|sandbox-[a-z0-9-]*|ninfer-loopback):\s*$", compose_text):
+    error("Compose still contains a Hermes, relay, or SSH-sandbox runtime dependency")
+if "127.0.0.1:${NINFER_HOST_PORT:-8080}:8080" not in compose_text:
+    error("NInfer must publish its authenticated API on host loopback only")
+if "profiles: [tools]" not in compose_text:
+    error("model-downloader must remain isolated behind the tools profile")
+if "profiles:" in ninfer_service:
+    error("NInfer must start normally without requiring a Compose profile")
+if "ports:" in downloader_service or compose_text.count("    ports:") != 1:
+    error("only NInfer may publish a host port")
+if "./models:/models\n" not in downloader_service:
+    error("model-downloader must write only to the local models directory")
+if "./models:/models:ro" not in ninfer_service:
+    error("NInfer must mount the local models directory read-only")
+host_bind_mounts = re.findall(r"(?m)^\s+- (\./[^\s]+)\s*$", compose_text)
+if sorted(host_bind_mounts) != ["./models:/models", "./models:/models:ro"]:
+    error("containers may bind-mount only the local models directory")
+if (
+    "capabilities: [gpu]" not in ninfer_service
+    or "device_ids: [\"${NINFER_GPU_DEVICE:-0}\"]" not in ninfer_service
+):
+    error("NInfer must request only the selected NVIDIA GPU")
+if "capabilities: [gpu]" in downloader_service:
+    error("model-downloader must not receive GPU access")
+if "${NINFER_API_KEY:?Run python ninfer.py setup to create .env}" not in ninfer_service:
+    error("NInfer API authentication must fail closed until setup generates a key")
+if compose_text.count("no-new-privileges:true") != 2 or compose_text.count("      - ALL") != 2:
+    error("both containers must drop Linux capabilities and forbid privilege escalation")
+if compose_text.count("    init: true") != 2:
+    error("both containers must use a minimal init process for reliable shutdown")
+if (
+    "driver: local" not in ninfer_service
+    or 'max-size: "10m"' not in ninfer_service
+    or 'max-file: "3"' not in ninfer_service
+):
+    error("NInfer logs must be bounded to avoid silently filling the Docker disk")
+if "internal: true" not in compose_text:
+    error("the persistent NInfer network must remain isolated from external networks")
+
+unsafe_compose_patterns = {
+    r"(?m)^\s*privileged:\s*true\s*$": "privileged containers",
+    r"(?m)^\s*network_mode:\s*host\s*$": "host networking",
+    r"(?m)^\s*pid:\s*host\s*$": "host PID access",
+    r"(?m)^\s*ipc:\s*host\s*$": "host IPC access",
+    r"(?:/var/run/docker\.sock|docker_engine)": "Docker daemon access",
+}
+for pattern, description in unsafe_compose_patterns.items():
+    if re.search(pattern, compose_text, flags=re.IGNORECASE):
+        error(f"Compose must not grant {description}")
 
 
 consistency_requirements = {
-    "stack.py": [
+    "ninfer.py": [
         EXPECTED_NINFER_COMMIT,
         EXPECTED_MODEL_FILE,
-        "Download and verify the model now?",
-        "Blank Slate",
-        "Keep current (ssh)",
-        "repair-sandbox-trust",
+        "Download the model now? [Y/n]",
+        "install-hermes",
+        "https://hermes-agent.nousresearch.com/desktop",
+        "providers.ninfer",
+        "custom:ninfer",
+        "approvals.mode",
+        "HERMES_WRITE_SAFE_ROOT",
+        "terminal.cwd",
+        "HERMES_COMPRESSION_ENABLED",
+        "HERMES_MAX_TURNS",
     ],
-    "docker-compose.yml": [EXPECTED_NINFER_COMMIT, EXPECTED_MODEL_FILE, EXPECTED_MODEL_ID, EXPECTED_CONTEXT, EXPECTED_KV_CAPACITY, "13.1.2-runtime-ubuntu24.04", "sandbox-trust"],
-    "hermes/config.example.yaml": [EXPECTED_MODEL_ID, EXPECTED_CONTEXT, "max_turns: 40", "enabled: true"],
-    "scripts/setup.sh": [EXPECTED_NINFER_COMMIT],
+    "docker-compose.yml": [
+        EXPECTED_NINFER_COMMIT,
+        EXPECTED_MODEL_FILE,
+        EXPECTED_MODEL_ID,
+        EXPECTED_CONTEXT,
+        EXPECTED_KV_CAPACITY,
+        "13.1.2-runtime-ubuntu24.04",
+        "127.0.0.1:${NINFER_HOST_PORT:-8080}:8080",
+        "profiles: [tools]",
+    ],
+    "Makefile": ["install-hermes:", "python3 ninfer.py install-hermes"],
     "model-downloader/download_model.py": [EXPECTED_MODEL_FILE, EXPECTED_MODEL_SHA256],
-    "scripts/verify.py": [EXPECTED_NINFER_COMMIT, EXPECTED_MODEL_FILE, EXPECTED_MODEL_SHA256],
-    "scripts/benchmark.py": [EXPECTED_NINFER_COMMIT, EXPECTED_MODEL_SHA256],
-    "sandbox/Dockerfile": [
-        "sha256:33ceb71981b602c1a7443a53469e4dba065f7503eab3078a2d7a57a2ab987517",
-        "sha256:d1e005e6f5aac724b7554db95f1c128a77d8d35b59ebe70e188852b4bdad3a3d",
+    "scripts/verify.py": [
+        EXPECTED_NINFER_COMMIT,
+        EXPECTED_MODEL_FILE,
+        EXPECTED_MODEL_SHA256,
+        "Optional native Hermes config",
+        "providers.ninfer.api",
+        "custom:ninfer",
+        "approvals.mode",
+        "HERMES_WRITE_SAFE_ROOT",
+        "terminal.cwd",
     ],
-    "sandbox/entrypoint.sh": ["trust-host", "[sandbox]:2222", "ssh_host_ed25519_key.pub"],
+    "scripts/benchmark.py": [EXPECTED_NINFER_COMMIT, EXPECTED_MODEL_SHA256],
+    "tests/test_ninfer.py": [
+        "providers.ninfer.api",
+        "custom:ninfer",
+        "approvals.mode",
+        "HERMES_WRITE_SAFE_ROOT",
+        "terminal.cwd",
+        "HERMES_COMPRESSION_ENABLED",
+        "HERMES_MAX_TURNS",
+    ],
     "docs/models.md": [EXPECTED_MODEL_FILE, EXPECTED_MODEL_ID, EXPECTED_MODEL_SHA256],
 }
 for relative, values in consistency_requirements.items():
@@ -210,6 +330,10 @@ for relative_name in tracked_relatives:
         continue
     if path.name in text_names or path.suffix.lower() in text_suffixes:
         public_text_files.append(path)
+
+native_helper_test = ROOT / "tests" / "test_ninfer.py"
+if native_helper_test.is_file() and native_helper_test not in public_text_files:
+    public_text_files.append(native_helper_test)
 
 machine_patterns = [
     re.compile(r"[A-Za-z]:[\\/]+Users[\\/]+", re.IGNORECASE),
@@ -296,16 +420,6 @@ elif ninfer_status.stdout.strip():
 gitmodules = read_text(ROOT / ".gitmodules")
 if "https://github.com/Neroued/ninfer.git" not in gitmodules:
     error(".gitmodules does not declare the canonical NInfer URL")
-
-stage = git("ls-files", "--stage", "--", "scripts", "sandbox/entrypoint.sh", check=False)
-if stage.returncode != 0 or not stage.stdout.strip():
-    error("executable scripts are not recorded in the Git index")
-else:
-    for line in stage.stdout.splitlines():
-        mode, _, _, name = line.split(maxsplit=3)
-        if (name.startswith("scripts/") and name.endswith(".sh")) or name == "sandbox/entrypoint.sh":
-            if mode != "100755":
-                error(f"executable must be committed with mode 100755: {name} (is {mode})")
 
 submodule_stage = git("ls-files", "--stage", "--", "ninfer", check=False)
 if not submodule_stage.stdout.strip():

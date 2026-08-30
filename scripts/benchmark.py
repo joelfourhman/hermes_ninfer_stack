@@ -65,7 +65,7 @@ def compose(*args: str, timeout: int = 120, check: bool = True) -> subprocess.Co
 
 def read_env() -> dict[str, str]:
     if not ENV_FILE.is_file():
-        die("missing .env; run python stack.py setup")
+        die("missing .env; run python ninfer.py setup")
     values: dict[str, str] = {}
     for line in ENV_FILE.read_text(encoding="utf-8").splitlines():
         if re.match(r"^[A-Z][A-Z0-9_]*=", line):
@@ -123,7 +123,15 @@ def main() -> int:
     parser.add_argument("--max-tokens", type=int, default=int(os.environ.get("BENCHMARK_MAX_TOKENS", "512")))
     args = parser.parse_args()
     values = read_env()
-    required = ["NINFER_API_KEY", "NINFER_HOST_PORT", "NINFER_MODEL_ID", "NINFER_MODEL_FILE", "NINFER_CONTEXT_LENGTH", "NINFER_KV_CAPACITY", "NINFER_MAX_CONCURRENCY", "HERMES_IMAGE"]
+    required = [
+        "NINFER_API_KEY",
+        "NINFER_HOST_PORT",
+        "NINFER_MODEL_ID",
+        "NINFER_MODEL_FILE",
+        "NINFER_CONTEXT_LENGTH",
+        "NINFER_KV_CAPACITY",
+        "NINFER_MAX_CONCURRENCY",
+    ]
     missing = [key for key in required if not values.get(key)]
     if missing:
         die("missing .env values: " + ", ".join(missing))
@@ -136,7 +144,7 @@ def main() -> int:
 
     ninfer_id = compose("ps", "-q", "ninfer").stdout.strip()
     if not ninfer_id:
-        die("NInfer is not running; use python stack.py up")
+        die("NInfer is not running; use python ninfer.py up")
     health = run(["docker", "inspect", "--format", "{{.State.Health.Status}}", ninfer_id]).stdout.strip()
     if health != "healthy":
         die(f"NInfer health is {health!r}; inspect docker compose logs ninfer")

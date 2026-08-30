@@ -1,7 +1,13 @@
 # ADR 0004: Execute tools through a constrained SSH sandbox
 
-- Status: Accepted
+- Status: Superseded by the stock native Hermes architecture
 - Date: 2026-08-23
+
+This document records the former all-Compose deployment. The active project has
+no SSH sandbox, key initializer, trust reconciler, or containerized Hermes
+service. Stock Hermes Desktop runs natively with the current user's authority;
+see [Security](../security.md). The historical design remains only to explain
+past configuration and repository history.
 
 ## Context
 

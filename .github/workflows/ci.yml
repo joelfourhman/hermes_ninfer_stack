@@ -22,13 +22,9 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          submodules: false
+          submodules: recursive
           fetch-depth: 1
           persist-credentials: false
-
-      - name: Exercise first-run initialization
-        shell: bash
-        run: ./scripts/setup.sh
 
       - name: Create CI-only environment
         shell: bash
@@ -37,54 +33,73 @@ jobs:
           umask 077
           cp .env.example .env.ci
           ninfer_key="$(openssl rand -hex 32)"
-          hermes_key="$(openssl rand -hex 32)"
-          dashboard_password="$(openssl rand -hex 24)"
-          dashboard_secret="$(openssl rand -hex 32)"
           sed -i "s|^NINFER_API_KEY=.*|NINFER_API_KEY=${ninfer_key}|" .env.ci
-          sed -i "s|^HERMES_API_SERVER_KEY=.*|HERMES_API_SERVER_KEY=${hermes_key}|" .env.ci
-          sed -i "s|^HERMES_DASHBOARD_PASSWORD=.*|HERMES_DASHBOARD_PASSWORD=${dashboard_password}|" .env.ci
-          sed -i "s|^HERMES_DASHBOARD_SECRET=.*|HERMES_DASHBOARD_SECRET=${dashboard_secret}|" .env.ci
           chmod 0600 .env.ci
 
       - name: Check generated and tracked text
         shell: bash
         run: git diff --check
 
+      - name: Check Python syntax
+        shell: bash
+        run: >-
+          python3 -m py_compile
+          ninfer.py
+          scripts/benchmark.py
+          scripts/validate.py
+          scripts/verify.py
+          model-downloader/download_model.py
+          tests/test_ninfer.py
+
+      - name: Run Python unit tests
+        shell: bash
+        run: python3 -m unittest discover -s tests -v
+
+      - name: Smoke-test the public command surface
+        shell: bash
+        run: |
+          python3 ninfer.py --help
+          python3 ninfer.py install-hermes --help
+
       - name: Validate repository invariants
         shell: bash
-        run: python3 scripts/validate.py
+        run: python3 ninfer.py validate
 
       - name: Validate Compose configuration
         shell: bash
-        run: docker compose --env-file .env.ci config --quiet
-
-      - name: Check Bash syntax
-        shell: bash
         run: |
-          set -Eeuo pipefail
-          mapfile -d '' shell_files < <(
-            find . \
-              -path './.git' -prune -o \
-              -path './ninfer' -prune -o \
-              -type f -name '*.sh' -print0
-          )
-          ((${#shell_files[@]} > 0))
-          bash -n "${shell_files[@]}"
+          docker compose --env-file .env.ci config --quiet
+          docker compose --env-file .env.ci --profile tools config --quiet
 
-      - name: Run ShellCheck
+      - name: Build one-shot model downloader
         shell: bash
+        run: >-
+          docker compose --env-file .env.ci
+          --profile tools build model-downloader
+
+  windows-host-helper:
+    name: Test Python helper on Windows
+    runs-on: windows-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          submodules: false
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Check Python syntax
+        shell: cmd
+        run: python -m py_compile ninfer.py tests/test_ninfer.py
+
+      - name: Run Python unit tests
+        shell: cmd
+        run: python -m unittest discover -s tests -v
+
+      - name: Smoke-test the Python command surface
+        shell: cmd
         run: |
-          set -Eeuo pipefail
-          shellcheck --version
-          mapfile -d '' shell_files < <(
-            find . \
-              -path './.git' -prune -o \
-              -path './ninfer' -prune -o \
-              -type f -name '*.sh' -print0
-          )
-          ((${#shell_files[@]} > 0))
-          shellcheck "${shell_files[@]}"
-
-      - name: Build sandbox image
-        shell: bash
-        run: docker compose --env-file .env.ci build sandbox
+          python ninfer.py --help
+          python ninfer.py install-hermes --help

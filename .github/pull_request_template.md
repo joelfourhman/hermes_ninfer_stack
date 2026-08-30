@@ -10,20 +10,21 @@
 
 <!-- Check the commands you ran. Explain skipped checks. Do not report unmeasured GPU results. -->
 
-- [ ] `python3 scripts/validate.py`
+- [ ] `python ninfer.py validate`
 - [ ] `docker compose config --quiet`
-- [ ] Bash syntax and ShellCheck
-- [ ] `docker compose build sandbox`
-- [ ] Local GPU build and `make verify` (required only for runtime/GPU changes)
+- [ ] Python syntax checks
+- [ ] `docker compose --profile tools build model-downloader`
+- [ ] Local `python ninfer.py verify` (required only for runtime/GPU changes)
 - [ ] Other focused checks described below
 
 Validation details:
 
 ## Security and persistence
 
-- [ ] No secret, private state, model weight, log, SSH material, or personal path is included.
+- [ ] No secret, local Hermes configuration, model weight, log, benchmark output, or personal path is included.
 - [ ] Port, network, mount, capability, GPU, and Docker-daemon access are unchanged or justified below.
-- [ ] Destructive commands and cleanup behavior preserve models, Hermes state, and workspace data by default.
+- [ ] Destructive commands and cleanup behavior preserve models and the user's Hermes configuration by default.
+- [ ] Native Hermes permissions and same-user filesystem risk are documented when affected.
 - [ ] New downloads or dependencies are pinned and license-compatible where practical.
 
 Security or persistence notes:

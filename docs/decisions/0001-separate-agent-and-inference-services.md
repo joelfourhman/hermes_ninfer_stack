@@ -1,7 +1,12 @@
 # ADR 0001: Separate agent orchestration and inference services
 
-- Status: Accepted
+- Status: Superseded in part by the stock native Hermes architecture
 - Date: 2026-08-23
+
+The separation of agent orchestration from inference remains valid. The
+Compose-specific decision to run both as long-running containers is historical:
+the active deployment runs only NInfer in Docker and stock Hermes Desktop
+natively. See [Architecture](../architecture.md).
 
 ## Context
 
@@ -16,13 +21,15 @@ environment access to the GPU and model weights even though it does not use them
 
 ## Decision
 
-Run Hermes and NInfer as separate long-running Compose services. NInfer exclusively owns the GPU
-and read-only model mount. Hermes reaches it through an authenticated HTTP provider endpoint on an
-internal bridge network and starts only after NInfer is healthy.
+Run Hermes and NInfer as separate processes with independent lifecycles. NInfer
+is the only long-running Compose service and exclusively owns the GPU and
+read-only model mount. Stock Hermes runs natively and reaches it through an
+authenticated host-loopback HTTP endpoint after NInfer is healthy.
 
-Treat the service boundary as part of the product architecture rather than a replaceable packaging
-detail. Updates to either component are reviewed and deployed independently, and direct NInfer API
-checks remain available to isolate inference failures from orchestration failures.
+Treat the OpenAI-compatible process boundary as part of the architecture.
+Updates to either component are managed independently, and direct NInfer API
+checks remain available to isolate inference failures from orchestration
+failures.
 
 ## Alternatives considered
 
@@ -34,16 +41,16 @@ checks remain available to isolate inference failures from orchestration failure
   less clear.
 - **Run NInfer directly on the host.** Rejected because it would introduce undocumented host
   toolchain and process-management dependencies and weaken the reproducible Compose boundary.
-- **Run inference inside the tool sandbox.** Rejected because tool commands are less trusted and do
-  not need access to model weights or the GPU.
+- **Package Hermes in this Compose project.** Superseded because it duplicates
+  the stock Desktop lifecycle and adds project-owned state and services.
 
 ## Consequences
 
-- Hermes can be recreated without rebuilding NInfer or changing model state.
+- Hermes can be reinstalled without rebuilding NInfer or changing model state.
 - NInfer source, CUDA image, and model compatibility can be pinned and verified independently.
 - GPU and model access are granted to one narrowly scoped service.
-- The stack gains an HTTP hop, another image, and a readiness dependency.
-- Compose startup ordering protects initial readiness, but a later NInfer restart can still produce
-  transient provider errors in Hermes until NInfer recovers.
+- The deployment gains an HTTP hop and a readiness dependency.
+- A later NInfer restart can produce transient provider errors in Hermes until
+  NInfer recovers.
 - Cross-service configuration—especially API key, model alias, and context ceiling—must remain
-  synchronized by the setup and configuration scripts.
+synchronized by the Python setup and native Hermes helper.

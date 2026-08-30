@@ -1,159 +1,320 @@
-# Installation
+# Beginner installation: RTX 5090 to Hermes Desktop
 
-This guide installs the tested single-GPU stack: Hermes Agent for orchestration, NInfer for local
-OpenAI-compatible inference, Qwen3.8-27B NVFP4 as the model artifact, and an isolated SSH sandbox
-for terminal and file tools.
+This guide assumes you have a Windows PC with an NVIDIA GeForce RTX 5090 and
+have never installed a local AI model before. You will use normal graphical
+installers for the prerequisites, paste three lines into Command Prompt, and
+accept two setup choices.
 
-The stack targets one NVIDIA GeForce RTX 5090. NInfer is compiled for Blackwell `sm_120a`; this is
-not a generic CUDA or CPU deployment.
+At the end:
 
-## Prerequisites
+- Docker Desktop runs NInfer, the program that uses the RTX 5090 to generate
+  answers.
+- Stock Hermes Desktop runs as a normal Windows application.
+- Hermes uses NInfer on this PC as its configured AI model provider.
+- There is no project username or password, and no cloud AI account or API key
+  is required.
 
-- A 64-bit Linux container environment:
-  - native Linux with Docker Engine and NVIDIA Container Toolkit; or
-  - Docker Desktop (its Linux backend is managed by Docker Desktop; no WSL shell is required).
-- NVIDIA GeForce RTX 5090 with a driver capable of running CUDA 13.1 containers.
-- Docker Engine and Docker Compose. Compose 2.17.0 or newer is required for `up --wait-timeout`;
-  Compose 5.3.0 is the locally audited version.
-- Python 3.11 or newer and Git. The host does not need Bash, PowerShell, `pip`, `uv`, `curl`,
-  `jq`, or `make`.
-- About 24 GiB of free disk space for the 20.02 GiB model plus download staging.
+NInfer is prepared before Hermes. This avoids opening Hermes with a local
+provider that does not work yet.
 
-See [Compatibility](compatibility.md) for the exact host versions that were inspected.
+## Before you begin
 
-## 1. Clone the repository and NInfer
+You need:
 
-NInfer is a pinned Git submodule. Clone it with the stack:
+- an NVIDIA GeForce RTX 5090;
+- a supported 64-bit Windows installation;
+- a working internet connection for the first setup;
+- at least 24 GiB free on the drive containing this repository for the 20.02
+  GiB model;
+- additional free space in Docker Desktop's storage for the Linux image and
+  temporary build files.
 
-```bash
-git clone --recurse-submodules https://github.com/joelfourhman/hermes_ninfer_stack.git hermes-ninfer-stack
+The exact Docker storage use varies, so 24 GiB is not the total free-space
+requirement. The PC should also have enough normal system memory to run Docker
+Desktop, NInfer, and Hermes together. Close games and other GPU-heavy programs
+before setup so NInfer can use the 5090's memory.
+
+## 1. Install the four prerequisites
+
+Use each product's normal graphical installer. You do not need to type any
+PowerShell, Bash, WSL, pip, uv, or CUDA commands.
+
+### NVIDIA driver
+
+1. Open the [official NVIDIA driver page](https://www.nvidia.com/en-us/drivers/).
+2. Select the RTX 5090 and your Windows version.
+3. Install the current driver and restart Windows if asked.
+
+You do **not** need the separate CUDA Toolkit. NInfer's required CUDA software
+is provided by its Docker image.
+
+### Docker Desktop
+
+1. Follow the [official Docker Desktop for Windows installation](https://docs.docker.com/desktop/setup/install/windows-install/).
+2. Use the recommended per-user installation and Linux-container backend.
+3. Keep the recommended WSL 2 backend if Docker selects it. Docker manages that
+   backend; this project never asks you to open WSL.
+4. Start Docker Desktop after installation and accept its terms if they are
+   appropriate for your use.
+5. You may close it afterward. Setup starts Docker Desktop and waits for its
+   engine when needed.
+
+Docker Desktop must remain running whenever you use the local model in Hermes.
+You do not need to sign in to Docker Hub to build this project, although Docker
+Desktop's license terms still apply.
+
+### Git
+
+1. Install [Git for Windows](https://git-scm.com/download/win).
+2. Its normal installer defaults are sufficient.
+
+### Python
+
+1. Install 64-bit [Python for Windows](https://www.python.org/downloads/windows/),
+   version 3.10 or newer.
+2. Enable the option to add Python to `PATH` if the installer offers it.
+3. Close any Command Prompt window that was open before the installation.
+
+The project does not install packages into Python and does not use pip. Python
+only runs the cross-platform `ninfer.py` setup helper.
+
+## 2. Clone the project
+
+Press the Windows key, type **Command Prompt**, and open it normally. Do not
+choose **Run as administrator**. Then enter:
+
+```text
+git clone https://github.com/joelfourhman/hermes_ninfer_stack.git hermes-ninfer-stack
 cd hermes-ninfer-stack
 ```
 
-For an existing clone that does not contain the NInfer source:
+The first line downloads this small project. It does not download the AI model.
+The second line moves Command Prompt into the project directory. The setup
+command initializes the exact NInfer source automatically, so no Git submodule
+knowledge is required.
 
-```bash
-git submodule update --init --recursive
-```
+If Windows says `git` is not recognized, close and reopen Command Prompt. If it
+still fails, rerun the Git installer before trying the clone again.
 
-Confirm the pinned NInfer revision:
+## 3. Run the one-command setup
 
-```bash
-git -C ninfer rev-parse HEAD
-```
-
-Expected output:
+Enter:
 
 ```text
-feaf4dd0983fdaeb2ba4c06eec6da350e644fb3a
+python ninfer.py setup
 ```
 
-Do not replace the submodule with an unpinned checkout. The Compose build uses the source at
-`./ninfer` directly.
+If Windows says `python` is not recognized, close and reopen Command Prompt. If
+it still fails, rerun the Python installer and enable its PATH option.
 
-## 2. Verify Docker GPU access
+Keep Command Prompt open until it says Hermes is configured. The setup is
+resumable, so rerunning the same command is safe if Windows restarts or the
+internet connection is interrupted. Before downloading the model, setup checks
+Python, Git, available disk space, the RTX 5090, Docker Compose, and
+Linux-container mode. If Docker Desktop is installed but stopped, setup opens
+it and waits for its engine. If anything is missing, it gives a plain-English
+fix and stops before the large download.
 
-Test the Docker-to-GPU path before building NInfer:
+### Model download prompt
 
-```bash
-docker run --rm --gpus all \
-  nvidia/cuda:13.1.2-base-ubuntu24.04 \
-  nvidia-smi
-```
-
-The output must identify an RTX 5090. A successful host-side `nvidia-smi` is not sufficient: this
-check also exercises Docker's NVIDIA runtime integration.
-
-## 3. Run the complete interactive setup
-
-One cross-platform Python command performs the complete first run:
+The first question is:
 
 ```text
-python stack.py setup
+Download the model now? [Y/n]:
 ```
 
-The command is resumable and performs these stages in order:
+Press Enter to accept the default yes. Nothing is downloaded until you consent
+here. The download is approximately 20.02 GiB. Setup then verifies that every
+downloaded byte matches the expected model before using it.
 
-1. Initialize the pinned NInfer submodule, ignored local directories, `.env`, random secrets, and
-   the reviewed Hermes baseline without replacing existing local state.
-2. Display the exact 20.02 GiB model transfer and ask whether to download it. Nothing is downloaded
-   unless the owner answers `y` or `yes`. Declining pauses setup safely; rerun the same command later.
-3. Download through a digest-pinned, uv-managed Compose utility and verify the final SHA-256.
-4. Build the pinned images, start NInfer and the SSH sandbox, and wait for application health.
-5. Open the official Hermes wizard, restore the stack-owned provider and terminal fields afterward,
-   and start the complete stack.
+The downloader uses uv inside a temporary Docker container. It does not use
+pip and does not install uv, Hugging Face tools, or Python packages on Windows.
+No Hugging Face account or token is required for this public model.
 
-Nothing is installed into the host Python environment. CI and ordinary image builds never download
-the model. The standalone `python stack.py download-model` command remains available for recovery,
-checksum verification, or manually resuming model acquisition.
+After the download, Docker builds NInfer and loads the model. The first build
+and first model load can take time and can produce a lot of technical-looking
+output. Leave Docker Desktop and Command Prompt open. Setup does not continue
+to Hermes until NInfer produces a short answer through the authenticated API.
 
-Use these choices when the Hermes wizard opens:
+If you type `n` at this first prompt, setup stops cleanly. Run
+`python ninfer.py setup` again when you are ready for the download.
 
-1. **Blank Slate**
-2. **ninfer (currently active)**
-3. **qwen-local**
-4. **Keep current (ssh)**
-5. **Start with everything disabled — finish now**
+### Hermes Desktop prompt
 
-Blank Slate deliberately clears the provider during the wizard and may finish with a “no inference
-provider is configured” warning. This is expected. Do not enter a Nous Portal or external-provider
-API key: `python stack.py setup` immediately reapplies `http://ninfer:8080/v1`, `qwen-local`, and the
-SSH sandbox through Hermes's supported configuration interface after the wizard exits.
-
-Choose **Walk through all configurations** at the final prompt only when intentionally enabling a
-messaging integration or optional tool. Those choices remain in ignored `hermes-data/`; the setup
-command still restores only the fields owned by this stack.
-
-Once setup has completed, later runs preserve the wizard choices and skip it. Use
-`python stack.py setup --rerun-wizard` to intentionally run it again. Existing `.env`, Hermes data,
-model bytes, and workspace content remain preserved.
-
-The following paths are local runtime data and must remain outside Git:
-
-- `.env`
-- `hermes-data/`
-- downloaded files under `models/`
-- generated content under `workspace/`
-
-## 4. Verify the complete stack
+Once NInfer is working, setup asks:
 
 ```text
-python stack.py verify
+Install and configure stock Hermes Desktop now? [Y/n]:
 ```
 
-Verification checks the GPU, model checksum, NInfer health and API, Hermes-to-NInfer inference,
-sandbox networking, and a real terminal tool side effect. A healthy container alone is not treated
-as proof that inference or tool execution works. NInfer's initial model load can take several
-minutes; use `python stack.py logs` if setup is waiting on readiness.
+Press Enter. The capital `Y` means yes is already the default.
 
-## Shell and web dashboard access
+If Hermes is not installed, your browser opens the
+[official Hermes Desktop page](https://hermes-agent.nousresearch.com/desktop).
+Then:
 
-Open Bash inside Hermes while remaining in the host's normal terminal:
+1. Choose the Windows download on the official page.
+2. Run the stock Hermes installer and complete its normal per-user setup. This
+   repository does not download, wrap, or replace that installer.
+3. Start Hermes once if the installer does not open it automatically.
+4. If Hermes asks which AI provider to use, select **Choose provider later**.
+   Do not enter a Nous Portal key or another cloud-provider key for this local
+   setup.
+5. Let Hermes finish installing its components and complete the first-launch
+   screens.
+6. Return to the still-running Command Prompt. At **Press Enter here after
+   those three steps are finished**, press Enter.
+
+The helper now stores a randomly generated local connection key in Hermes's
+normal private settings and selects the local `qwen-local` model. It does not
+show the key, ask you to copy it, or change unrelated Hermes providers and
+preferences. It also selects Hermes's `manual` command-approval mode so flagged
+commands are shown to you instead of being automatically approved by the
+default smart reviewer. Direct file-write tools start in this repository's
+`workspace/` and are blocked outside that folder and Hermes's own profile.
+Native terminal commands still have your normal user access.
+
+Wait for this message:
 
 ```text
-python stack.py shell
+Hermes Desktop is configured for the authenticated local NInfer endpoint.
 ```
 
-Start and open the authenticated Hermes dashboard:
+The helper next says **Close Hermes Desktop if it is open, then press Enter to
+reopen it**. Close the Hermes window, return to Command Prompt, and press Enter.
+The helper reopens Hermes automatically when it can; otherwise it tells you to
+use the Start menu. Wait for **SETUP COMPLETE**, then begin a new chat.
+
+A simple first message such as
+`Reply with one sentence to confirm you are working` is enough to confirm the
+desktop experience. Before allowing Hermes to run commands or change files,
+read
+[Safety before the first real task](#safety-before-the-first-real-task).
+
+## If the Hermes window or setup window was closed
+
+The model does not need to be downloaded again. Open Command Prompt in the
+`hermes-ninfer-stack` directory and run:
 
 ```text
-python stack.py gui
+python ninfer.py install-hermes
 ```
 
-The dashboard maps `127.0.0.1:9119` to the container by default. Setup generates its independent
-username, password, and session-signing secret in the ignored `.env` file. It is not exposed to the
-LAN.
+This command starts Docker Desktop and the configured NInfer service if needed,
+opens the official Hermes page if the stock app is still missing, and safely
+repeats only the Hermes configuration.
 
-## Routine operation
+If the model setup itself did not finish, use the original resumable command:
 
-```bash
-docker compose up -d
-docker compose ps
-docker compose logs -f
-docker compose down
+```text
+python ninfer.py setup
 ```
 
-`docker compose down` preserves bind-mounted data and named volumes. Do not add `-v` unless you
-intend to delete the sandbox home, SSH client identity, and SSH host identity.
+## Optional confidence check
 
-For installation failures, continue with [Troubleshooting](troubleshooting.md).
+After Hermes is configured, close Hermes and run:
+
+```text
+python ninfer.py verify
+```
+
+This checks the downloaded model, RTX 5090 access, NInfer authentication, a
+real generated answer, Hermes's selected provider, and the complete
+Hermes-to-NInfer route. Initial model loading can take several minutes. To see
+NInfer's current output while diagnosing a wait, run:
+
+```text
+python ninfer.py logs
+```
+
+Press Ctrl+C when you are finished viewing the output; that stops the log view,
+not the NInfer container.
+
+## Using Hermes after restarting Windows
+
+The 20.02 GiB model remains downloaded. You do not repeat setup.
+
+1. Open Command Prompt in the `hermes-ninfer-stack` directory.
+2. Start NInfer:
+
+   ```text
+   python ninfer.py up
+   ```
+
+   This starts Docker Desktop if needed and waits until the model is ready.
+
+3. Open Hermes Desktop from the Start menu.
+
+To stop the local model when you are finished:
+
+```text
+python ninfer.py down
+```
+
+Stopping NInfer does not remove the model or Hermes chats. Closing Hermes does
+not stop NInfer. Docker Desktop needs to stay open only while NInfer is running.
+
+## Safety before the first real task
+
+Hermes Desktop runs as your signed-in Windows user. That means it can read or
+change the same files that you can, without needing an Administrator prompt.
+UAC does not protect your normal user files from another program running as
+you.
+
+For a safer beginning:
+
+- never run Hermes as Administrator;
+- use the helper-configured `workspace/` folder for initial tasks rather than
+  important personal files;
+- read approval prompts before allowing file or command actions;
+- remember that approving a Docker command gives Hermes the same Docker access
+  as your signed-in user;
+- keep important files in version control or a backup Hermes cannot overwrite;
+- do not enable unattended tools, plugins, or scheduled actions until you
+  understand their access.
+
+Hermes approvals are useful guardrails, but native Hermes is not an operating
+system sandbox. Use a separate Windows account or virtual machine if you need a
+stronger boundary. Read [Security](security.md) before granting broad tool
+access.
+
+## What setup changes
+
+Setup creates an ignored `.env` file containing the private NInfer key and
+saves the model under `models/`. Only NInfer receives GPU access, and the model
+is mounted read-only in its container. NInfer listens only at the private
+`127.0.0.1` loopback address, not on the local network.
+
+The official Windows Hermes installation normally keeps its runtime under
+`%LOCALAPPDATA%\hermes`. Its current stock installer internally invokes its own
+PowerShell bootstrap and provisions PortableGit. This project never asks you
+to run either shell, but a policy that forbids those installer-managed
+processes is not compatible with the current stock Hermes distribution.
+
+When upgrading from this repository's former all-container release, setup may
+remove its obsolete Hermes, relay, and SSH-sandbox containers as Compose
+orphans. It does not delete their ignored host data or named volumes.
+
+## Updating
+
+Treat NInfer and Hermes as independent programs:
+
+- update Hermes with its official Desktop update mechanism;
+- update this repository only after reviewing its release and compatibility
+  notes;
+- rerun `python ninfer.py install-hermes` after changing the NInfer key, port,
+  or model;
+- rerun `python ninfer.py verify` after either side changes.
+
+The helper does not silently replace or downgrade an existing Hermes Desktop
+installation.
+
+## Uninstalling
+
+- Use Windows's normal installed-apps page to uninstall Hermes Desktop. Decide
+  separately whether to keep its user data.
+- Run `python ninfer.py down` to stop NInfer.
+- Docker image cleanup and deletion of `models/` are separate, explicit
+  actions. Setup never deletes the downloaded model.
+
+For other failures, continue with [Troubleshooting](troubleshooting.md).

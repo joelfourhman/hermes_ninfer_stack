@@ -51,12 +51,14 @@ body:
       label: Environment
       description: Do not paste a complete environment-variable dump.
       placeholder: |
-        - Stack commit:
-        - OS / WSL version:
+        - Project commit:
+        - OS version:
+        - Python version:
         - Docker and Compose versions:
         - GPU:
         - NVIDIA driver:
         - NInfer submodule commit:
+        - Hermes Desktop/native Hermes version (if relevant):
         - Model artifact and checksum result:
     validations:
       required: true

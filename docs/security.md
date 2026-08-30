@@ -1,176 +1,175 @@
 # Security model
 
-This stack deliberately limits what Hermes and model-generated commands can
-reach. It is designed for a single trusted operator on a local workstation; it
-is not a multi-tenant isolation system, an internet-facing agent service, or a
-security boundary against a hostile Docker administrator.
+## Summary
+
+The active design provides a container boundary around NInfer, not around
+Hermes. It is intended for one operator on a local workstation and is not a
+multi-tenant or internet-facing agent service.
+
+Stock Hermes Desktop runs natively as the current OS user. It therefore has the
+same filesystem and process authority as that user. UAC limits unapproved
+elevation on Windows, but it does not stop a non-elevated Hermes process from
+modifying or deleting files the current user can modify or delete.
 
 ## Trust boundaries
 
 | Component | Host access | Network access | Persistent data | Principal risk |
 | --- | --- | --- | --- | --- |
-| Hermes | Read/write `hermes-data`; read-only `workspace`; read-only sandbox client key | NInfer, sandbox, and outbound egress | Configuration, memory, sessions, skills, and logs | Prompt injection or plugin code can act with orchestrator privileges |
-| NInfer | Read-only model directory; GPU device | Internal inference network and host-loopback published API | None in the Compose definition | Native parser/runtime or GPU-driver compromise |
-| Model downloader (explicit profile) | Read/write model directory | Temporary outbound access | Hugging Face staging cache under `models/` | Supply-chain input or corrupted partial download; final artifact is checksum-verified |
-| SSH sandbox | Read/write `workspace`; named home and SSH host-key volumes | Internal sandbox network only | Workspace, sandbox home, and SSH identity | Model-generated commands can alter all sandbox-visible data |
-| Sandbox key generator | Named SSH key volumes only | No network | Sandbox client and authorized keys | One-shot root process creates a long-lived credential |
-| Sandbox trust reconciler | Read-only sandbox host-key volume; read/write only `hermes-data/.ssh` | No network | One `[sandbox]:2222` public-key entry | A corrupted host-key volume could redirect Hermes tool execution; the service validates key type and never reads network key material |
-| Docker daemon | Full control of containers, images, networks, and volumes | Host-dependent | All Docker-managed state | Docker access is effectively host-administrator access |
+| Native Hermes Desktop/runtime | Everything allowed to the current user | NInfer loopback endpoint and any egress allowed to the user | Standard Hermes config, secrets, sessions, memory, skills, logs | Prompt injection, unsafe tools, plugins, or compromised runtime acting with user authority |
+| NInfer container | Read-only model directory and GPU device | Authenticated loopback-published API | No application state in Compose | Native parser/runtime or GPU-driver compromise |
+| Model downloader | Read/write `models/` during explicit acquisition | Temporary outbound Hugging Face access | Partial download/cache beneath `models/` | Supply-chain input or corrupted partial file; final artifact is checksum-verified |
+| Docker daemon | Container, image, network, volume, and GPU control | Host-dependent | Docker-managed state | Docker access is effectively administrative for this deployment |
 
-Only NInfer receives GPU access. No service mounts the Docker socket, uses
-privileged mode, joins the host network or PID namespace, or mounts a broad host
-filesystem path. The sandbox publishes no host port. NInfer's API and Hermes's
-authenticated dashboard are published on host loopback only. NInfer requires a
-bearer key; the dashboard uses a separate generated username, password, and
-session-signing secret.
+NInfer is the only long-running container. No Docker socket, broad host path,
+host network, host PID namespace, or privileged mode is exposed to it. The
+model is mounted read-only.
 
-## Request and tool flow
+There is no active SSH sandbox. Historical documentation describing one is
+retained only in the superseded ADR.
 
-1. Hermes receives operator input and sends an OpenAI-compatible request to
-   NInfer over the internal inference network.
-2. NInfer evaluates the selected Qwen artifact on the GPU and returns model
-   output or a proposed tool call.
-3. Hermes validates and orchestrates tool use. Terminal and code execution are
-   sent over key-only SSH to the sandbox.
-4. The sandbox runs commands as the unprivileged `agent` account. It can write
-   the shared workspace and its persistent home, but it has no GPU, host port,
-   Docker socket, or outbound network route.
+## NInfer endpoint
 
-The separation protects the host and inference service from ordinary tool
-commands, but it does not make tool output trustworthy. Hermes intentionally
-holds the SSH client key and can direct the sandbox. All Hermes-side plugins,
-hooks, connectors, and subprocesses remain inside the Hermes container rather
-than the SSH sandbox.
+Compose publishes NInfer as:
+
+```text
+127.0.0.1:${NINFER_HOST_PORT} -> ninfer:8080
+```
+
+Loopback prevents ordinary remote clients from reaching the service. NInfer
+also requires the generated bearer key, which protects against unauthorized
+local requests. These controls do not defend against an attacker already able
+to inspect the user's files, Hermes state, Docker metadata, or processes.
+
+Do not change the host bind to `0.0.0.0` without designing a separate remote
+access boundary with TLS, authentication, firewall policy, rate limits, and
+request-size limits.
+
+## Native Hermes authority
+
+Hermes can propose and execute tools. When it uses native terminal, file,
+browser-control, plugin, connector, cron, or computer-use capabilities, those
+actions occur with current-user authority unless the upstream tool introduces
+its own stronger boundary.
+
+Important consequences:
+
+- files in Documents, source checkouts, cloud-synced folders, and other
+  user-writable locations are within reach;
+- user-readable credentials may be exposed to a compromised or
+  prompt-injected tool;
+- another local process launched by Hermes inherits the user's permissions;
+- if the current user can control Docker, a Docker command approved for Hermes
+  can control it too; the NInfer container's missing Docker socket does not
+  sandbox the separate native Hermes process;
+- a malicious package, plugin, hook, or repository script can persist outside
+  this project;
+- the helper limits direct `write_file` and `patch` operations to this
+  repository's `workspace/` and the Hermes profile, but terminal commands run
+  as the user and can still reach other user-writable paths;
+- approval dialogs and that file-write guard reduce accidents but are not
+  kernel enforcement for every possible execution path.
+
+For stronger isolation, run Hermes under a dedicated standard OS account or in
+a separately managed VM and expose only the intended work area. That is an
+operator choice outside the default project setup.
+
+## Recommended operating policy
+
+- Keep the helper-configured `approvals.mode: manual` setting enabled. It
+  requires a user decision for commands Hermes flags; it does not turn every
+  tool call into a prompt or create an OS sandbox.
+- Keep the helper-configured `HERMES_WRITE_SAFE_ROOT` value unless you
+  deliberately need direct file tools in another folder. Rerun
+  `python ninfer.py install-hermes` to restore the reviewed roots.
+- Do not enable YOLO or unattended broad command approval for sensitive work.
+- Use the smallest practical tool and plugin set.
+- Treat content from websites, documents, issue reports, repositories, and
+  tool output as potentially prompt-injected.
+- Use disposable copies for unfamiliar projects and generated experiments.
+- Keep important work in version control.
+- Maintain backups under a different identity or medium that the active user
+  and Hermes cannot silently overwrite.
+- Review commands that delete, overwrite, change permissions, install
+  packages, add startup persistence, or transmit data.
+
+Controlled Folder Access or similar endpoint controls can add protection on
+Windows, but only if Hermes and its interpreters are not broadly allowlisted.
+Such controls need independent testing; this repository does not configure or
+claim them.
 
 ## Filesystem and persistence
 
-- `hermes-data` is writable by Hermes and may contain secrets, conversation
-  state, memory, logs, installed skills, and user-specific configuration.
-- `workspace` is read-only in Hermes and read/write in the sandbox. Any command
-  accepted by the agent can create, modify, encrypt, or delete files there.
-- `models` is read-only in NInfer. Model artifacts are large executable inputs
-  to a native parser and should come only from the documented, checksum-pinned
-  source.
-- The sandbox home, client key, authorized key, and host key are Docker named
-  volumes. The home is shared across sessions, so shell configuration,
-  installed packages, and other state can influence later runs.
-- Hermes keeps strict host-key checking enabled. A network-isolated, unprivileged
-  one-shot service reads the persisted public host key and reconciles only the
-  sandbox entry before Hermes starts; it cannot access the private host key.
+- `.env` contains the NInfer key and must remain ignored.
+- `models/` contains a large native artifact mounted read-only into NInfer.
+- Stock Hermes's per-user home contains provider secrets, conversations,
+  memory, skills, installed integrations, and logs.
+- NInfer container recreation does not clear native Hermes state.
+- Hermes uninstall and data removal are controlled by the official Hermes
+  lifecycle, not by this project.
 
-Do not place irreplaceable files or credentials in the workspace. Maintain
-backups outside every mounted directory. `docker compose down -v` deletes the
-sandbox home and SSH identity volumes; ordinary `docker compose down` does not.
-
-## Network boundaries
-
-The inference and sandbox networks are marked internal. NInfer and the sandbox
-cannot initiate internet access through their Compose networks. Hermes joins a
-normal bridge for orchestrator features. A credential-free, unprivileged TCP
-relay joins the inference and control bridges because Docker Desktop does not
-publish ports for internal-only containers. It exposes only NInfer's already
-authenticated API on `127.0.0.1`; NInfer itself retains no-egress isolation.
-
-Do not change NInfer's host binding from `127.0.0.1` to `0.0.0.0` without an
-authenticated reverse proxy, firewall policy, TLS, request limits, and an
-explicit remote-access threat model. Never expose the SSH sandbox port to the
-host or attach the sandbox to a general egress network merely to make a tool
-download convenient.
+Do not place secrets or irreplaceable data in a location merely because it is
+outside this repository. Native Hermes is not restricted to the project tree.
 
 ## Secrets
 
-Project-local API keys are generated into the ignored `.env` file. Hermes may
-also write provider or connector credentials beneath ignored `hermes-data`.
-The tracked `hermes/config.example.yaml` contains only environment-variable
-references, never secret values.
-
-The NInfer key is supplied as a server command argument and is therefore
-visible to users who can inspect Docker container metadata or host process
-arguments. Such users generally already have extensive control over the stack,
-but the key must still not be copied into diagnostics or issue reports. The
-verification scripts may briefly place authorization headers in local process
-arguments and store synthetic responses in a temporary directory after a
-failed check.
+`python ninfer.py setup` generates a random NInfer bearer key in the ignored
+project `.env`. `python ninfer.py install-hermes` stores the same value through
+Hermes's supported secret writer and configures `key_env: NINFER_API_KEY`.
+The key is not embedded in provider YAML.
 
 Recommended handling:
 
-- never commit `.env`, Hermes state, SSH keys, model artifacts, or command logs;
-- use distinct, randomly generated keys and rotate both after suspected
-  disclosure;
-- redact authorization headers, environment dumps, URLs with credentials, and
-  private prompts before sharing diagnostics;
-- do not forward environment secrets into the sandbox; and
-- treat anyone with Docker-daemon access as able to read container secrets and
-  named volumes.
-
-## Prompt injection and agent-generated commands
-
-Content from web pages, repositories, documents, issue reports, and tool output
-can contain instructions intended to override the operator's goal or obtain
-credentials. The model may also generate an unsafe command without malicious
-input.
-
-Before granting the agent access to untrusted content:
-
-- remove credentials and unrelated private data from mounted directories;
-- inspect proposed destructive or privilege-changing commands;
-- use a disposable workspace for unfamiliar repositories;
-- review new scripts, plugins, hooks, package manifests, and shell startup files
-  before subsequent sessions; and
-- stop the stack if behavior diverges from the requested task.
-
-Loop guardrails reduce repeated failures; they do not determine whether an
-individual command is safe.
+- never commit project `.env` or Hermes user data;
+- do not post environment dumps, authorization headers, or URLs containing
+  credentials;
+- do not include the bearer key in benchmark reports;
+- treat users with Docker-daemon access or access to Hermes's secret file as
+  able to recover the key;
+- rotate the key after suspected disclosure, recreate NInfer, and rerun the
+  Hermes helper;
+- rotate every other credential available to Hermes if the native runtime may
+  have been compromised.
 
 ## Native-code and GPU boundary
 
-NInfer processes model containers and request payloads in native C++/CUDA code
-and runs with GPU device access. The service currently uses the image's default
-root user and does not have the sandbox's read-only-root or capability-drop
-policy. Its only host bind is the read-only model directory, which limits
-ordinary filesystem impact but does not eliminate parser, CUDA-runtime, or
-driver risk. Use only the documented artifact revision and verify its SHA-256
-digest before startup.
+NInfer parses the model container and request payloads in native C++/CUDA code
+with GPU-device access. Its read-only model mount reduces ordinary filesystem
+impact but does not eliminate parser, CUDA-runtime, or driver risk. Use only the
+documented artifact revision and verify its SHA-256 before startup.
 
-Hermes also uses the upstream image's root user because the image performs its
-own UID/GID and state initialization. A compromise can modify all Hermes state
-and use Hermes's egress or sandbox credential, though it cannot directly write
-the host workspace mount.
+Hermes is also executable code with a broader user-level attack surface:
+Electron, Python, dependencies, integrations, browser automation, and any tools
+the operator enables. Keep it updated through the official distribution and
+review release notes for security-relevant changes.
 
-## Supply-chain controls
+## Supply chain
 
-The stack pins the NInfer submodule to a commit and the model download to both a
-repository revision and a SHA-256 digest. These controls establish identity,
-not trust. Review upstream release notes and source changes before updating
-either pin.
+The project pins the NInfer source commit and the model repository revision and
+SHA-256. These controls establish identity, not trust. CUDA images, operating
+system packages, Docker, the NVIDIA driver, Python dependencies, and stock
+Hermes remain supply-chain inputs.
 
-Container tags, operating-system package repositories, the NVIDIA container
-runtime, the Hermes image, developer-installed Python tools, and downloaded
-packages remain supply-chain inputs. Prefer reviewed release tags or immutable
-image digests, rebuild intentionally, and inspect dependency-license and
-security changes during upgrades. CI does not download the model or exercise
-GPU inference.
-
-The root Apache-2.0 license covers stack-authored files. The NInfer submodule,
-model artifacts, container images, system packages, and vendored dependencies
-retain their own licenses and notices.
+The helper always directs installation to the official Hermes site. It does not
+mirror, wrap, or sign an alternative Desktop executable. Confirm publisher and
+download origin using normal platform controls.
 
 ## Incident response
 
 If compromise or secret disclosure is suspected:
 
-1. Stop the stack without deleting evidence: `docker compose stop`.
-2. Disconnect the host from untrusted networks if active exfiltration is
+1. Stop NInfer without deleting evidence: `python ninfer.py down`.
+2. Close Hermes Desktop and stop its native background processes.
+3. Disconnect the host from untrusted networks if active exfiltration is
    possible.
-3. Preserve relevant, redacted container metadata and logs outside the
-   repository.
-4. Rotate project API keys and every external credential available to Hermes or
-   the sandbox.
-5. Recreate affected containers and, when persistence is suspect, replace the
-   sandbox home and SSH-key volumes after preserving needed evidence.
-6. Restore workspace and Hermes state from a known-good backup.
-7. Report stack vulnerabilities through GitHub private vulnerability reporting
-   as described in the root `SECURITY.md`.
+4. Preserve relevant, redacted Docker and Hermes logs outside the repository.
+5. Rotate the NInfer key and every external credential available to Hermes.
+6. Inspect native persistence, installed plugins, skills, hooks, scheduled
+   tasks, browser state, and modified user files.
+7. Reinstall or restore Hermes and user data from a known-good source when
+   integrity is uncertain.
+8. Restore affected work from protected backups and run full verification.
+9. Report project vulnerabilities through the process in the root
+   `SECURITY.md`.
 
-Do not publish live credentials or an uncoordinated proof of concept while
-reporting an incident.
+Do not publish live credentials or unredacted private prompts while reporting
+an incident.

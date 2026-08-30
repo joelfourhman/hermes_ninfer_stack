@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Cross-platform, layer-by-layer verification for the running stack."""
+"""Cross-platform, layer-by-layer verification for the NInfer runtime."""
 
 from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -22,9 +23,9 @@ EXPECTED_COMMIT = "feaf4dd0983fdaeb2ba4c06eec6da350e644fb3a"
 EXPECTED_MODEL = "qwen3_8_27b_nvfp4.ninfer"
 EXPECTED_SHA = "bb3360522a06e136e0367f5703414d26272b7285c8a6ab6194135c17dbd81b32"
 EXPECTED_BASE = "docker.io/nvidia/cuda:13.1.2-runtime-ubuntu24.04"
-TOTAL = 12
+TOTAL = 11
 step = 0
-temp_dir = Path(tempfile.mkdtemp(prefix="hermes-ninfer-verify-"))
+temp_dir = Path(tempfile.mkdtemp(prefix="ninfer-verify-"))
 
 
 class Failure(RuntimeError):
@@ -46,7 +47,13 @@ def passed(detail: str = "") -> None:
         print(f"         {detail}")
 
 
-def run(command: list[str], *, timeout: int = 120, check: bool = True) -> subprocess.CompletedProcess[str]:
+def run(
+    command: list[str],
+    *,
+    timeout: int = 120,
+    check: bool = True,
+    env: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess[str]:
     try:
         completed = subprocess.run(
             command,
@@ -56,6 +63,7 @@ def run(command: list[str], *, timeout: int = 120, check: bool = True) -> subpro
             stderr=subprocess.PIPE,
             timeout=timeout,
             check=False,
+            env=env,
         )
     except FileNotFoundError as exc:
         raise Failure(f"Missing required command: {command[0]}", "install the documented prerequisites") from exc
@@ -87,13 +95,38 @@ def compose(*args: str, timeout: int = 120, check: bool = True) -> subprocess.Co
 
 def env_values() -> dict[str, str]:
     if not ENV_FILE.is_file():
-        raise Failure("Missing .env", "python stack.py setup")
+        raise Failure("Missing .env", "python ninfer.py setup")
     values: dict[str, str] = {}
     for line in ENV_FILE.read_text(encoding="utf-8").splitlines():
         if re.match(r"^[A-Z][A-Z0-9_]*=", line):
             key, value = line.split("=", 1)
             values[key] = value.rstrip("\r")
     return values
+
+
+def private_env_value(path: Path, key: str) -> str | None:
+    """Read the final value of one dotenv key without exposing other secrets."""
+    if not path.is_file():
+        return None
+    found: str | None = None
+    for line in path.read_text(encoding="utf-8-sig", errors="replace").splitlines():
+        candidate = line.strip()
+        if candidate.startswith("export "):
+            candidate = candidate[7:].lstrip()
+        assigned, separator, raw = candidate.partition("=")
+        if not separator or assigned.upper() != key.upper():
+            continue
+        raw = raw.strip()
+        if len(raw) >= 2 and raw[0] == raw[-1] == '"':
+            try:
+                found = json.loads(raw)
+            except json.JSONDecodeError:
+                found = raw[1:-1]
+        elif len(raw) >= 2 and raw[0] == raw[-1] == "'":
+            found = raw[1:-1]
+        else:
+            found = raw
+    return found
 
 
 def request_json(url: str, *, token: str, payload: dict | None = None, timeout: int = 600) -> dict:
@@ -111,17 +144,142 @@ def request_json(url: str, *, token: str, payload: dict | None = None, timeout: 
 def container_health(service: str) -> tuple[str, str]:
     container_id = compose("ps", "-q", service).stdout.strip()
     if not container_id:
-        raise Failure(f"{service} is not running", f"python stack.py up")
+        raise Failure(f"{service} is not running", "python ninfer.py up")
     health = run(
         ["docker", "inspect", "--format", "{{if .State.Health}}{{.State.Health.Status}}{{else}}missing{{end}}", container_id]
     ).stdout.strip()
     return container_id, health
 
 
+def native_hermes_command() -> tuple[list[str], dict[str, str]] | None:
+    configured_home = os.environ.get("HERMES_HOME")
+    if configured_home:
+        home = Path(configured_home).expanduser()
+    elif os.name == "nt" and os.environ.get("LOCALAPPDATA"):
+        home = Path(os.environ["LOCALAPPDATA"]) / "hermes"
+    else:
+        home = Path.home() / ".hermes"
+
+    if os.name == "nt":
+        python_candidates = [home / "hermes-agent" / "venv" / "Scripts" / "python.exe"]
+        launcher_candidates = [
+            home / "bin" / "hermes.exe",
+            home / "hermes-agent" / "venv" / "Scripts" / "hermes.exe",
+        ]
+    else:
+        python_candidates = [home / "hermes-agent" / "venv" / "bin" / "python"]
+        launcher_candidates = [
+            home / "bin" / "hermes",
+            home / "hermes-agent" / "venv" / "bin" / "hermes",
+        ]
+
+    command: list[str] | None = None
+    for candidate in python_candidates:
+        if candidate.is_file():
+            command = [str(candidate), "-m", "hermes_cli.main"]
+            break
+    if command is None:
+        for candidate in launcher_candidates:
+            if candidate.is_file():
+                command = [str(candidate)]
+                break
+    if command is None:
+        discovered = shutil.which("hermes.exe" if os.name == "nt" else "hermes")
+        if discovered:
+            command = [discovered]
+    if command is None:
+        return None
+
+    process_env = os.environ.copy()
+    process_env["HERMES_HOME"] = str(home)
+    return command, process_env
+
+
+def verify_optional_hermes(
+    *,
+    host_port: str,
+    model_id: str,
+    context: str,
+    compression: str,
+    max_turns: str,
+) -> None:
+    begin("Optional native Hermes config")
+    resolved = native_hermes_command()
+    if resolved is None:
+        passed("Stock Hermes Desktop is not installed or discoverable; skipped")
+        return
+    command, process_env = resolved
+
+    config_check = run([*command, "config", "check"], check=False, env=process_env)
+    if config_check.returncode != 0:
+        raise Failure(
+            "Stock Hermes is installed, but its native configuration is invalid",
+            "python ninfer.py install-hermes",
+        )
+
+    expected = {
+        "model.provider": "custom:ninfer",
+        "model.default": model_id,
+        "model.context_length": context,
+        "model.supports_vision": "false",
+        "providers.ninfer.api": f"http://127.0.0.1:{host_port}/v1",
+        "compression.enabled": compression,
+        "agent.max_turns": max_turns,
+        "terminal.backend": "local",
+        "terminal.cwd": str((ROOT / "workspace").resolve()),
+        "approvals.mode": "manual",
+    }
+    actual: dict[str, str] = {}
+    for key in expected:
+        result = run([*command, "config", "get", key], check=False, env=process_env)
+        if result.returncode != 0:
+            raise Failure(
+                f"Hermes is missing the native NInfer setting {key}",
+                "python ninfer.py install-hermes",
+            )
+        actual[key] = result.stdout.strip().strip('"')
+    mismatches = [
+        f"{key}={actual[key]!r} (expected {value!r})"
+        for key, value in expected.items()
+        if actual[key].lower() != value.lower()
+    ]
+    if mismatches:
+        raise Failure(
+            "Native Hermes NInfer configuration mismatch: " + "; ".join(mismatches),
+            "python ninfer.py install-hermes",
+        )
+    profile_home = Path(process_env["HERMES_HOME"]).expanduser().resolve()
+    expected_safe_roots = os.pathsep.join(
+        (str((ROOT / "workspace").resolve()), str(profile_home))
+    )
+    if private_env_value(profile_home / ".env", "HERMES_WRITE_SAFE_ROOT") != expected_safe_roots:
+        raise Failure(
+            "Hermes's direct file-write guard is missing or does not match the reviewed roots",
+            "python ninfer.py install-hermes",
+        )
+
+    marker = "HERMES_NINFER_OK"
+    probe = run(
+        [
+            *command,
+            "--ignore-rules",
+            "-z",
+            f"Reply with exactly {marker} and nothing else. Do not use tools.",
+        ],
+        timeout=900,
+        env=process_env,
+    ).stdout.strip()
+    if probe != marker:
+        raise Failure(
+            f"Native Hermes did not return the expected route marker; received {probe!r}",
+            "python ninfer.py install-hermes",
+        )
+    passed(f"Hermes generated through {expected['providers.ninfer.api']} with model {model_id}")
+
+
 def main() -> int:
     values = env_values()
     api_key = values.get("NINFER_API_KEY", "")
-    hermes_key = values.get("HERMES_API_SERVER_KEY", "")
     host_port = values.get("NINFER_HOST_PORT", "")
     gpu = values.get("NINFER_GPU_DEVICE", "")
     model = values.get("NINFER_MODEL_FILE", "")
@@ -134,9 +292,7 @@ def main() -> int:
 
     begin("Prerequisites and configuration")
     if not re.fullmatch(r"[0-9a-fA-F]{64}", api_key):
-        raise Failure("NINFER_API_KEY must be a 64-character hexadecimal secret", "python stack.py setup")
-    if not re.fullmatch(r"[0-9a-fA-F]{64}", hermes_key):
-        raise Failure("HERMES_API_SERVER_KEY must be a 64-character hexadecimal secret", "python stack.py setup")
+        raise Failure("NINFER_API_KEY must be a 64-character hexadecimal secret", "python ninfer.py setup")
     if not host_port.isdigit() or not 1 <= int(host_port) <= 65535:
         raise Failure("NINFER_HOST_PORT must be from 1 through 65535", "edit .env")
     if not gpu.isdigit() or not re.fullmatch(r"[A-Za-z0-9._-]+\.ninfer", model):
@@ -152,13 +308,15 @@ def main() -> int:
     passed(f"model={model_id} context={context} KV={kv_capacity} concurrency={concurrency} GPU={gpu}")
 
     begin("Compose and source pin")
-    compose("config", "--quiet")
+    rendered_compose = compose("config").stdout
+    if "host_ip: 127.0.0.1" not in rendered_compose:
+        raise Failure("NInfer must be published only on host loopback")
     commit = run(["git", "-C", str(ROOT / "ninfer"), "rev-parse", "HEAD"]).stdout.strip()
     if commit != EXPECTED_COMMIT:
         raise Failure(f"NInfer is at {commit}, expected {EXPECTED_COMMIT}")
     if run(["git", "-C", str(ROOT / "ninfer"), "status", "--porcelain", "--untracked-files=all"]).stdout.strip():
         raise Failure("The NInfer worktree has local or untracked changes")
-    passed(f"NInfer {commit[:12]}; Compose resolves")
+    passed(f"NInfer {commit[:12]}; authenticated loopback Compose config resolves")
 
     begin("Docker daemon")
     run(["docker", "info"])
@@ -183,7 +341,7 @@ def main() -> int:
         ["docker", "image", "inspect", "--format", '{{ index .Config.Labels "org.opencontainers.image.base.name" }}', image_id]
     ).stdout.strip()
     if revision != EXPECTED_COMMIT or base != EXPECTED_BASE:
-        raise Failure("NInfer image provenance labels do not match the pinned source and CUDA base", "python stack.py build")
+        raise Failure("NInfer image provenance labels do not match the pinned source and CUDA base", "python ninfer.py build")
     gpu_output = compose(
         "run",
         "--rm",
@@ -205,13 +363,13 @@ def main() -> int:
         raise Failure(f"No checksum is registered for {model}")
     model_path = ROOT / "models" / model
     if not model_path.is_file() or model_path.stat().st_size == 0:
-        raise Failure(f"Missing models/{model}", "python stack.py download-model")
+        raise Failure(f"Missing models/{model}", "python ninfer.py download-model")
     checksum = hashlib.sha256()
     with model_path.open("rb") as handle:
         for chunk in iter(lambda: handle.read(8 * 1024 * 1024), b""):
             checksum.update(chunk)
     if checksum.hexdigest() != EXPECTED_SHA:
-        raise Failure("Model checksum mismatch", "python stack.py download-model")
+        raise Failure("Model checksum mismatch", "python ninfer.py download-model")
     passed("Qwen3.8-27B NVFP4 checksum matches")
 
     begin("NInfer container health")
@@ -221,8 +379,21 @@ def main() -> int:
         raise Failure(f"NInfer health is '{health}' or its running image is stale", "docker compose logs --tail=200 ninfer")
     passed("NInfer /health reports ready")
 
+    begin("NInfer authentication boundary")
+    models_url = f"http://127.0.0.1:{host_port}/v1/models"
+    try:
+        urllib.request.urlopen(models_url, timeout=30).close()
+    except urllib.error.HTTPError as exc:
+        if exc.code not in {401, 403}:
+            raise Failure(f"Unauthenticated NInfer request returned HTTP {exc.code}, expected 401 or 403") from exc
+    except urllib.error.URLError as exc:
+        raise Failure(f"Could not reach NInfer on host loopback: {exc}") from exc
+    else:
+        raise Failure("NInfer accepted an unauthenticated request")
+    passed("Host-loopback API rejects requests without the bearer key")
+
     begin("NInfer authenticated API")
-    models = request_json(f"http://127.0.0.1:{host_port}/v1/models", token=api_key, timeout=30)
+    models = request_json(models_url, token=api_key, timeout=30)
     if model_id not in [item.get("id") for item in models.get("data", [])]:
         raise Failure(f"NInfer does not advertise model ID {model_id}")
     passed(f"GET /v1/models advertises {model_id}")
@@ -244,117 +415,13 @@ def main() -> int:
         raise Failure("NInfer did not return the deterministic verification marker")
     passed("OpenAI-compatible chat completion succeeded")
 
-    begin("Hermes health and routing")
-    _, health = container_health("hermes")
-    if health != "healthy":
-        raise Failure(f"Hermes health is '{health}'", "docker compose logs --tail=200 hermes")
-    checks = {
-        "model.provider": "custom:ninfer",
-        "model.default": model_id,
-        "model.context_length": context,
-        "providers.ninfer.api": "http://ninfer:8080/v1",
-        "compression.enabled": compression,
-        "agent.max_turns": max_turns,
-    }
-    compose("exec", "-T", "hermes", "hermes", "config", "check")
-    for key, expected in checks.items():
-        actual = compose("exec", "-T", "hermes", "hermes", "config", "get", key).stdout.strip()
-        if actual != expected:
-            raise Failure(f"Hermes {key} is {actual!r}, expected {expected!r}", "python stack.py configure-hermes")
-    compose("exec", "-T", "hermes", "getent", "hosts", "ninfer")
-    trust_result = compose(
-        "exec",
-        "--user",
-        "hermes",
-        "-T",
-        "hermes",
-        "ssh",
-        "-i",
-        "/ssh/id_ed25519",
-        "-p",
-        "2222",
-        "-o",
-        "BatchMode=yes",
-        "-o",
-        "StrictHostKeyChecking=yes",
-        "agent@sandbox",
-        "printf SANDBOX_TRUST_OK",
-        check=False,
+    verify_optional_hermes(
+        host_port=host_port,
+        model_id=model_id,
+        context=context,
+        compression=compression,
+        max_turns=max_turns,
     )
-    if trust_result.returncode != 0 or trust_result.stdout != "SANDBOX_TRUST_OK":
-        detail = trust_result.stderr.strip() or "Hermes cannot verify the persisted sandbox host key"
-        raise Failure(detail, "python stack.py repair-sandbox-trust")
-    passed(f"Hermes uses custom:ninfer / {model_id}; strict sandbox host trust passes")
-
-    def hermes_request(payload: dict, filename: str) -> dict:
-        result = compose(
-            "exec",
-            "-T",
-            "hermes",
-            "curl",
-            "--fail",
-            "--silent",
-            "--show-error",
-            "--max-time",
-            "900",
-            "-H",
-            f"Authorization: Bearer {hermes_key}",
-            "-H",
-            "Content-Type: application/json",
-            "--data",
-            json.dumps(payload, separators=(",", ":")),
-            "http://127.0.0.1:8642/v1/chat/completions",
-            timeout=930,
-        )
-        try:
-            parsed = json.loads(result.stdout)
-        except json.JSONDecodeError as exc:
-            raise Failure("Hermes returned invalid JSON") from exc
-        (temp_dir / filename).write_text(json.dumps(parsed, indent=2), encoding="utf-8")
-        return parsed
-
-    begin("Hermes to NInfer generation")
-    response = hermes_request(
-        {
-            "model": "hermes-agent",
-            "messages": [{"role": "user", "content": "Reply with exactly HERMES_NINFER_OK and nothing else. Do not use tools."}],
-            "stream": False,
-        },
-        "hermes-chat.json",
-    )
-    if response.get("choices", [{}])[0].get("message", {}).get("content", "").strip() != "HERMES_NINFER_OK":
-        raise Failure("Hermes did not return the deterministic verification marker")
-    passed("Hermes completed a request through NInfer")
-
-    begin("Agent tool execution in sandbox")
-    with tempfile.NamedTemporaryFile(prefix=".hermes-sandbox-verify.", dir=ROOT / "workspace", delete=False) as sentinel:
-        sentinel_path = Path(sentinel.name)
-    sentinel_path.write_bytes(b"")
-    try:
-        response = hermes_request(
-            {
-                "model": "hermes-agent",
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": (
-                            "You must use the terminal tool. Run this exact command on its own line and do not alter it:\n"
-                            f"uname -r > /workspace/{sentinel_path.name}\n"
-                            "After it succeeds, reply exactly TOOL_EXECUTION_OK."
-                        ),
-                    }
-                ],
-                "stream": False,
-            },
-            "hermes-tool.json",
-        )
-        if not sentinel_path.is_file() or sentinel_path.stat().st_size == 0:
-            raise Failure("The model did not produce a terminal side effect in workspace/")
-        if response.get("choices", [{}])[0].get("message", {}).get("content", "").strip() != "TOOL_EXECUTION_OK":
-            raise Failure("The sandbox command ran, but Hermes did not return the expected marker")
-        passed(f"Hermes executed uname in the SSH sandbox ({sentinel_path.read_text().strip()})")
-    finally:
-        sentinel_path.unlink(missing_ok=True)
 
     print(f"\nAll {TOTAL} verification layers passed.")
     shutil.rmtree(temp_dir, ignore_errors=True)
