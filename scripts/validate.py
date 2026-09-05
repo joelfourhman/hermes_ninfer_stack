@@ -70,7 +70,6 @@ required_paths = [
     "model-builder/converter/convert_model.py",
     "model-builder/converter/pyproject.toml",
     "model-builder/converter/uv.lock",
-    "Makefile",
     "scripts/verify.py",
     "scripts/benchmark.py",
     "tests/test_ninfer.py",
@@ -280,7 +279,6 @@ consistency_requirements = {
         "127.0.0.1:${NINFER_HOST_PORT:-8080}:8080",
         "profiles: [tools]",
     ],
-    "Makefile": ["install-hermes:", "python3 ninfer.py install-hermes"],
     "model-builder/fetcher/fetch_sources.py": [
         EXPECTED_SOURCE_REVISION,
         EXPECTED_CONVERTER_COMMIT,
@@ -346,7 +344,7 @@ for relative, values in consistency_requirements.items():
 markdown_files = [ROOT / "README.md", ROOT / "CONTRIBUTING.md", ROOT / "SECURITY.md", ROOT / "CHANGELOG.md"]
 markdown_files.extend(sorted((ROOT / "docs").rglob("*.md")))
 markdown_files.extend(sorted((ROOT / ".github").rglob("*.md")))
-markdown_files.extend([ROOT / "workspace/README.md", ROOT / "benchmarks/README.md"])
+markdown_files.append(ROOT / "benchmarks/README.md")
 link_pattern = re.compile(r"!?\[[^\]]*\]\(([^)]+)\)")
 for markdown in markdown_files:
     if not markdown.is_file():
@@ -384,7 +382,6 @@ else:
 
 public_text_files: list[Path] = []
 text_names = {
-    "Makefile",
     "LICENSE",
     "Dockerfile",
     "sshd_config",

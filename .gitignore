@@ -25,9 +25,9 @@ model-build/
 *.onnx
 *.bin
 
-# Optional native-Hermes workspace content
-workspace/*
-!workspace/README.md
+# Private projects retained from releases that used a repository workspace.
+# Current setup does not create or configure this directory.
+workspace/
 
 # Benchmark output can contain prompts and model responses
 benchmarks/*

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import shutil
 import subprocess
 import tempfile
@@ -293,26 +292,6 @@ class HermesDesktopConfigurationTests(unittest.TestCase):
             ["hermes", "config", "set", "compression.threshold_tokens", "100000"],
             [command for command, _ in calls],
         )
-
-    def test_private_env_update_preserves_other_values_and_removes_duplicates(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            env_file = Path(temporary) / ".env"
-            env_file.write_text(
-                "NINFER_API_KEY=keep-me\n"
-                "HERMES_WRITE_SAFE_ROOT=old\n"
-                "export HERMES_WRITE_SAFE_ROOT=stale\n",
-                encoding="utf-8",
-            )
-            ninfer.set_private_env_value(
-                env_file,
-                "HERMES_WRITE_SAFE_ROOT",
-                r"C:\AI Workspace;C:\Hermes",
-            )
-            updated = env_file.read_text(encoding="utf-8")
-
-        self.assertIn("NINFER_API_KEY=keep-me\n", updated)
-        self.assertEqual(updated.count("HERMES_WRITE_SAFE_ROOT="), 1)
-        self.assertIn(r'HERMES_WRITE_SAFE_ROOT="C:\\AI Workspace;C:\\Hermes"', updated)
 
     def test_private_env_removal_preserves_unrelated_values(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

@@ -30,7 +30,6 @@ NINFER_URL = "https://github.com/Neroued/ninfer.git"
 STOCK_MODEL_FILE = "qwen3_8_27b_nvfp4.ninfer"
 UNCENSORED_MODEL_FILE = "qwen3_8_27b_uncensored.ninfer"
 STOCK_MODEL_SHA256 = "bb3360522a06e136e0367f5703414d26272b7285c8a6ab6194135c17dbd81b32"
-UNCENSORED_REFERENCE_SHA256 = "714565ed29db4415322e9bc13a3464dc1fd8fcc911234740a79af67934e49969"
 
 
 @dataclass(frozen=True)
@@ -43,7 +42,6 @@ class ModelProfile:
     required_free_gib: int
     transfer_description: str
     final_size_gib: str
-    safety_description: str
 
 
 MODEL_PROFILES = {
@@ -56,7 +54,6 @@ MODEL_PROFILES = {
         required_free_gib=24,
         transfer_description="20.02 GiB verified artifact download",
         final_size_gib="20.02",
-        safety_description="standard refusal behavior; fastest setup",
     ),
     "uncensored": ModelProfile(
         key="uncensored",
@@ -67,7 +64,6 @@ MODEL_PROFILES = {
         required_free_gib=90,
         transfer_description="approximately 55 GiB of source weights plus local conversion",
         final_size_gib="16.96",
-        safety_description="substantially reduced refusals; less-tested agent behavior",
     ),
 }
 DEFAULT_MODEL_PROFILE = "stock"
@@ -419,41 +415,6 @@ def atomic_write(path: Path, text: str) -> None:
         except OSError:
             pass
         raise
-
-
-def set_private_env_value(path: Path, key: str, value: str) -> None:
-    """Atomically set one dotenv value while preserving unrelated settings."""
-    if not re.fullmatch(r"[A-Z][A-Z0-9_]*", key):
-        raise StackError(f"Invalid private environment key: {key!r}")
-    if "\n" in value or "\r" in value:
-        raise StackError(f"Invalid newline in private environment value for {key}")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    existing = (
-        path.read_text(encoding="utf-8-sig", errors="replace").splitlines()
-        if path.is_file()
-        else []
-    )
-    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
-    assignment = f'{key}="{escaped}"'
-    output: list[str] = []
-    replaced = False
-    for line in existing:
-        candidate = line.strip()
-        if candidate.startswith("export "):
-            candidate = candidate[7:].lstrip()
-        assigned_key, separator, _ = candidate.partition("=")
-        matches = bool(separator) and (
-            assigned_key.upper() == key if os.name == "nt" else assigned_key == key
-        )
-        if matches:
-            if not replaced:
-                output.append(assignment)
-                replaced = True
-            continue
-        output.append(line)
-    if not replaced:
-        output.append(assignment)
-    atomic_write(path, "\n".join(output).rstrip() + "\n")
 
 
 def remove_private_env_value(path: Path, key: str) -> None:
@@ -1375,11 +1336,6 @@ def select_model(args: argparse.Namespace) -> None:
     print("The other model artifact, if present, was preserved for later switching.")
 
 
-def download_model(args: argparse.Namespace) -> None:
-    print("'download-model' is retained as an alias for 'prepare-model'.")
-    prepare_model(args)
-
-
 def shell(_: argparse.Namespace) -> None:
     compose("exec", "ninfer", "bash")
 
@@ -1429,17 +1385,8 @@ def main() -> int:
     prepare.add_argument("--yes", action="store_true", help="skip the model preparation confirmation")
     prepare.add_argument("--model", choices=tuple(MODEL_PROFILES), help="model profile to prepare")
     prepare.set_defaults(func=prepare_model, leave_stopped=False)
-    download = sub.add_parser(
-        "download-model",
-        help="compatibility alias for prepare-model",
-    )
-    download.add_argument("--yes", action="store_true", help="skip the model preparation confirmation")
-    download.add_argument("--model", choices=tuple(MODEL_PROFILES), help="model profile to prepare")
-    download.set_defaults(leave_stopped=False)
-    download.set_defaults(func=download_model)
     install = sub.add_parser(
         "install-hermes",
-        aliases=["install-hermes-desktop"],
         help="install/configure stock Hermes Desktop after NInfer is ready",
     )
     install.add_argument(

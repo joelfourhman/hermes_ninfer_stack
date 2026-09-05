@@ -56,6 +56,9 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   needed.
 - Removed the legacy Bash wrappers, container-Hermes configuration, loopback
   relay, and SSH-sandbox build assets.
+- Removed the obsolete Unix-only Make wrapper, unused root Docker ignore file,
+  legacy repository workspace placeholder, and redundant command aliases;
+  `ninfer.py` is the sole host control surface.
 - Updated architecture, installation, configuration, model, security,
   compatibility, performance, troubleshooting, and design documentation for the
   native-Hermes boundary.
