@@ -36,8 +36,8 @@ Engine must already be running:
 python ninfer.py setup
 ```
 
-Setup explicitly asks before downloading approximately 55 GiB of source
-weights and converting them. It starts the verified NInfer artifact first,
+Setup explicitly asks before either profile's large transfer: about 20 GiB for
+stock or 55 GiB of source weights for uncensored. It starts the verified NInfer artifact first,
 then offers to install and configure the official stock Hermes
 Desktop/native package for the current host user. The Hermes-only step can be
 rerun without rebuilding NInfer:

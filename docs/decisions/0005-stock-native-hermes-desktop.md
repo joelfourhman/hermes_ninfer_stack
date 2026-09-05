@@ -1,6 +1,6 @@
 # ADR 0005: Run stock Hermes Desktop natively
 
-- Status: Accepted
+- Status: Accepted; workspace policy amended by ADR 0008
 - Date: 2026-08-30
 
 ## Context

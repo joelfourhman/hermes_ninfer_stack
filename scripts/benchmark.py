@@ -24,7 +24,18 @@ ROOT = Path(__file__).resolve().parent.parent
 ENV_FILE = ROOT / ".env"
 COMPOSE_FILE = ROOT / "docker-compose.yml"
 EXPECTED_COMMIT = "feaf4dd0983fdaeb2ba4c06eec6da350e644fb3a"
-EXPECTED_MODEL = "qwen3_8_27b_uncensored.ninfer"
+MODEL_PROFILES = {
+    "stock": {
+        "file": "qwen3_8_27b_nvfp4.ninfer",
+        "sha256": "bb3360522a06e136e0367f5703414d26272b7285c8a6ab6194135c17dbd81b32",
+        "quantization": "NInfer NVFP4",
+    },
+    "uncensored": {
+        "file": "qwen3_8_27b_uncensored.ninfer",
+        "sha256": None,
+        "quantization": "NInfer qwen3_8_27b-v1 groupwise-int",
+    },
+}
 EXPECTED_BASE = "docker.io/nvidia/cuda:13.1.2-runtime-ubuntu24.04"
 PROMPT_TEMPLATE = (
     "Explain how prefill and decode differ in an autoregressive transformer. Use eight numbered "
@@ -126,6 +137,7 @@ def main() -> int:
     required = [
         "NINFER_API_KEY",
         "NINFER_HOST_PORT",
+        "NINFER_MODEL_PROFILE",
         "NINFER_MODEL_ID",
         "NINFER_MODEL_FILE",
         "NINFER_CONTEXT_LENGTH",
@@ -175,15 +187,22 @@ def main() -> int:
     gpu_name, driver, vram_total = [item.strip() for item in gpu_line.split(",")[:3]]
     model_path = ROOT / "models" / values["NINFER_MODEL_FILE"]
     manifest_path = ROOT / "models" / f"{values['NINFER_MODEL_FILE']}.local-manifest.json"
-    if values["NINFER_MODEL_FILE"] != EXPECTED_MODEL or not model_path.is_file() or not manifest_path.is_file():
-        die("the locally built model or provenance manifest is absent")
-    try:
-        local_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        die(f"local model provenance manifest is invalid: {exc}")
+    profile = MODEL_PROFILES.get(values["NINFER_MODEL_PROFILE"])
+    if profile is None or values["NINFER_MODEL_FILE"] != profile["file"] or not model_path.is_file():
+        die("the configured model profile or artifact is invalid")
     model_sha256 = file_sha256(model_path)
-    if model_sha256 != local_manifest.get("sha256"):
-        die("model file does not match its local provenance manifest")
+    if values["NINFER_MODEL_PROFILE"] == "stock":
+        if model_sha256 != profile["sha256"]:
+            die("stock model does not match its pinned checksum")
+    else:
+        if not manifest_path.is_file():
+            die("the locally built model provenance manifest is absent")
+        try:
+            local_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            die(f"local model provenance manifest is invalid: {exc}")
+        if model_sha256 != local_manifest.get("sha256"):
+            die("model file does not match its local provenance manifest")
 
     environment = {
         "collected_at_utc": timestamp,
@@ -198,7 +217,8 @@ def main() -> int:
         "model_id": model_id,
         "model_file": values["NINFER_MODEL_FILE"],
         "model_sha256": model_sha256,
-        "quantization": "NInfer qwen3_8_27b-v1 groupwise-int",
+        "model_profile": values["NINFER_MODEL_PROFILE"],
+        "quantization": profile["quantization"],
         "context_length": int(values["NINFER_CONTEXT_LENGTH"]),
         "kv_capacity": int(values["NINFER_KV_CAPACITY"]),
         "max_concurrency": int(values["NINFER_MAX_CONCURRENCY"]),
@@ -312,7 +332,7 @@ def main() -> int:
         f"Collected: {timestamp}\n\n"
         f"- GPU: {gpu_name} ({vram_total} MiB), driver {driver}\n"
         f"- NInfer: `{revision}`\n"
-        f"- Model: {model_id} / {values['NINFER_MODEL_FILE']} (groupwise-int)\n"
+        f"- Model: {model_id} / {values['NINFER_MODEL_FILE']} ({profile['quantization']})\n"
         "- Timing: client-observed SSE wall clock on a warm persistent server\n\n"
         "| Runs | Mean TTFT | Mean generation | Peak VRAM |\n"
         "|---:|---:|---:|---:|\n"

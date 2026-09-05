@@ -20,9 +20,21 @@ ROOT = Path(__file__).resolve().parent.parent
 ENV_FILE = ROOT / ".env"
 COMPOSE_FILE = ROOT / "docker-compose.yml"
 EXPECTED_COMMIT = "feaf4dd0983fdaeb2ba4c06eec6da350e644fb3a"
-EXPECTED_MODEL = "qwen3_8_27b_uncensored.ninfer"
-EXPECTED_REFERENCE_SHA = "714565ed29db4415322e9bc13a3464dc1fd8fcc911234740a79af67934e49969"
-EXPECTED_BYTES = 18_210_531_328
+MODEL_PROFILES = {
+    "stock": {
+        "file": "qwen3_8_27b_nvfp4.ninfer",
+        "bytes": 21_492_695_040,
+        "sha256": "bb3360522a06e136e0367f5703414d26272b7285c8a6ab6194135c17dbd81b32",
+        "label": "Qwen3.8-27B stock NVFP4",
+    },
+    "uncensored": {
+        "file": "qwen3_8_27b_uncensored.ninfer",
+        "bytes": 18_210_531_328,
+        "sha256": None,
+        "reference_sha256": "714565ed29db4415322e9bc13a3464dc1fd8fcc911234740a79af67934e49969",
+        "label": "Qwen3.8-27B Uncensored",
+    },
+}
 EXPECTED_BASE = "docker.io/nvidia/cuda:13.1.2-runtime-ubuntu24.04"
 TOTAL = 11
 step = 0
@@ -230,7 +242,6 @@ def verify_optional_hermes(
         "compression.threshold_tokens": compression_threshold,
         "agent.max_turns": max_turns,
         "terminal.backend": "local",
-        "terminal.cwd": str((ROOT / "workspace").resolve()),
         "approvals.mode": "manual",
     }
     actual: dict[str, str] = {}
@@ -253,12 +264,9 @@ def verify_optional_hermes(
             "python ninfer.py install-hermes",
         )
     profile_home = Path(process_env["HERMES_HOME"]).expanduser().resolve()
-    expected_safe_roots = os.pathsep.join(
-        (str((ROOT / "workspace").resolve()), str(profile_home))
-    )
-    if private_env_value(profile_home / ".env", "HERMES_WRITE_SAFE_ROOT") != expected_safe_roots:
+    if private_env_value(profile_home / ".env", "HERMES_WRITE_SAFE_ROOT") is not None:
         raise Failure(
-            "Hermes's direct file-write guard is missing or does not match the reviewed roots",
+            "Hermes still has the legacy project workspace write restriction",
             "python ninfer.py install-hermes",
         )
 
@@ -286,6 +294,7 @@ def main() -> int:
     api_key = values.get("NINFER_API_KEY", "")
     host_port = values.get("NINFER_HOST_PORT", "")
     gpu = values.get("NINFER_GPU_DEVICE", "")
+    profile_key = values.get("NINFER_MODEL_PROFILE", "")
     model = values.get("NINFER_MODEL_FILE", "")
     model_id = values.get("NINFER_MODEL_ID", "")
     context = values.get("NINFER_CONTEXT_LENGTH", "")
@@ -300,6 +309,8 @@ def main() -> int:
         raise Failure("NINFER_API_KEY must be a 64-character hexadecimal secret", "python ninfer.py setup")
     if not host_port.isdigit() or not 1 <= int(host_port) <= 65535:
         raise Failure("NINFER_HOST_PORT must be from 1 through 65535", "edit .env")
+    if profile_key not in MODEL_PROFILES:
+        raise Failure("NINFER_MODEL_PROFILE must be stock or uncensored", "python ninfer.py setup")
     if not gpu.isdigit() or not re.fullmatch(r"[A-Za-z0-9._-]+\.ninfer", model):
         raise Failure("GPU device or model filename is invalid", "compare .env with .env.example")
     if not re.fullmatch(r"[A-Za-z0-9._-]+", model_id) or not context.isdigit():
@@ -368,27 +379,37 @@ def main() -> int:
     passed(f"image {revision[:12]}; {gpu_output}")
 
     begin("Pinned model artifact")
-    if model != EXPECTED_MODEL:
-        raise Failure(f"No checksum is registered for {model}")
+    profile = MODEL_PROFILES[profile_key]
+    if model != profile["file"]:
+        raise Failure(f"Model {model} does not match profile {profile_key}")
     model_path = ROOT / "models" / model
     manifest_path = ROOT / "models" / f"{model}.local-manifest.json"
-    if not model_path.is_file() or not manifest_path.is_file():
-        raise Failure(f"Missing models/{model} or its local manifest", "python ninfer.py prepare-model")
-    if model_path.stat().st_size != EXPECTED_BYTES:
-        raise Failure(f"Model size mismatch: expected {EXPECTED_BYTES:,} bytes")
-    try:
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        raise Failure("Local model provenance manifest is invalid") from exc
+    if not model_path.is_file():
+        raise Failure(f"Missing models/{model}", f"python ninfer.py prepare-model --model {profile_key}")
+    if model_path.stat().st_size != profile["bytes"]:
+        raise Failure(f"Model size mismatch: expected {profile['bytes']:,} bytes")
     checksum = hashlib.sha256()
     with model_path.open("rb") as handle:
         for chunk in iter(lambda: handle.read(8 * 1024 * 1024), b""):
             checksum.update(chunk)
     actual_sha = checksum.hexdigest()
-    if actual_sha != manifest.get("sha256"):
-        raise Failure("Model checksum does not match its local manifest", "python ninfer.py prepare-model")
-    reference = "matches published reference" if actual_sha == EXPECTED_REFERENCE_SHA else "locally recorded GPU build"
-    passed(f"Qwen3.8-27B Uncensored checksum matches ({reference})")
+    if profile_key == "stock":
+        if actual_sha != profile["sha256"]:
+            raise Failure("Stock model checksum does not match the pinned published artifact")
+        detail = "pinned published artifact"
+    else:
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise Failure("Local model provenance manifest is invalid") from exc
+        if actual_sha != manifest.get("sha256"):
+            raise Failure("Model checksum does not match its local manifest", "python ninfer.py prepare-model")
+        detail = (
+            "matches published reference"
+            if actual_sha == profile["reference_sha256"]
+            else "locally recorded GPU build"
+        )
+    passed(f"{profile['label']} checksum matches ({detail})")
 
     begin("NInfer container health")
     ninfer_id, health = container_health("ninfer")

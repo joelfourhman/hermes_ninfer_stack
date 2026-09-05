@@ -24,7 +24,8 @@ supported configuration command.
 | `MODEL_BUILD_UID` / `MODEL_BUILD_GID` | `1000` | Build-container identity; setup uses the creating user's IDs on POSIX hosts |
 | `NINFER_HOST_PORT` | `8080` | Host-loopback port mapped to NInfer's container port 8080 |
 | `NINFER_GPU_DEVICE` | detected (`0` normally) | NVIDIA device reserved for NInfer; fresh setup saves the detected 5090 index |
-| `NINFER_MODEL_FILE` | `qwen3_8_27b_uncensored.ninfer` | Locally built filename beneath `models/` mounted read-only |
+| `NINFER_MODEL_PROFILE` | `stock` | Fixed profile selected by `setup` or `select-model` |
+| `NINFER_MODEL_FILE` | `qwen3_8_27b_nvfp4.ninfer` | Profile-controlled filename beneath `models/`, mounted read-only |
 | `NINFER_MODEL_ID` | `qwen-local` | Public API alias selected in Hermes |
 | `NINFER_CONTEXT_LENGTH` | `131072` | Maximum sequence length for one request |
 | `NINFER_KV_CAPACITY` | `131072` | Total resident KV-token allocation |
@@ -107,7 +108,6 @@ agent:
 
 terminal:
   backend: local
-  cwd: <this repository>/workspace
 
 approvals:
   mode: manual
@@ -123,12 +123,11 @@ tool selections, gateway integrations, sessions, skills, and user preferences.
 It intentionally changes `approvals.mode` to `manual` because Hermes's stock
 `smart` default can automatically approve commands it classifies as low risk;
 this native same-user setup requires the operator to decide on flagged
-commands. It also sets `terminal.backend: local`, starts tool sessions in this
-repository's `workspace/`, and stores `HERMES_WRITE_SAFE_ROOT` in Hermes's
-private environment with two allowed roots: `workspace/` and the Hermes
-profile. That environment guard hard-blocks the direct `write_file` and `patch`
-tools outside those roots. It does not restrict same-user terminal commands.
-Stock Hermes remains free to migrate its own schema during official updates.
+commands. It also sets `terminal.backend: local`, but removes this project's
+older `terminal.cwd` and `HERMES_WRITE_SAFE_ROOT` overrides. Desktop/gateway
+sessions therefore use Hermes's stock home-directory start, CLI sessions use
+their launch directory, and the built-in protected-path denylist remains
+active. Stock Hermes remains free to migrate its own schema during updates.
 
 ## Coupled settings
 
@@ -174,7 +173,10 @@ the complete resolved startup profile for any benchmark comparison.
 
 ## Model artifact setting
 
-`NINFER_MODEL_FILE` must name the artifact produced by the pinned local build.
+`NINFER_MODEL_PROFILE` must be `stock` or `uncensored`, and
+`NINFER_MODEL_FILE` must match that profile. Use `python ninfer.py select-model`
+instead of editing these values by hand so startup is tested and rollback is
+available.
 Compose mounts `./models` read-only at `/models` for the long-running server.
 The short-lived, network-disabled converter alone receives a read/write model
 mount. Using an arbitrary absolute path would make the setup machine-specific

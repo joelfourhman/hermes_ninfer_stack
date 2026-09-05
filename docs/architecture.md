@@ -143,12 +143,12 @@ The normal first run is:
 python ninfer.py setup
 ```
 
-Setup initializes local configuration, asks before downloading approximately
-55 GiB of source weights, prepares the pinned inputs, temporarily frees the GPU,
-builds and atomically verifies the artifact, starts NInfer, and waits for a real
-answer before it offers Hermes Desktop configuration. This ordering ensures
-Hermes is pointed at a reachable endpoint and an incomplete conversion is never
-selected.
+Setup initializes local configuration, offers the verified stock artifact or
+the optional uncensored local build, and asks before either large transfer. It
+downloads or builds and atomically verifies the selection, starts NInfer, and
+waits for a real answer before offering Hermes Desktop configuration. This
+ordering ensures Hermes is pointed at a reachable endpoint and an incomplete
+artifact is never selected.
 
 The two lifecycles remain independent after setup:
 

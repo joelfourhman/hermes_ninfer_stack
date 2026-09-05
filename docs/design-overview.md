@@ -37,10 +37,12 @@ build and avoids maintaining a downstream Desktop package.
 
 ### Consent before expensive acquisition
 
-The source checkpoint is approximately 55 GiB, requires approximately 90 GiB of
-temporary working space, and produces a roughly 16.96 GiB artifact. Setup prints
-those requirements before the uv-managed fetcher runs. Normal runtime builds,
-CI, `up`, and Hermes installation do not implicitly acquire the model.
+The recommended stock profile downloads a verified 20.02 GiB artifact and
+requires about 24 GiB free. The optional uncensored source is approximately
+55 GiB, requires approximately 90 GiB of temporary working space, and produces
+a roughly 16.96 GiB artifact. Setup prints the selected requirements before the
+uv-managed fetcher runs. Normal runtime builds, CI, `up`, and Hermes installation
+do not implicitly acquire a model.
 
 ### Separate network and GPU build authority
 

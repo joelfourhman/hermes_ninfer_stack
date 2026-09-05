@@ -2,10 +2,11 @@
 
 ## Current result status
 
-No throughput campaign has yet been collected for the locally converted
-`qwen3_8_27b_uncensored.ninfer` artifact. The source model's capability tests
-and NInfer measurements for other Qwen3.8-27B quantizations do not establish
-this artifact's speed or quality.
+No comparable throughput campaign has yet been collected for both selectable
+profiles. Published measurements must identify the exact profile and cannot be
+generalized between stock NVFP4 and the locally converted uncensored artifact.
+The source model's capability checks do not establish serving speed or agent
+quality.
 
 | Measurement scope | Status |
 | --- | --- |

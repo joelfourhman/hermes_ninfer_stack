@@ -30,12 +30,11 @@ to.
    version 3.10 or newer. Enable the installer's option to add Python to
    `PATH` if it offers one.
 
-The selected model is built locally because its publisher provides BF16 source
-weights but deliberately does not redistribute a ready NInfer artifact. Setup
-downloads approximately 55 GiB and needs at least 90 GiB free while converting
-it. The final `.ninfer` file is approximately 16.96 GiB. Docker also needs
-separate space for its images. Close games and other GPU-heavy applications so
-the converter and NInfer can use the 5090's memory.
+Setup offers two pinned model profiles. The recommended **stock** profile
+downloads a verified, ready-to-run 20.02 GiB NInfer artifact and needs about
+24 GiB free. The optional **uncensored** profile downloads approximately 55 GiB
+of source weights, needs at least 90 GiB free while converting them locally,
+and produces a 16.96 GiB artifact. Docker also needs separate image space.
 
 ### 2. Clone and run the one-command setup
 
@@ -50,25 +49,27 @@ python ninfer.py setup
 
 Then follow these exact prompts:
 
-1. Setup checks Python, Git, disk space, the RTX 5090, and Docker. If Docker
+1. At the model menu, press Enter for **Stock Qwen3.8-27B (recommended)**, or
+   enter `2` for **Qwen3.8-27B Uncensored**. Setup explains the storage and
+   behavior tradeoff before anything large is downloaded.
+2. Setup checks Python, Git, disk space, the RTX 5090, and Docker. If Docker
    Desktop is installed but stopped, setup opens it and waits for it.
-2. At **Download and build the uncensored model now? [Y/n]**, just press Enter.
-   Leave Command Prompt open while the pinned source weights download and the
-   local NInfer artifact is built, verified, and loaded. Interrupted downloads
-   are reusable, so rerunning setup does not start them over.
+3. At the model download prompt, press Enter. Leave Command Prompt open while
+   the selected artifact is downloaded or built, verified, and loaded.
+   Interrupted downloads are reusable, so rerunning setup does not start over.
    Setup requires a short authenticated test answer before continuing.
-3. At **Install and configure stock Hermes Desktop now? [Y/n]**, just press
+4. At **Install and configure stock Hermes Desktop now? [Y/n]**, just press
    Enter. The default answer is yes.
-4. The official Hermes Desktop page opens. Download the Windows installer from
+5. The official Hermes Desktop page opens. Download the Windows installer from
    that page and complete its normal per-user installation.
-5. Launch Hermes once if the installer does not launch it. If Hermes asks you
+6. Launch Hermes once if the installer does not launch it. If Hermes asks you
    to choose an AI provider, select **Choose provider later**. You do not need
    a Nous Portal account or a cloud-provider API key for this local setup.
-6. Finish the first-launch screens, return to the still-open Command Prompt,
+7. Finish the first-launch screens, return to the still-open Command Prompt,
    and press Enter when the helper asks.
-7. After it configures Hermes, the helper asks you to close Hermes and press
+8. After it configures Hermes, the helper asks you to close Hermes and press
    Enter once more. It then reopens Hermes automatically when possible.
-8. Wait for **SETUP COMPLETE**, then begin a new chat in Hermes. Before
+9. Wait for **SETUP COMPLETE**, then begin a new chat in Hermes. Before
    allowing file or command actions, read the security warning below: native
    Hermes has your normal user access.
 
@@ -107,8 +108,10 @@ updates in the standard Hermes locations.
 ## What the project provides
 
 - A pinned NInfer source revision built for the RTX 5090 (`sm_120a`).
-- A pinned, uv-managed local build of Qwen3.8-27B Uncensored into NInfer's
-  groupwise-int format.
+- Two fixed, verified model profiles: a downloaded stock Qwen3.8-27B NVFP4
+  artifact and a uv-managed local build of Qwen3.8-27B Uncensored.
+- An interactive first-run choice and a safe `select-model` command that retain
+  both artifacts and restore the previous profile if the new one cannot start.
 - An authenticated OpenAI-compatible endpoint published only at
   `127.0.0.1:${NINFER_HOST_PORT}`.
 - A single Python control command, `ninfer.py`, for setup, operation,
@@ -149,8 +152,8 @@ See [Architecture](docs/architecture.md) for the full trust and data flow.
 - A driver capable of running CUDA 13.1 containers.
 - Docker Desktop or Docker Engine with NVIDIA GPU support and Docker Compose.
 - Git and Python 3.10 or newer on the host.
-- At least 90 GiB free during the approximately 55 GiB source download and
-  local conversion; the final artifact is approximately 16.96 GiB.
+- At least 24 GiB free for stock, or 90 GiB for the optional uncensored local
+  conversion. Keeping both final artifacts uses about 37 GiB.
 - Network access during initial source, model, and Hermes Desktop installation.
 
 On Windows, use Linux containers in Docker Desktop. This project does not
@@ -165,12 +168,12 @@ host is not compatible with the current stock Windows Hermes distribution.
 
 ## What the setup command does
 
-`python ninfer.py setup` initializes the exact NInfer source and private local
-settings, asks before downloading approximately 55 GiB of pinned source
-weights, builds and verifies the model in short-lived containers, starts
-NInfer, waits for a real answer, and then offers the official stock Hermes
-Desktop installation. It is safe to rerun after an interruption. The host does
-not install Python packages; both build tools use committed uv lock files.
+`python ninfer.py setup` asks which pinned model profile to use, initializes the
+exact NInfer source and private local settings, asks before the large transfer,
+downloads or locally builds and verifies the selected model in a short-lived
+container, starts NInfer, waits for a real answer, and then offers the official
+stock Hermes Desktop installation. It is safe to rerun after an interruption.
+The host installs no Python packages; container tools use committed uv locks.
 
 ## Install or repair Hermes separately
 
@@ -192,8 +195,9 @@ The helper:
 - stores the NInfer bearer key in Hermes's normal secret file;
 - creates or updates the named `ninfer` provider and selected model, then
   applies the documented session and approval defaults;
-- keeps the native terminal backend, starts its tools in `workspace/`, and
-  limits direct file-write tools to that folder plus the Hermes profile;
+- keeps the native terminal backend and stock working-directory behavior;
+- removes this project's former `workspace/` and `HERMES_WRITE_SAFE_ROOT`
+  overrides while retaining stock protected-path checks;
 - sets command approvals to `manual` so flagged commands require the user's
   decision instead of an auxiliary model's automatic approval;
 - runs Hermes's own configuration check.
@@ -236,7 +240,6 @@ model:
 
 terminal:
   backend: local
-  cwd: <this repository>/workspace
 
 approvals:
   mode: manual
@@ -249,16 +252,26 @@ compression:
 
 The actual port comes from `NINFER_HOST_PORT`; it is not assumed to be 8080.
 The API key is not written inline in `config.yaml` and is never printed by the
-helper. `HERMES_WRITE_SAFE_ROOT` is stored in Hermes's private environment for
-the direct file-tool guard; it is not a boundary around terminal commands.
+helper. The helper removes its older `terminal.cwd` and
+`HERMES_WRITE_SAFE_ROOT` overrides. Desktop follows stock Hermes behavior:
+Desktop/gateway tools begin in the user's home directory, while CLI sessions
+use the directory where Hermes was launched. Hermes's built-in credential and
+protected-path denylist remains active.
 
-## Tested model profile
+## Model profiles
+
+| Profile | Stock (default) | Uncensored (optional) |
+| --- | --- | --- |
+| Source | `neroued/Qwen3.8-27B-nvfp4-NInfer` | `JonathanColetti/Qwen3.8-27B-Uncensored` BF16 |
+| Artifact | `qwen3_8_27b_nvfp4.ninfer` | `qwen3_8_27b_uncensored.ninfer` |
+| Preparation | Verified 20.02 GiB download | 55 GiB download plus local conversion; 90 GiB free |
+| Quantization | NVFP4 | NInfer `qwen3_8_27b-v1` groupwise-int |
+| Behavior | Stock model behavior; recommended | Reduced refusal behavior; use deliberately |
+
+Both profiles use these runtime settings:
 
 | Setting | Value |
 | --- | --- |
-| Source | `JonathanColetti/Qwen3.8-27B-Uncensored` BF16 |
-| Artifact | `qwen3_8_27b_uncensored.ninfer` |
-| Quantization | NInfer `qwen3_8_27b-v1` groupwise-int |
 | Public model alias | `qwen-local` |
 | Context length | 131,072 tokens |
 | KV capacity | 131,072 tokens |
@@ -272,7 +285,7 @@ These settings prioritize one long interactive Hermes session on a 32 GB RTX
 5090. See [Models](docs/models.md) and [Performance](docs/performance.md) before
 changing memory-sensitive values.
 
-> **Model behavior is not a safety boundary.** The source publisher measured
+> **Model behavior is not a safety boundary.** For the uncensored profile, its publisher measured
 > substantially fewer refusals on harmful prompts, not zero refusals, and did
 > not evaluate code, math, generative quality, vision, or MTP behavior. Manual
 > approvals and filesystem backups matter more with this model, not less.
@@ -300,6 +313,7 @@ python ninfer.py validate
 
 ```text
 python ninfer.py prepare-model
+python ninfer.py select-model
 python ninfer.py build
 python ninfer.py up
 python ninfer.py status
@@ -309,9 +323,10 @@ python ninfer.py verify
 python ninfer.py down
 ```
 
-`prepare-model` is the resumable, explicitly confirmed source-download and
-conversion step. Normal first-time users can simply use `setup`, which calls it
-at the right point.
+`prepare-model` prepares the currently configured profile (or one named with
+`--model stock|uncensored`). `select-model` displays the same two choices,
+prepares the selection if necessary, starts it, and restores the previous
+profile if the live test fails. Both model files are retained.
 `down` stops NInfer without removing the locally built model. The model is a host
 file mounted read-only into the container.
 `shell` opens Bash inside the NInfer container; it does not install or invoke a
@@ -333,7 +348,8 @@ and generates a random NInfer bearer key. The main settings are:
 | --- | --- | --- |
 | `NINFER_HOST_PORT` | `8080` | Host-loopback endpoint port |
 | `NINFER_GPU_DEVICE` | detected (`0` normally) | NVIDIA device reserved for NInfer |
-| `NINFER_MODEL_FILE` | `qwen3_8_27b_uncensored.ninfer` | Locally built artifact mounted read-only |
+| `NINFER_MODEL_PROFILE` | `stock` | Fixed profile: `stock` or `uncensored` |
+| `NINFER_MODEL_FILE` | `qwen3_8_27b_nvfp4.ninfer` | Profile-controlled artifact mounted read-only |
 | `NINFER_MODEL_ID` | `qwen-local` | API alias configured in Hermes |
 | `NINFER_CONTEXT_LENGTH` | `131072` | Per-request sequence ceiling |
 | `NINFER_KV_CAPACITY` | `131072` | Total resident KV-token budget |
@@ -362,8 +378,8 @@ See [Configuration](docs/configuration.md) for validation rules and coupling.
 - Only NInfer receives the GPU reservation and read-only model mount.
 - No Docker socket is mounted into the container or exposed to Hermes.
 - Hermes runs outside Docker with the current user's normal authority.
-- Hermes's direct file-write tools are limited to `workspace/` and its own
-  profile; its native terminal commands are not confined by that guard.
+- Hermes retains its stock protected-path denylist, but other file and terminal
+  actions have the signed-in user's normal access.
 - UAC controls elevation; it does not stop a non-elevated Hermes process from
   changing files that the current user can change.
 - Hermes approvals and safe-root checks are useful guardrails, not OS-level

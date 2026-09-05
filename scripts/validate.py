@@ -14,7 +14,8 @@ ROOT = Path(__file__).resolve().parent.parent
 EXPECTED_NINFER_COMMIT = "feaf4dd0983fdaeb2ba4c06eec6da350e644fb3a"
 EXPECTED_CONVERTER_COMMIT = "b2b96bae4dd88f95b9ea8126d68fae3b88caa374"
 EXPECTED_SOURCE_REVISION = "5bb7aa90f0efef548e87005b1fb7658e522b6b7f"
-EXPECTED_MODEL_FILE = "qwen3_8_27b_uncensored.ninfer"
+EXPECTED_STOCK_MODEL_FILE = "qwen3_8_27b_nvfp4.ninfer"
+EXPECTED_UNCENSORED_MODEL_FILE = "qwen3_8_27b_uncensored.ninfer"
 EXPECTED_MODEL_ID = "qwen-local"
 EXPECTED_CONTEXT = "131072"
 EXPECTED_KV_CAPACITY = "131072"
@@ -61,6 +62,7 @@ required_paths = [
     "ninfer.py",
     "model-builder/frontend.sha256",
     "model-builder/fetcher/Dockerfile",
+    "model-builder/fetcher/fetch_stock.py",
     "model-builder/fetcher/fetch_sources.py",
     "model-builder/fetcher/pyproject.toml",
     "model-builder/fetcher/uv.lock",
@@ -83,6 +85,8 @@ required_paths = [
     "docs/design-overview.md",
     "docs/decisions/0005-stock-native-hermes-desktop.md",
     "docs/decisions/0006-locally-built-uncensored-model.md",
+    "docs/decisions/0007-selectable-model-profiles.md",
+    "docs/decisions/0008-stock-hermes-working-directory.md",
     ".github/workflows/ci.yml",
 ]
 for relative in required_paths:
@@ -111,7 +115,8 @@ expected_env = {
     "HF_TOKEN": "",
     "NINFER_HOST_PORT": "8080",
     "NINFER_GPU_DEVICE": "0",
-    "NINFER_MODEL_FILE": EXPECTED_MODEL_FILE,
+    "NINFER_MODEL_PROFILE": "stock",
+    "NINFER_MODEL_FILE": EXPECTED_STOCK_MODEL_FILE,
     "NINFER_MODEL_ID": EXPECTED_MODEL_ID,
     "NINFER_CONTEXT_LENGTH": EXPECTED_CONTEXT,
     "NINFER_KV_CAPACITY": EXPECTED_KV_CAPACITY,
@@ -141,10 +146,10 @@ if services_match is None:
     error("docker-compose.yml has no services block")
 else:
     services = set(re.findall(r"(?m)^  ([a-z0-9][a-z0-9-]*):\s*$", services_match.group(1)))
-    expected_services = {"model-fetcher", "model-converter", "ninfer"}
+    expected_services = {"stock-model-fetcher", "model-fetcher", "model-converter", "ninfer"}
     if services != expected_services:
         error(
-            "Compose services must be exactly model-fetcher, model-converter, and ninfer; found "
+            "Compose services must be the two fetchers, model-converter, and ninfer; found "
             + ", ".join(sorted(services))
         )
 
@@ -162,6 +167,7 @@ def service_block(name: str) -> str:
     return match.group(1)
 
 
+stock_fetcher_service = service_block("stock-model-fetcher")
 fetcher_service = service_block("model-fetcher")
 converter_service = service_block("model-converter")
 ninfer_service = service_block("ninfer")
@@ -184,10 +190,17 @@ if "profiles: [tools]" not in compose_text:
     error("model build utilities must remain isolated behind the tools profile")
 if "profiles:" in ninfer_service:
     error("NInfer must start normally without requiring a Compose profile")
-if "ports:" in fetcher_service or "ports:" in converter_service or compose_text.count("    ports:") != 1:
+if (
+    "ports:" in stock_fetcher_service
+    or "ports:" in fetcher_service
+    or "ports:" in converter_service
+    or compose_text.count("    ports:") != 1
+):
     error("only NInfer may publish a host port")
 if "./model-build:/work" not in fetcher_service:
     error("model-fetcher must write only to the ignored model-build directory")
+if "./models:/models" not in stock_fetcher_service:
+    error("stock-model-fetcher must write only to the local models directory")
 if "./model-build:/work:ro" not in converter_service or "./models:/models" not in converter_service:
     error("model-converter must read build inputs and write only local model output")
 if "./models:/models:ro" not in ninfer_service:
@@ -196,6 +209,7 @@ host_bind_mounts = re.findall(r"(?m)^\s+- (\./[^\s]+)\s*$", compose_text)
 if sorted(host_bind_mounts) != sorted([
     "./model-build:/work",
     "./model-build:/work:ro",
+    "./models:/models",
     "./models:/models",
     "./models:/models:ro",
 ]):
@@ -207,14 +221,16 @@ if (
     error("NInfer must request only the selected NVIDIA GPU")
 if "capabilities: [gpu]" in fetcher_service:
     error("model-fetcher must not receive GPU access")
+if "capabilities: [gpu]" in stock_fetcher_service:
+    error("stock-model-fetcher must not receive GPU access")
 if "capabilities: [gpu]" not in converter_service or "network_mode: none" not in converter_service:
     error("model-converter must receive the selected GPU without runtime network access")
 if "${NINFER_API_KEY:?Run python ninfer.py setup to create .env}" not in ninfer_service:
     error("NInfer API authentication must fail closed until setup generates a key")
-if compose_text.count("no-new-privileges:true") != 3 or compose_text.count("      - ALL") != 3:
-    error("all three containers must drop Linux capabilities and forbid privilege escalation")
-if compose_text.count("    init: true") != 3:
-    error("all three containers must use a minimal init process for reliable shutdown")
+if compose_text.count("no-new-privileges:true") != 4 or compose_text.count("      - ALL") != 4:
+    error("all four containers must drop Linux capabilities and forbid privilege escalation")
+if compose_text.count("    init: true") != 4:
+    error("all four containers must use a minimal init process for reliable shutdown")
 if (
     "driver: local" not in ninfer_service
     or 'max-size: "10m"' not in ninfer_service
@@ -239,8 +255,10 @@ for pattern, description in unsafe_compose_patterns.items():
 consistency_requirements = {
     "ninfer.py": [
         EXPECTED_NINFER_COMMIT,
-        EXPECTED_MODEL_FILE,
-        "Download and build the uncensored model now? [Y/n]",
+        EXPECTED_STOCK_MODEL_FILE,
+        EXPECTED_UNCENSORED_MODEL_FILE,
+        "Choose a model:",
+        "select-model",
         "install-hermes",
         "https://hermes-agent.nousresearch.com/desktop",
         "providers.ninfer",
@@ -254,7 +272,7 @@ consistency_requirements = {
     ],
     "docker-compose.yml": [
         EXPECTED_NINFER_COMMIT,
-        EXPECTED_MODEL_FILE,
+        EXPECTED_STOCK_MODEL_FILE,
         EXPECTED_MODEL_ID,
         EXPECTED_CONTEXT,
         EXPECTED_KV_CAPACITY,
@@ -267,29 +285,38 @@ consistency_requirements = {
         EXPECTED_SOURCE_REVISION,
         EXPECTED_CONVERTER_COMMIT,
     ],
+    "model-builder/fetcher/fetch_stock.py": [
+        EXPECTED_STOCK_MODEL_FILE,
+        "204e3d92c30d9d05f3300d2f52e443ad1edf6ddf",
+        "bb3360522a06e136e0367f5703414d26272b7285c8a6ab6194135c17dbd81b32",
+    ],
     "model-builder/converter/Dockerfile": [
         "COPY --from=uv /usr/local/bin/uv /usr/local/bin/uvx /usr/local/bin/",
         "nvidia/cuda:13.1.2-runtime-ubuntu24.04",
         "uv sync --no-dev --no-install-project",
     ],
     "model-builder/converter/convert_model.py": [
-        EXPECTED_MODEL_FILE,
+        EXPECTED_UNCENSORED_MODEL_FILE,
         EXPECTED_REFERENCE_SHA256,
         EXPECTED_SOURCE_REVISION,
         EXPECTED_CONVERTER_COMMIT,
     ],
     "scripts/verify.py": [
         EXPECTED_NINFER_COMMIT,
-        EXPECTED_MODEL_FILE,
+        EXPECTED_STOCK_MODEL_FILE,
+        EXPECTED_UNCENSORED_MODEL_FILE,
         EXPECTED_REFERENCE_SHA256,
         "Optional native Hermes config",
         "providers.ninfer.api",
         "custom:ninfer",
         "approvals.mode",
         "HERMES_WRITE_SAFE_ROOT",
-        "terminal.cwd",
     ],
-    "scripts/benchmark.py": [EXPECTED_NINFER_COMMIT, EXPECTED_MODEL_FILE],
+    "scripts/benchmark.py": [
+        EXPECTED_NINFER_COMMIT,
+        EXPECTED_STOCK_MODEL_FILE,
+        EXPECTED_UNCENSORED_MODEL_FILE,
+    ],
     "tests/test_ninfer.py": [
         "providers.ninfer.api",
         "custom:ninfer",
@@ -301,7 +328,8 @@ consistency_requirements = {
         "HERMES_MAX_TURNS",
     ],
     "docs/models.md": [
-        EXPECTED_MODEL_FILE,
+        EXPECTED_STOCK_MODEL_FILE,
+        EXPECTED_UNCENSORED_MODEL_FILE,
         EXPECTED_MODEL_ID,
         EXPECTED_REFERENCE_SHA256,
         EXPECTED_SOURCE_REVISION,

@@ -61,6 +61,7 @@ jobs:
         run: |
           python3 ninfer.py --help
           python3 ninfer.py prepare-model --help
+          python3 ninfer.py select-model --help
           python3 ninfer.py install-hermes --help
 
       - name: Validate repository invariants
@@ -105,4 +106,5 @@ jobs:
         run: |
           python ninfer.py --help
           python ninfer.py prepare-model --help
+          python ninfer.py select-model --help
           python ninfer.py install-hermes --help

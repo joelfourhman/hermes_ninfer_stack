@@ -92,11 +92,11 @@ python ninfer.py setup
 Preserve an existing `.env` before replacing it because it can contain the key
 already configured in Hermes. Never post the key in an issue.
 
-## Setup pauses before the model build
+## Setup pauses before the model download or build
 
-This is expected after declining the explicit transfer prompt. No source weights
-are downloaded and later stages do not run. Ensure at least 90 GiB is free,
-then rerun:
+This is expected after declining the explicit transfer prompt. No model data is
+downloaded and later stages do not run. Ensure at least 24 GiB is free for
+stock or 90 GiB for uncensored, then rerun:
 
 ```text
 python ninfer.py setup
@@ -147,32 +147,34 @@ by the image.
 
 ## Source download or conversion was interrupted
 
-Rerun the dedicated operation:
+Rerun the dedicated operation for the desired profile:
 
 ```text
-python ninfer.py prepare-model
+python ninfer.py prepare-model --model stock
+python ninfer.py prepare-model --model uncensored
 ```
 
-Hugging Face downloads resume from `model-build/checkpoint`. A conversion does
-not resume midway; the converter replaces only its known `.partial` output and
-starts that stage again. The previously selected model is not removed.
+Hugging Face downloads resume. Uncensored source data is under
+`model-build/checkpoint`; its conversion does not resume midway, but the
+converter replaces only its known `.partial` output and starts that stage
+again. The previously selected model is not removed.
 
 If setup says the checkpoint or converter cache belongs to another revision,
 move the named directory aside rather than merging different source revisions.
 
 ## Model file is missing or has the wrong checksum
 
-Run the isolated acquisition check again:
+Run the selector for the configured profile again:
 
 ```text
-python ninfer.py prepare-model
+python ninfer.py select-model
 ```
 
-The expected file is `models/qwen3_8_27b_uncensored.ninfer`, accompanied by
-`qwen3_8_27b_uncensored.ninfer.local-manifest.json`. The published reference
-SHA-256 is `714565ed29db4415322e9bc13a3464dc1fd8fcc911234740a79af67934e49969`,
-but GPU rounding may produce a functionally equivalent local checksum. The
-manifest must match the actual local file.
+Stock expects `models/qwen3_8_27b_nvfp4.ninfer` with the exact pinned checksum.
+Uncensored expects `models/qwen3_8_27b_uncensored.ninfer` plus its
+`.local-manifest.json`; GPU rounding can produce a functionally equivalent
+checksum different from the published reference, but the manifest must match
+the actual local file.
 
 Do not edit the manifest to silence a failure and do not rename a GGUF or
 Safetensors file to `.ninfer`. Rebuild from pinned inputs or restore a known-good
@@ -185,8 +187,9 @@ service before conversion, but games, renderers, and other AI software may still
 hold the GPU. Close them and rerun `python ninfer.py prepare-model`. Downloaded
 weights are reused.
 
-If a failed conversion stopped a previously running model, rerunning
-`python ninfer.py up` restores the selected runtime without touching build data.
+If conversion fails after stopping a previously running model, the helper now
+restarts that previous model automatically. `python ninfer.py up` remains the
+manual recovery command if Docker itself was interrupted.
 
 ## Model load fails despite a correct checksum
 

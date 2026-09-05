@@ -1,13 +1,9 @@
-# Optional Hermes workspace
+# Legacy workspace directory
 
-This directory is a convenient starting folder for native Hermes Desktop
-sessions. It is not mounted into Docker; NInfer receives prompts through its
-authenticated API and has no access to these files.
+Current setup does not configure Hermes Desktop to start here and does not set
+`HERMES_WRITE_SAFE_ROOT`. Hermes uses its normal working-directory behavior.
 
-The setup helper configures this as Hermes's starting folder and includes it in
-`HERMES_WRITE_SAFE_ROOT`, so direct `write_file` and `patch` actions outside
-this folder (and Hermes's own profile) are blocked. This is still an
-organizational guardrail, not a complete security boundary: native terminal
-commands run with the signed-in operating-system user's permissions and can
-reach anything that user can reach. Keep backups, leave YOLO mode off, review
-risky tool approvals, and do not place irreplaceable or secret-only files here.
+This directory remains ignored because earlier project versions used it and
+may contain user projects. Setup will not move or delete that content. You can
+open a project here explicitly, move it to your usual projects directory, or
+leave it untouched.

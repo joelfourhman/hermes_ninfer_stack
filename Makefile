@@ -4,13 +4,14 @@ COMPOSE := docker compose --project-directory "$(STACK_DIR)" --env-file "$(ENV_F
 
 .DEFAULT_GOAL := help
 
-.PHONY: help setup init install-hermes prepare-model download-model build up down restart rebuild status config logs logs-ninfer shell-ninfer verify benchmark validate clean
+.PHONY: help setup init install-hermes prepare-model select-model download-model build up down restart rebuild status config logs logs-ninfer shell-ninfer verify benchmark validate clean
 
 help:
 	@echo "NInfer local runtime"
 	@echo "  setup             set up NInfer, then offer stock Hermes Desktop installation"
 	@echo "  install-hermes    install/configure stock Hermes Desktop for local NInfer"
-	@echo "  prepare-model     fetch pinned inputs and build the ~17 GiB artifact through uv"
+	@echo "  prepare-model     prepare the configured stock or uncensored model profile"
+	@echo "  select-model      interactively prepare, verify, and switch model profiles"
 	@echo "  download-model    compatibility alias for prepare-model"
 	@echo "  build/up/down      build or manage the NInfer Compose service"
 	@echo "  restart/status     restart NInfer or show effective status"
@@ -30,6 +31,9 @@ install-hermes:
 
 prepare-model:
 	cd "$(STACK_DIR)" && python3 ninfer.py prepare-model
+
+select-model:
+	cd "$(STACK_DIR)" && python3 ninfer.py select-model
 
 download-model:
 	cd "$(STACK_DIR)" && python3 ninfer.py download-model

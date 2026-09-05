@@ -79,10 +79,9 @@ Important consequences:
   sandbox the separate native Hermes process;
 - a malicious package, plugin, hook, or repository script can persist outside
   this project;
-- the helper limits direct `write_file` and `patch` operations to this
-  repository's `workspace/` and the Hermes profile, but terminal commands run
-  as the user and can still reach other user-writable paths;
-- approval dialogs and that file-write guard reduce accidents but are not
+- Hermes retains its built-in protected-path denylist, but other direct file
+  operations and terminal commands run as the user;
+- approval dialogs and protected-path checks reduce accidents but are not
   kernel enforcement for every possible execution path.
 
 For stronger isolation, run Hermes under a dedicated standard OS account or in
@@ -94,9 +93,8 @@ operator choice outside the default project setup.
 - Keep the helper-configured `approvals.mode: manual` setting enabled. It
   requires a user decision for commands Hermes flags; it does not turn every
   tool call into a prompt or create an OS sandbox.
-- Keep the helper-configured `HERMES_WRITE_SAFE_ROOT` value unless you
-  deliberately need direct file tools in another folder. Rerun
-  `python ninfer.py install-hermes` to restore the reviewed roots.
+- Add `HERMES_WRITE_SAFE_ROOT` yourself only if you deliberately want direct
+  file tools confined to chosen folders. It does not restrict terminal commands.
 - Do not enable YOLO or unattended broad command approval for sensitive work.
 - Use the smallest practical tool and plugin set.
 - Treat content from websites, documents, issue reports, repositories, and

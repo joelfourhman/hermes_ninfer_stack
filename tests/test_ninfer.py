@@ -6,6 +6,7 @@ import subprocess
 import tempfile
 import unittest
 from contextlib import redirect_stdout
+from dataclasses import replace
 from io import StringIO
 from pathlib import Path
 from unittest import mock
@@ -17,8 +18,12 @@ def sample_values() -> dict[str, str]:
     return {
         "NINFER_API_KEY": "a" * 64,
         "NINFER_HOST_PORT": "18080",
+        "NINFER_MODEL_PROFILE": "stock",
+        "NINFER_MODEL_FILE": ninfer.STOCK_MODEL_FILE,
         "NINFER_MODEL_ID": "qwen-local",
         "NINFER_CONTEXT_LENGTH": "131072",
+        "NINFER_KV_CAPACITY": "131072",
+        "NINFER_MAX_CONCURRENCY": "1",
         "HERMES_COMPRESSION_ENABLED": "true",
         "HERMES_COMPRESSION_THRESHOLD_TOKENS": "100000",
         "HERMES_MAX_TURNS": "40",
@@ -219,8 +224,12 @@ class HermesDesktopConfigurationTests(unittest.TestCase):
         calls: list[tuple[list[str], dict[str, object]]] = []
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            workspace = (root / "workspace").resolve()
             profile_home = (root / "hermes-profile").resolve()
+            profile_home.mkdir()
+            (profile_home / ".env").write_text(
+                "NINFER_API_KEY=old\nHERMES_WRITE_SAFE_ROOT=legacy-workspace\n",
+                encoding="utf-8",
+            )
             expected = {
                 "providers.ninfer.api": "http://127.0.0.1:18080/v1",
                 "model.provider": "custom:ninfer",
@@ -230,7 +239,6 @@ class HermesDesktopConfigurationTests(unittest.TestCase):
                 "compression.threshold": "0.9",
                 "compression.threshold_tokens": "100000",
                 "terminal.backend": "local",
-                "terminal.cwd": str(workspace),
                 "approvals.mode": "manual",
             }
 
@@ -259,13 +267,8 @@ class HermesDesktopConfigurationTests(unittest.TestCase):
         self.assertEqual(secret_kwargs["redact"], {-1})
         self.assertTrue(secret_kwargs["capture"])
 
-        safe_roots = os.pathsep.join((str(workspace), str(profile_home)))
-        self.assertEqual(hermes_env["HERMES_WRITE_SAFE_ROOT"], safe_roots)
-        serialized_safe_roots = safe_roots.replace("\\", "\\\\").replace('"', '\\"')
-        self.assertIn(
-            f'HERMES_WRITE_SAFE_ROOT="{serialized_safe_roots}"',
-            private_env_text,
-        )
+        self.assertNotIn("HERMES_WRITE_SAFE_ROOT", hermes_env)
+        self.assertNotIn("HERMES_WRITE_SAFE_ROOT", private_env_text)
 
         provider_call = next(
             command for command, _ in calls if command[1:4] == ["config", "set", "providers.ninfer"]
@@ -280,6 +283,10 @@ class HermesDesktopConfigurationTests(unittest.TestCase):
         )
         self.assertIn(
             ["hermes", "config", "set", "terminal.backend", "local"],
+            [command for command, _ in calls],
+        )
+        self.assertIn(
+            ["hermes", "config", "unset", "terminal.cwd"],
             [command for command, _ in calls],
         )
         self.assertIn(
@@ -307,6 +314,20 @@ class HermesDesktopConfigurationTests(unittest.TestCase):
         self.assertEqual(updated.count("HERMES_WRITE_SAFE_ROOT="), 1)
         self.assertIn(r'HERMES_WRITE_SAFE_ROOT="C:\\AI Workspace;C:\\Hermes"', updated)
 
+    def test_private_env_removal_preserves_unrelated_values(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            env_file = Path(temporary) / ".env"
+            env_file.write_text(
+                "NINFER_API_KEY=keep-me\n"
+                "HERMES_WRITE_SAFE_ROOT=old\n"
+                "export HERMES_WRITE_SAFE_ROOT=stale\n",
+                encoding="utf-8",
+            )
+            ninfer.remove_private_env_value(env_file, "HERMES_WRITE_SAFE_ROOT")
+            updated = env_file.read_text(encoding="utf-8")
+
+        self.assertEqual(updated, "NINFER_API_KEY=keep-me\n")
+
     def test_failed_secret_command_is_redacted(self) -> None:
         key = "b" * 64
         failure = subprocess.CalledProcessError(2, ["hermes", "config", "set", "NINFER_API_KEY", key])
@@ -330,6 +351,7 @@ class EnvironmentValidationTests(unittest.TestCase):
             "MODEL_BUILD_GID": "1000",
             "NINFER_HOST_PORT": "8080",
             "NINFER_GPU_DEVICE": "0",
+            "NINFER_MODEL_PROFILE": "stock",
             "NINFER_MODEL_FILE": "../outside.ninfer",
             "NINFER_MODEL_ID": "qwen-local",
             "NINFER_CONTEXT_LENGTH": "131072",
@@ -349,6 +371,26 @@ class EnvironmentValidationTests(unittest.TestCase):
                 with self.assertRaisesRegex(ninfer.StackError, "filename, not a path"):
                     ninfer.validate_env()
 
+    def test_profile_and_artifact_must_match(self) -> None:
+        values = sample_values()
+        values.update(
+            {
+                "MODEL_BUILD_UID": "1000",
+                "MODEL_BUILD_GID": "1000",
+                "NINFER_GPU_DEVICE": "0",
+                "NINFER_MODEL_FILE": ninfer.UNCENSORED_MODEL_FILE,
+            }
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            env_file = Path(temporary) / ".env"
+            env_file.write_text(
+                "".join(f"{key}={value}\n" for key, value in values.items()),
+                encoding="utf-8",
+            )
+            with mock.patch.object(ninfer, "ENV_FILE", env_file):
+                with self.assertRaisesRegex(ninfer.StackError, "stock model profile"):
+                    ninfer.validate_env()
+
 
 class ModelBuildLifecycleTests(unittest.TestCase):
     def test_local_artifact_is_verified_against_its_own_manifest(self) -> None:
@@ -356,22 +398,23 @@ class ModelBuildLifecycleTests(unittest.TestCase):
             root = Path(temporary)
             models = root / "models"
             models.mkdir()
-            artifact = models / ninfer.MODEL_FILE
+            profile = replace(
+                ninfer.model_profile("uncensored"),
+                expected_bytes=len(b"test artifact"),
+            )
+            artifact = models / profile.filename
             artifact.write_bytes(b"test artifact")
             checksum = ninfer.hashlib.sha256(artifact.read_bytes()).hexdigest()
-            (models / ninfer.MODEL_MANIFEST_FILE).write_text(
+            (models / f"{profile.filename}.local-manifest.json").write_text(
                 '{"sha256":"' + checksum + '"}\n',
                 encoding="utf-8",
             )
-            with (
-                mock.patch.object(ninfer, "ROOT", root),
-                mock.patch.object(ninfer, "MODEL_EXPECTED_BYTES", artifact.stat().st_size),
-            ):
-                manifest = ninfer.require_local_model_artifact()
+            with mock.patch.object(ninfer, "ROOT", root):
+                manifest = ninfer.require_model_artifact(profile)
                 self.assertEqual(manifest["sha256"], checksum)
                 artifact.write_bytes(b"tampered data")
                 with self.assertRaisesRegex(ninfer.StackError, "checksum"):
-                    ninfer.require_local_model_artifact()
+                    ninfer.require_model_artifact(profile)
 
     def test_activation_backs_up_and_preserves_private_settings(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -387,15 +430,16 @@ class ModelBuildLifecycleTests(unittest.TestCase):
             )
             with (
                 mock.patch.object(ninfer, "ENV_FILE", env_file),
-                mock.patch.object(ninfer, "require_local_model_artifact"),
+                mock.patch.object(ninfer, "require_model_artifact"),
             ):
-                backup = ninfer.activate_uncensored_model()
+                backup = ninfer.activate_model_profile(ninfer.model_profile("uncensored"))
 
             self.assertIsNotNone(backup)
             assert backup is not None
             self.assertIn("qwen3_8_27b_nvfp4.ninfer", backup.read_text(encoding="utf-8"))
             updated = env_file.read_text(encoding="utf-8")
-            self.assertIn("NINFER_MODEL_FILE=" + ninfer.MODEL_FILE, updated)
+            self.assertIn("NINFER_MODEL_PROFILE=uncensored", updated)
+            self.assertIn("NINFER_MODEL_FILE=" + ninfer.UNCENSORED_MODEL_FILE, updated)
             self.assertIn("NINFER_CONTEXT_LENGTH=131072", updated)
             self.assertIn("HERMES_COMPRESSION_THRESHOLD_TOKENS=100000", updated)
             self.assertIn("NINFER_API_KEY=" + "d" * 64, updated)
@@ -419,25 +463,79 @@ class ModelBuildLifecycleTests(unittest.TestCase):
                 mock.patch.object(ninfer, "merge_env"),
                 mock.patch.object(ninfer, "validate_env"),
                 mock.patch.object(ninfer, "compose", side_effect=fake_compose),
-                mock.patch.object(ninfer, "require_local_model_artifact", return_value={"sha256": "abc"}),
+                mock.patch.object(ninfer, "require_model_artifact", return_value={"sha256": "abc"}),
                 redirect_stdout(StringIO()),
             ):
-                ninfer.prepare_model(type("Args", (), {"yes": True, "leave_stopped": False})())
+                ninfer.prepare_model(
+                    type(
+                        "Args",
+                        (),
+                        {"model": "uncensored", "yes": True, "leave_stopped": False},
+                    )()
+                )
 
         self.assertIn(("stop", "ninfer"), calls)
         self.assertIn(("up", "-d", "ninfer"), calls)
         self.assertTrue(any("model-fetcher" in call for call in calls))
         self.assertTrue(any("model-converter" in call for call in calls))
 
+    def test_failed_conversion_restarts_previous_service_during_setup(self) -> None:
+        calls: list[tuple[str, ...]] = []
+
+        def fake_compose(*args: str, **_: object) -> subprocess.CompletedProcess[str]:
+            calls.append(args)
+            if args[:4] == ("ps", "--status", "running", "--services"):
+                return subprocess.CompletedProcess(["docker"], 0, stdout="ninfer\n", stderr="")
+            if "model-converter" in args:
+                raise ninfer.StackError("conversion failed")
+            return subprocess.CompletedProcess(["docker"], 0, stdout="", stderr="")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "models").mkdir()
+            (root / "model-build").mkdir()
+            env_file = root / ".env"
+            env_file.write_text("configured=true\n", encoding="utf-8")
+            with (
+                mock.patch.object(ninfer, "ROOT", root),
+                mock.patch.object(ninfer, "ENV_FILE", env_file),
+                mock.patch.object(ninfer, "merge_env"),
+                mock.patch.object(ninfer, "validate_env"),
+                mock.patch.object(ninfer, "compose", side_effect=fake_compose),
+                redirect_stdout(StringIO()),
+            ):
+                with self.assertRaisesRegex(ninfer.StackError, "conversion failed"):
+                    ninfer.prepare_model(
+                        type(
+                            "Args",
+                            (),
+                            {"model": "uncensored", "yes": True, "leave_stopped": True},
+                        )()
+                    )
+
+        self.assertIn(("stop", "ninfer"), calls)
+        self.assertIn(("up", "-d", "ninfer"), calls)
+
 
 class SetupOrderingTests(unittest.TestCase):
+    def test_model_menu_defaults_to_stock_and_accepts_uncensored(self) -> None:
+        with mock.patch("builtins.input", return_value=""):
+            self.assertEqual(
+                ninfer.choose_model_profile(ninfer.DEFAULT_MODEL_PROFILE).key,
+                "stock",
+            )
+        with mock.patch("builtins.input", return_value="2"):
+            self.assertEqual(ninfer.choose_model_profile().key, "uncensored")
+
     def test_enter_explicitly_accepts_required_model_download(self) -> None:
         input_mock = mock.Mock(return_value="")
         with (
             mock.patch("builtins.input", input_mock),
             redirect_stdout(StringIO()) as output,
         ):
-            self.assertTrue(ninfer.confirm_model_download())
+            self.assertTrue(
+                ninfer.confirm_model_download(ninfer.model_profile("uncensored"))
+            )
         self.assertEqual(
             input_mock.call_args.args[0],
             "Download and build the uncensored model now? [Y/n]: ",
@@ -450,7 +548,7 @@ class SetupOrderingTests(unittest.TestCase):
             root = Path(temporary)
             models = root / "models"
             models.mkdir()
-            (models / ninfer.MODEL_FILE).write_bytes(b"present")
+            (models / ninfer.UNCENSORED_MODEL_FILE).write_bytes(b"present")
 
             def fake_compose(*args: str, **_: object) -> subprocess.CompletedProcess[str]:
                 events.append(("compose", args))
@@ -461,7 +559,7 @@ class SetupOrderingTests(unittest.TestCase):
                 mock.patch.object(
                     ninfer,
                     "check_setup_prerequisites",
-                    side_effect=lambda: (events.append("prerequisites"), "0")[1],
+                    side_effect=lambda _: (events.append("prerequisites"), "0")[1],
                 ),
                 mock.patch.object(
                     ninfer,
@@ -470,19 +568,19 @@ class SetupOrderingTests(unittest.TestCase):
                 ),
                 mock.patch.object(ninfer, "validate_env"),
                 mock.patch.object(ninfer, "confirm_model_download", return_value=True),
-                mock.patch.object(ninfer, "prepare_model", side_effect=lambda _: events.append("prepare")),
-                mock.patch.object(ninfer, "activate_uncensored_model", return_value=None),
-                mock.patch.object(ninfer, "compose", side_effect=fake_compose),
-                mock.patch.object(ninfer, "read_env", return_value=sample_values()),
                 mock.patch.object(
                     ninfer,
-                    "require_ninfer_api",
-                    side_effect=lambda _: events.append("ninfer-ready"),
+                    "prepare_model",
+                    side_effect=lambda _: (events.append("prepare"), True)[1],
                 ),
                 mock.patch.object(
                     ninfer,
-                    "require_ninfer_generation",
-                    side_effect=lambda _: events.append("generation-ready"),
+                    "activate_and_start_profile",
+                    side_effect=lambda *_, **__: (
+                        events.append(("compose", ("up",))),
+                        events.append("ninfer-ready"),
+                        events.append("generation-ready"),
+                    ),
                 ),
                 mock.patch.object(ninfer, "confirm", return_value=True),
                 mock.patch.object(
@@ -492,7 +590,13 @@ class SetupOrderingTests(unittest.TestCase):
                 ),
             ):
                 with redirect_stdout(StringIO()):
-                    ninfer.setup(type("Args", (), {"skip_hermes": False})())
+                    ninfer.setup(
+                        type(
+                            "Args",
+                            (),
+                            {"skip_hermes": False, "model": "uncensored"},
+                        )()
+                    )
 
         self.assertLess(events.index("prerequisites"), events.index(("initialize", "0")))
         self.assertLess(events.index("ninfer-ready"), events.index("install-hermes"))
@@ -536,7 +640,7 @@ class BeginnerRecoveryTests(unittest.TestCase):
             root = Path(temporary)
             env_file = root / ".env"
             (root / "models").mkdir()
-            (root / "models" / ninfer.MODEL_FILE).write_bytes(b"present")
+            (root / "models" / ninfer.STOCK_MODEL_FILE).write_bytes(b"present")
 
             def fake_run(command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
                 if "--query-gpu=index,name,driver_version" in command:
@@ -571,7 +675,10 @@ class BeginnerRecoveryTests(unittest.TestCase):
             env_file = root / ".env"
             example = root / ".env.example"
             example.write_text(
-                "NINFER_GPU_DEVICE=0\nNINFER_API_KEY=\n",
+                "NINFER_GPU_DEVICE=0\n"
+                "NINFER_MODEL_PROFILE=stock\n"
+                f"NINFER_MODEL_FILE={ninfer.STOCK_MODEL_FILE}\n"
+                "NINFER_API_KEY=\n",
                 encoding="utf-8",
             )
             with (
@@ -583,6 +690,34 @@ class BeginnerRecoveryTests(unittest.TestCase):
             configured = env_file.read_text(encoding="utf-8")
 
         self.assertIn("NINFER_GPU_DEVICE=2\n", configured)
+        self.assertIn("NINFER_MODEL_PROFILE=stock\n", configured)
+
+    def test_existing_uncensored_environment_is_migrated_to_named_profile(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            env_file = root / ".env"
+            example = root / ".env.example"
+            example.write_text(
+                "NINFER_MODEL_PROFILE=stock\n"
+                f"NINFER_MODEL_FILE={ninfer.STOCK_MODEL_FILE}\n"
+                "NINFER_API_KEY=\n",
+                encoding="utf-8",
+            )
+            env_file.write_text(
+                f"NINFER_MODEL_FILE={ninfer.UNCENSORED_MODEL_FILE}\n"
+                f"NINFER_API_KEY={'a' * 64}\n",
+                encoding="utf-8",
+            )
+            with (
+                mock.patch.object(ninfer, "ENV_FILE", env_file),
+                mock.patch.object(ninfer, "ENV_EXAMPLE", example),
+            ):
+                ninfer.merge_env()
+
+            configured = env_file.read_text(encoding="utf-8")
+
+        self.assertIn("NINFER_MODEL_PROFILE=uncensored\n", configured)
+        self.assertIn(f"NINFER_MODEL_FILE={ninfer.UNCENSORED_MODEL_FILE}\n", configured)
 
     def test_up_waits_for_model_and_authenticated_api(self) -> None:
         events: list[object] = []
@@ -704,14 +839,13 @@ class BeginnerRecoveryTests(unittest.TestCase):
 
     def test_install_hermes_starts_a_stopped_configured_service(self) -> None:
         values = sample_values()
-        values["NINFER_MODEL_FILE"] = ninfer.MODEL_FILE
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             env_file = root / ".env"
             env_file.write_text("configured=true\n", encoding="utf-8")
             models = root / "models"
             models.mkdir()
-            (models / ninfer.MODEL_FILE).write_bytes(b"present")
+            (models / ninfer.STOCK_MODEL_FILE).write_bytes(b"present")
             args = type("Args", (), {"no_open": False, "no_wait": True, "from_setup": False})()
             with (
                 mock.patch.object(ninfer, "ROOT", root),

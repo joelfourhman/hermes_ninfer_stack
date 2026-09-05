@@ -2,8 +2,8 @@
 
 This guide assumes you have a Windows PC with an NVIDIA GeForce RTX 5090 and
 have never installed a local AI model before. You will use normal graphical
-installers for the prerequisites, paste three lines into Command Prompt, and
-accept two setup choices.
+installers for the prerequisites, paste three lines into Command Prompt, choose
+one of two model profiles, and accept the download and Hermes prompts.
 
 At the end:
 
@@ -24,16 +24,15 @@ You need:
 - an NVIDIA GeForce RTX 5090;
 - a supported 64-bit Windows installation;
 - a working internet connection for the first setup;
-- at least 90 GiB free on the drive containing this repository while the
-  approximately 55 GiB source checkpoint is converted;
+- at least 24 GiB free for the recommended stock profile, or 90 GiB for the
+  optional uncensored profile while its 55 GiB source checkpoint is converted;
 - additional free space in Docker Desktop's storage for the Linux image and
   temporary build files.
 
-The final NInfer artifact is approximately 16.96 GiB, but the source checkpoint
-and resumable build cache remain until you explicitly remove them. Docker image
-storage is separate. Close games and other GPU-heavy programs before setup so
-the converter can obtain approximately 11 GiB of VRAM and NInfer can later load
-the complete model.
+The stock NInfer artifact is approximately 20.02 GiB. The uncensored artifact
+is approximately 16.96 GiB, but its source checkpoint and resumable build cache
+remain until you explicitly remove them. Docker image storage is separate.
+Close games and other GPU-heavy programs before setup.
 
 ## 1. Install the four prerequisites
 
@@ -116,33 +115,46 @@ Linux-container mode. If Docker Desktop is installed but stopped, setup opens
 it and waits for its engine. If anything is missing, it gives a plain-English
 fix and stops before the large download.
 
-### Model download and build prompt
+### Model choice and download prompt
 
-The first question is:
+The first menu is:
 
 ```text
-Download and build the uncensored model now? [Y/n]:
+1. Stock Qwen3.8-27B (recommended)
+2. Qwen3.8-27B Uncensored
 ```
 
-Press Enter to accept the default yes. Nothing is downloaded until you consent.
-The pinned BF16 source is approximately 55 GiB, and conversion needs at least
-90 GiB of free working space. The final `.ninfer` artifact is approximately
-16.96 GiB.
+Press Enter for stock. It is the simpler, faster, and safer starting choice: a
+verified 20.02 GiB artifact is downloaded directly. Enter `2` only if you
+specifically want substantially reduced refusal behavior; that path downloads
+approximately 55 GiB and needs at least 90 GiB during local conversion.
 
-The networked fetcher and network-disabled GPU converter use committed uv locks
-inside temporary Docker containers. They do not use pip and do not install uv,
-Hugging Face tools, or Python packages on Windows. No Hugging Face account or
-token is required for this public model.
+Setup next describes the selected transfer and asks whether to download or
+build it. Press Enter to accept yes. Nothing large is downloaded until you
+consent.
 
-After downloading, setup temporarily stops a running NInfer service so the
-converter can use the GPU. It creates a groupwise-int artifact, validates its
-conversion report, records its local checksum, and only then selects it. The
-old model file remains available. Leave Docker Desktop and Command Prompt open.
-Setup does not continue to Hermes until the new model produces a short answer
-through the authenticated API.
+The networked fetcher—and, for uncensored, the network-disabled GPU
+converter—use committed uv locks inside temporary Docker containers. They do
+not use pip and install no Python packages on Windows. No Hugging Face account
+or token is required for either public model.
 
-If you type `n` at this first prompt, setup stops cleanly. Run
+For uncensored, setup temporarily stops a running NInfer service so the
+converter can use the GPU. It validates the result and records its local
+checksum. For stock, it validates the pinned artifact's published checksum.
+The old model file remains available in either case. Setup does not continue to
+Hermes until the selected model produces a short authenticated answer.
+
+If you type `n` at the download prompt, setup stops cleanly. Run
 `python ninfer.py setup` again when you are ready for the build.
+
+To change profiles later without repeating Hermes setup, run:
+
+```text
+python ninfer.py select-model
+```
+
+It preserves both artifacts and restores the old profile if the selected one
+does not pass its live test.
 
 ### Hermes Desktop prompt
 
@@ -175,9 +187,10 @@ normal private settings and selects the local `qwen-local` model. It does not
 show the key, ask you to copy it, or change unrelated Hermes providers and
 preferences. It also selects Hermes's `manual` command-approval mode so flagged
 commands are shown to you instead of being automatically approved by the
-default smart reviewer. Direct file-write tools start in this repository's
-`workspace/` and are blocked outside that folder and Hermes's own profile.
-Native terminal commands still have your normal user access.
+default smart reviewer. It leaves the working directory at the stock Hermes
+default instead of forcing this repository's `workspace/`. File and terminal
+tools have your normal user access, subject to Hermes's built-in protected-path
+rules.
 
 Wait for this message:
 
@@ -237,7 +250,7 @@ not the NInfer container.
 
 ## Using Hermes after restarting Windows
 
-The approximately 16.96 GiB model remains on disk. You do not repeat setup.
+The selected model remains on disk. You do not repeat setup.
 
 1. Open Command Prompt in the `hermes-ninfer-stack` directory.
 2. Start NInfer:
@@ -266,16 +279,16 @@ change the same files that you can, without needing an Administrator prompt.
 UAC does not protect your normal user files from another program running as
 you.
 
-The selected model has substantially reduced refusal behavior. That is a model
-behavior change, not a permission or safety feature. It can attempt commands or
-requests the base model might decline, so keep manual approvals enabled and do
-not treat a confident answer as evidence that an action is safe.
+If you selected the uncensored profile, it has substantially reduced refusal
+behavior. That is a behavior change, not a permission or safety feature. It can
+attempt requests the stock model might decline, so keep manual approvals
+enabled and do not treat a confident answer as evidence that an action is safe.
 
 For a safer beginning:
 
 - never run Hermes as Administrator;
-- use the helper-configured `workspace/` folder for initial tasks rather than
-  important personal files;
+- create or clone a normal project folder for each task and tell Hermes which
+  folder to use, just as with a stock installation;
 - read approval prompts before allowing file or command actions;
 - remember that approving a Docker command gives Hermes the same Docker access
   as your signed-in user;

@@ -8,6 +8,11 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Interactive `stock` or `uncensored` model profiles in first-run setup, with
+  the verified stock Qwen3.8-27B NVFP4 artifact as the recommended default.
+- `python ninfer.py select-model` for preparing and switching profiles while
+  preserving both artifacts and restoring the previous working model after a
+  failed startup test.
 - Cross-platform `python ninfer.py setup` workflow that creates local
   configuration, explicitly asks before downloading the model, starts NInfer,
   and then offers to install and configure stock Hermes Desktop.
@@ -74,9 +79,9 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and bounded NInfer logs so they cannot grow without limit.
 - Configured and verified Hermes `approvals.mode: manual` for the native
   beginner profile instead of relying on the stock smart-approval default.
-- Configured Hermes's local terminal to start in `workspace/` and restricted
-  direct file-write tools to that folder plus its own profile with
-  `HERMES_WRITE_SAFE_ROOT`.
+- Kept manual command approvals but restored stock Hermes working-directory and
+  file-tool behavior by removing the former `terminal.cwd` and
+  `HERMES_WRITE_SAFE_ROOT` overrides.
 - Documented that native Hermes has the signed-in user's filesystem authority and
   that UAC protects administrator elevation, not ordinary same-user files.
 - Excluded secrets, model weights, local Hermes configuration, logs, and
