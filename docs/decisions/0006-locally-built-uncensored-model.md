@@ -1,6 +1,6 @@
 # ADR 0006: Build the uncensored model locally from pinned inputs
 
-- Status: accepted
+- Status: Superseded by [ADR 0009](0009-direct-model-downloads.md)
 - Date: 2026-09-05
 
 ## Context

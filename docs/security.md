@@ -17,8 +17,7 @@ modifying or deleting files the current user can modify or delete.
 | --- | --- | --- | --- | --- |
 | Native Hermes Desktop/runtime | Everything allowed to the current user | NInfer loopback endpoint and any egress allowed to the user | Standard Hermes config, secrets, sessions, memory, skills, logs | Prompt injection, unsafe tools, plugins, or compromised runtime acting with user authority |
 | NInfer container | Read-only model directory and GPU device | Authenticated loopback-published API; ordinary outbound bridge access | No application state in Compose | Native parser/runtime, outbound access, or GPU-driver compromise |
-| Model fetcher | Read/write ignored `model-build/`; no GPU | Temporary outbound Hugging Face and pinned GitHub access | Resumable checkpoint and converter cache | Supply-chain input, disk exhaustion, or corrupted partial download |
-| Model converter | Read-only `model-build/`, read/write `models/`, selected GPU | None at runtime | Partial artifact, conversion report, local checksum manifest | Malicious input or converter exploiting native/PyTorch/GPU code |
+| Model downloader | Read/write ignored `models/`; no GPU | Temporary outbound Hugging Face access | Resumable artifact cache | Supply-chain input, disk exhaustion, or corrupted partial download; mitigated by immutable revisions and SHA-256 |
 | Docker daemon | Container, image, network, volume, and GPU control | Host-dependent | Docker-managed state | Docker access is effectively administrative for this deployment |
 
 NInfer is the only long-running container. No Docker socket, broad host path,

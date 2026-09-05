@@ -4,7 +4,7 @@
 
 No comparable throughput campaign has yet been collected for both selectable
 profiles. Published measurements must identify the exact profile and cannot be
-generalized between stock NVFP4 and the locally converted uncensored artifact.
+generalized between stock NVFP4 and the uncensored groupwise-int artifact.
 The source model's capability checks do not establish serving speed or agent
 quality.
 
@@ -15,7 +15,7 @@ quality.
 | Direct NInfer on this repository's RTX 5090 profile | Required before a performance claim |
 | Native Hermes orchestration overhead | Not collected |
 
-The public conversion notes describe a full-context, vision-enabled launch on
+The artifact's public conversion notes describe a full-context, vision-enabled launch on
 one RTX 5090 but explicitly label the dense model as not benchmarked. This
 repository therefore begins with a conservative first-test profile:
 131,072 context tokens, equal INT8 KV capacity, concurrency one, text-only, a
@@ -53,7 +53,7 @@ python ninfer.py benchmark
 python ninfer.py benchmark --runs 5 --max-tokens 1024
 ```
 
-The benchmark verifies the ignored local provenance manifest before measuring.
+The benchmark verifies the active artifact's pinned SHA-256 before measuring.
 It uses a warm persistent server, changes each prompt to avoid counting an
 identical full-prompt cache hit as an independent run, records raw streaming
 timing, and samples the GPU. Results remain ignored because prompts and model
@@ -75,7 +75,7 @@ A reproducible result must include:
 - date and direct-NInfer or Hermes-routed scope;
 - GPU, VRAM, driver, CUDA image, Docker, and Compose versions;
 - NInfer runtime commit and local model SHA-256;
-- source-model and converter revisions;
+- model artifact revision and SHA-256;
 - context, KV dtype/capacity, concurrency, prefill chunk, and speculation;
 - prompt and committed output token counts;
 - cold or warm state and sample count;

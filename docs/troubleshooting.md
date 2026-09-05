@@ -4,14 +4,14 @@
 
 If `python ninfer.py setup` stops, read its final message first. The setup is
 designed to be rerun safely: it keeps the generated connection key, resumes or
-rechecks the pinned source download, and preserves existing models and Hermes.
+rechecks the pinned artifact download, and preserves existing models and Hermes.
 You normally do **not** need to delete anything or start over.
 
 - If Docker is not running, open Docker Desktop, wait until it reports that the
   engine is running, and rerun `python ninfer.py setup`.
 - If model preparation was declined or interrupted, rerun
-  `python ninfer.py setup` and approve it. Completed checkpoint shards remain
-  under ignored `model-build/` for the fetcher to reuse.
+  `python ninfer.py setup` and approve it. Hugging Face download metadata under
+  ignored `models/.cache/` is reused.
 - If Windows restarted or the Command Prompt window was closed after NInfer
   finished, run `python ninfer.py setup` again. Completed work is reused.
 - If NInfer works but Hermes installation or onboarding was not completed, run
@@ -92,11 +92,11 @@ python ninfer.py setup
 Preserve an existing `.env` before replacing it because it can contain the key
 already configured in Hermes. Never post the key in an issue.
 
-## Setup pauses before the model download or build
+## Setup pauses before the model download
 
 This is expected after declining the explicit transfer prompt. No model data is
 downloaded and later stages do not run. Ensure at least 24 GiB is free for
-stock or 90 GiB for uncensored, then rerun:
+stock or 21 GiB for uncensored, then rerun:
 
 ```text
 python ninfer.py setup
@@ -145,7 +145,7 @@ Restore Docker network access or free safe Docker storage, then retry the pinned
 build. Installing global host CUDA packages does not repair dependencies owned
 by the image.
 
-## Source download or conversion was interrupted
+## Model download was interrupted
 
 Rerun the dedicated operation for the desired profile:
 
@@ -154,13 +154,9 @@ python ninfer.py prepare-model --model stock
 python ninfer.py prepare-model --model uncensored
 ```
 
-Hugging Face downloads resume. Uncensored source data is under
-`model-build/checkpoint`; its conversion does not resume midway, but the
-converter replaces only its known `.partial` output and starts that stage
-again. The previously selected model is not removed.
-
-If setup says the checkpoint or converter cache belongs to another revision,
-move the named directory aside rather than merging different source revisions.
+Hugging Face downloads resume from their cache under `models/.cache/`. The
+previously selected model is not stopped or removed while another profile is
+downloading.
 
 ## Model file is missing or has the wrong checksum
 
@@ -171,25 +167,12 @@ python ninfer.py select-model
 ```
 
 Stock expects `models/qwen3_8_27b_nvfp4.ninfer` with the exact pinned checksum.
-Uncensored expects `models/qwen3_8_27b_uncensored.ninfer` plus its
-`.local-manifest.json`; GPU rounding can produce a functionally equivalent
-checksum different from the published reference, but the manifest must match
-the actual local file.
+Uncensored expects `models/qwen3_8_27b_uncensored.ninfer` with its exact pinned
+checksum. Both published artifacts have fixed byte sizes and SHA-256 values.
 
-Do not edit the manifest to silence a failure and do not rename a GGUF or
-Safetensors file to `.ninfer`. Rebuild from pinned inputs or restore a known-good
-artifact and its matching manifest.
-
-## Conversion runs out of GPU memory
-
-The converter needs approximately 11 GiB free. Setup stops the current NInfer
-service before conversion, but games, renderers, and other AI software may still
-hold the GPU. Close them and rerun `python ninfer.py prepare-model`. Downloaded
-weights are reused.
-
-If conversion fails after stopping a previously running model, the helper now
-restarts that previous model automatically. `python ninfer.py up` remains the
-manual recovery command if Docker itself was interrupted.
+Do not bypass checksum validation and do not rename a GGUF or Safetensors file
+to `.ninfer`. Move the invalid file aside explicitly, then rerun
+`python ninfer.py prepare-model` to fetch the pinned artifact.
 
 ## Model load fails despite a correct checksum
 
@@ -201,7 +184,7 @@ python ninfer.py logs
 
 Common causes are a mismatched runtime revision, unsupported startup flags, or
 VRAM allocation failure. Restore the reviewed source and defaults before
-attempting model conversion or mutation.
+attempting model mutation.
 
 ## NInfer runs out of memory
 

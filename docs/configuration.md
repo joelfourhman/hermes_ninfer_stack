@@ -20,8 +20,8 @@ supported configuration command.
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `NINFER_API_KEY` | generated | Bearer secret required by NInfer and stored in the native Hermes secret file |
-| `HF_TOKEN` | empty | Optional Hugging Face token used only by the explicit model fetcher |
-| `MODEL_BUILD_UID` / `MODEL_BUILD_GID` | `1000` | Build-container identity; setup uses the creating user's IDs on POSIX hosts |
+| `HF_TOKEN` | empty | Optional Hugging Face token used only by the explicit model downloader |
+| `MODEL_DOWNLOAD_UID` / `MODEL_DOWNLOAD_GID` | `1000` | Downloader identity; setup uses the creating user's IDs on POSIX hosts |
 | `NINFER_HOST_PORT` | `8080` | Host-loopback port mapped to NInfer's container port 8080 |
 | `NINFER_GPU_DEVICE` | detected (`0` normally) | NVIDIA device reserved for NInfer; fresh setup saves the detected 5090 index |
 | `NINFER_MODEL_PROFILE` | `stock` | Fixed profile selected by `setup` or `select-model` |
@@ -178,9 +178,9 @@ the complete resolved startup profile for any benchmark comparison.
 instead of editing these values by hand so startup is tested and rollback is
 available.
 Compose mounts `./models` read-only at `/models` for the long-running server.
-The short-lived, network-disabled converter alone receives a read/write model
-mount. Using an arbitrary absolute path would make the setup machine-specific
-and bypass the reviewed local provenance manifest.
+The short-lived, CPU-only downloader alone receives a read/write model mount.
+Using an arbitrary absolute path would make the setup machine-specific and
+bypass the reviewed artifact pins and checksum.
 
 Model bytes remain outside image layers. Building or removing the NInfer image
 does not remove them.

@@ -326,8 +326,8 @@ class EnvironmentValidationTests(unittest.TestCase):
     def test_model_file_cannot_escape_models_directory(self) -> None:
         values = {
             "NINFER_API_KEY": "c" * 64,
-            "MODEL_BUILD_UID": "1000",
-            "MODEL_BUILD_GID": "1000",
+            "MODEL_DOWNLOAD_UID": "1000",
+            "MODEL_DOWNLOAD_GID": "1000",
             "NINFER_HOST_PORT": "8080",
             "NINFER_GPU_DEVICE": "0",
             "NINFER_MODEL_PROFILE": "stock",
@@ -354,8 +354,8 @@ class EnvironmentValidationTests(unittest.TestCase):
         values = sample_values()
         values.update(
             {
-                "MODEL_BUILD_UID": "1000",
-                "MODEL_BUILD_GID": "1000",
+                "MODEL_DOWNLOAD_UID": "1000",
+                "MODEL_DOWNLOAD_GID": "1000",
                 "NINFER_GPU_DEVICE": "0",
                 "NINFER_MODEL_FILE": ninfer.UNCENSORED_MODEL_FILE,
             }
@@ -371,8 +371,8 @@ class EnvironmentValidationTests(unittest.TestCase):
                     ninfer.validate_env()
 
 
-class ModelBuildLifecycleTests(unittest.TestCase):
-    def test_local_artifact_is_verified_against_its_own_manifest(self) -> None:
+class ModelDownloadLifecycleTests(unittest.TestCase):
+    def test_downloaded_artifact_is_verified_against_pinned_checksum(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             models = root / "models"
@@ -380,14 +380,11 @@ class ModelBuildLifecycleTests(unittest.TestCase):
             profile = replace(
                 ninfer.model_profile("uncensored"),
                 expected_bytes=len(b"test artifact"),
+                sha256=ninfer.hashlib.sha256(b"test artifact").hexdigest(),
             )
             artifact = models / profile.filename
             artifact.write_bytes(b"test artifact")
             checksum = ninfer.hashlib.sha256(artifact.read_bytes()).hexdigest()
-            (models / f"{profile.filename}.local-manifest.json").write_text(
-                '{"sha256":"' + checksum + '"}\n',
-                encoding="utf-8",
-            )
             with mock.patch.object(ninfer, "ROOT", root):
                 manifest = ninfer.require_model_artifact(profile)
                 self.assertEqual(manifest["sha256"], checksum)
@@ -423,7 +420,7 @@ class ModelBuildLifecycleTests(unittest.TestCase):
             self.assertIn("HERMES_COMPRESSION_THRESHOLD_TOKENS=100000", updated)
             self.assertIn("NINFER_API_KEY=" + "d" * 64, updated)
 
-    def test_prepare_model_stops_and_restarts_existing_service(self) -> None:
+    def test_prepare_model_uses_shared_downloader_without_stopping_ninfer(self) -> None:
         calls: list[tuple[str, ...]] = []
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -433,8 +430,7 @@ class ModelBuildLifecycleTests(unittest.TestCase):
 
             def fake_compose(*args: str, **_: object) -> subprocess.CompletedProcess[str]:
                 calls.append(args)
-                output = "ninfer\n" if args[:4] == ("ps", "--status", "running", "--services") else ""
-                return subprocess.CompletedProcess(["docker"], 0, stdout=output, stderr="")
+                return subprocess.CompletedProcess(["docker"], 0, stdout="", stderr="")
 
             with (
                 mock.patch.object(ninfer, "ROOT", root),
@@ -449,51 +445,13 @@ class ModelBuildLifecycleTests(unittest.TestCase):
                     type(
                         "Args",
                         (),
-                        {"model": "uncensored", "yes": True, "leave_stopped": False},
+                        {"model": "uncensored", "yes": True},
                     )()
                 )
 
-        self.assertIn(("stop", "ninfer"), calls)
-        self.assertIn(("up", "-d", "ninfer"), calls)
-        self.assertTrue(any("model-fetcher" in call for call in calls))
-        self.assertTrue(any("model-converter" in call for call in calls))
-
-    def test_failed_conversion_restarts_previous_service_during_setup(self) -> None:
-        calls: list[tuple[str, ...]] = []
-
-        def fake_compose(*args: str, **_: object) -> subprocess.CompletedProcess[str]:
-            calls.append(args)
-            if args[:4] == ("ps", "--status", "running", "--services"):
-                return subprocess.CompletedProcess(["docker"], 0, stdout="ninfer\n", stderr="")
-            if "model-converter" in args:
-                raise ninfer.StackError("conversion failed")
-            return subprocess.CompletedProcess(["docker"], 0, stdout="", stderr="")
-
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            (root / "models").mkdir()
-            (root / "model-build").mkdir()
-            env_file = root / ".env"
-            env_file.write_text("configured=true\n", encoding="utf-8")
-            with (
-                mock.patch.object(ninfer, "ROOT", root),
-                mock.patch.object(ninfer, "ENV_FILE", env_file),
-                mock.patch.object(ninfer, "merge_env"),
-                mock.patch.object(ninfer, "validate_env"),
-                mock.patch.object(ninfer, "compose", side_effect=fake_compose),
-                redirect_stdout(StringIO()),
-            ):
-                with self.assertRaisesRegex(ninfer.StackError, "conversion failed"):
-                    ninfer.prepare_model(
-                        type(
-                            "Args",
-                            (),
-                            {"model": "uncensored", "yes": True, "leave_stopped": True},
-                        )()
-                    )
-
-        self.assertIn(("stop", "ninfer"), calls)
-        self.assertIn(("up", "-d", "ninfer"), calls)
+        self.assertEqual(len(calls), 1)
+        self.assertIn("model-downloader", calls[0])
+        self.assertEqual(calls[0][-1], "uncensored")
 
 
 class SetupOrderingTests(unittest.TestCase):
@@ -517,7 +475,7 @@ class SetupOrderingTests(unittest.TestCase):
             )
         self.assertEqual(
             input_mock.call_args.args[0],
-            "Download and build the uncensored model now? [Y/n]: ",
+            "Download the uncensored model now? [Y/n]: ",
         )
         self.assertIn("Hermes needs one local AI model", output.getvalue())
 

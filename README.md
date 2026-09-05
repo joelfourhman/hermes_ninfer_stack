@@ -32,9 +32,9 @@ to.
 
 Setup offers two pinned model profiles. The recommended **stock** profile
 downloads a verified, ready-to-run 20.02 GiB NInfer artifact and needs about
-24 GiB free. The optional **uncensored** profile downloads approximately 55 GiB
-of source weights, needs at least 90 GiB free while converting them locally,
-and produces a 16.96 GiB artifact. Docker also needs separate image space.
+24 GiB free. The optional **uncensored** profile downloads a verified,
+ready-to-run 16.96 GiB artifact and needs about 21 GiB free. Docker also needs
+separate image space.
 
 ### 2. Clone and run the one-command setup
 
@@ -55,7 +55,7 @@ Then follow these exact prompts:
 2. Setup checks Python, Git, disk space, the RTX 5090, and Docker. If Docker
    Desktop is installed but stopped, setup opens it and waits for it.
 3. At the model download prompt, press Enter. Leave Command Prompt open while
-   the selected artifact is downloaded or built, verified, and loaded.
+   the selected artifact is downloaded, verified, and loaded.
    Interrupted downloads are reusable, so rerunning setup does not start over.
    Setup requires a short authenticated test answer before continuing.
 4. At **Install and configure stock Hermes Desktop now? [Y/n]**, just press
@@ -108,8 +108,8 @@ updates in the standard Hermes locations.
 ## What the project provides
 
 - A pinned NInfer source revision built for the RTX 5090 (`sm_120a`).
-- Two fixed, verified model profiles: a downloaded stock Qwen3.8-27B NVFP4
-  artifact and a uv-managed local build of Qwen3.8-27B Uncensored.
+- Two fixed, checksum-verified model downloads: stock Qwen3.8-27B NVFP4 and
+  Qwen3.8-27B Uncensored groupwise-int.
 - An interactive first-run choice and a safe `select-model` command that retain
   both artifacts and restore the previous profile if the new one cannot start.
 - An authenticated OpenAI-compatible endpoint published only at
@@ -152,8 +152,8 @@ See [Architecture](docs/architecture.md) for the full trust and data flow.
 - A driver capable of running CUDA 13.1 containers.
 - Docker Desktop or Docker Engine with NVIDIA GPU support and Docker Compose.
 - Git and Python 3.10 or newer on the host.
-- At least 24 GiB free for stock, or 90 GiB for the optional uncensored local
-  conversion. Keeping both final artifacts uses about 37 GiB.
+- At least 24 GiB free for stock, or 21 GiB for uncensored. Keeping both final
+  artifacts uses about 37 GiB.
 - Network access during initial source, model, and Hermes Desktop installation.
 
 On Windows, use Linux containers in Docker Desktop. This project does not
@@ -170,8 +170,8 @@ host is not compatible with the current stock Windows Hermes distribution.
 
 `python ninfer.py setup` asks which pinned model profile to use, initializes the
 exact NInfer source and private local settings, asks before the large transfer,
-downloads or locally builds and verifies the selected model in a short-lived
-container, starts NInfer, waits for a real answer, and then offers the official
+downloads and verifies the selected model in a short-lived CPU-only container,
+starts NInfer, waits for a real answer, and then offers the official
 stock Hermes Desktop installation. It is safe to rerun after an interruption.
 The host installs no Python packages; container tools use committed uv locks.
 
@@ -262,9 +262,9 @@ protected-path denylist remains active.
 
 | Profile | Stock (default) | Uncensored (optional) |
 | --- | --- | --- |
-| Source | `neroued/Qwen3.8-27B-nvfp4-NInfer` | `JonathanColetti/Qwen3.8-27B-Uncensored` BF16 |
+| Download | `neroued/Qwen3.8-27B-nvfp4-NInfer` | `DogOnKeyboard/Qwen3.8-27B-Uncensored-NInfer` |
 | Artifact | `qwen3_8_27b_nvfp4.ninfer` | `qwen3_8_27b_uncensored.ninfer` |
-| Preparation | Verified 20.02 GiB download | 55 GiB download plus local conversion; 90 GiB free |
+| Preparation | Verified 20.02 GiB download | Verified 16.96 GiB download |
 | Quantization | NVFP4 | NInfer `qwen3_8_27b-v1` groupwise-int |
 | Behavior | Stock model behavior; recommended | Reduced refusal behavior; use deliberately |
 
@@ -327,7 +327,7 @@ python ninfer.py down
 `--model stock|uncensored`). `select-model` displays the same two choices,
 prepares the selection if necessary, starts it, and restores the previous
 profile if the live test fails. Both model files are retained.
-`down` stops NInfer without removing the locally built model. The model is a host
+`down` stops NInfer without removing the downloaded model. The model is a host
 file mounted read-only into the container.
 `shell` opens Bash inside the NInfer container; it does not install or invoke a
 host Bash environment.
@@ -395,11 +395,10 @@ browser-control, plugin, cron, or unattended capabilities.
 ```text
 .
 ├── ninfer.py                  Cross-platform control command
-├── docker-compose.yml         NInfer runtime and one-shot model-build profiles
+├── docker-compose.yml         NInfer runtime and one-shot download profile
 ├── .env.example               Supported non-secret defaults
 ├── ninfer/                    Pinned NInfer source submodule
-├── model-builder/             uv-locked fetcher and offline GPU converter
-├── model-build/               Ignored resumable source/checkpoint workspace
+├── model-downloader/          uv-locked, checksum-verifying model downloader
 ├── models/                    Ignored local model storage
 ├── scripts/                   Validation, verification, and benchmark helpers
 ├── benchmarks/                Ignored benchmark result directories

@@ -12,8 +12,6 @@ from urllib.parse import unquote, urlsplit
 
 ROOT = Path(__file__).resolve().parent.parent
 EXPECTED_NINFER_COMMIT = "feaf4dd0983fdaeb2ba4c06eec6da350e644fb3a"
-EXPECTED_CONVERTER_COMMIT = "b2b96bae4dd88f95b9ea8126d68fae3b88caa374"
-EXPECTED_SOURCE_REVISION = "5bb7aa90f0efef548e87005b1fb7658e522b6b7f"
 EXPECTED_STOCK_MODEL_FILE = "qwen3_8_27b_nvfp4.ninfer"
 EXPECTED_UNCENSORED_MODEL_FILE = "qwen3_8_27b_uncensored.ninfer"
 EXPECTED_MODEL_ID = "qwen-local"
@@ -21,6 +19,7 @@ EXPECTED_CONTEXT = "131072"
 EXPECTED_KV_CAPACITY = "131072"
 EXPECTED_CONCURRENCY = "1"
 EXPECTED_REFERENCE_SHA256 = "714565ed29db4415322e9bc13a3464dc1fd8fcc911234740a79af67934e49969"
+EXPECTED_UNCENSORED_REVISION = "1e15b5919b796bcd96621f13572ad92b5555b641"
 
 errors: list[str] = []
 
@@ -60,16 +59,10 @@ required_paths = [
     ".gitmodules",
     "docker-compose.yml",
     "ninfer.py",
-    "model-builder/frontend.sha256",
-    "model-builder/fetcher/Dockerfile",
-    "model-builder/fetcher/fetch_stock.py",
-    "model-builder/fetcher/fetch_sources.py",
-    "model-builder/fetcher/pyproject.toml",
-    "model-builder/fetcher/uv.lock",
-    "model-builder/converter/Dockerfile",
-    "model-builder/converter/convert_model.py",
-    "model-builder/converter/pyproject.toml",
-    "model-builder/converter/uv.lock",
+    "model-downloader/Dockerfile",
+    "model-downloader/download_model.py",
+    "model-downloader/pyproject.toml",
+    "model-downloader/uv.lock",
     "scripts/verify.py",
     "scripts/benchmark.py",
     "tests/test_ninfer.py",
@@ -86,6 +79,7 @@ required_paths = [
     "docs/decisions/0006-locally-built-uncensored-model.md",
     "docs/decisions/0007-selectable-model-profiles.md",
     "docs/decisions/0008-stock-hermes-working-directory.md",
+    "docs/decisions/0009-direct-model-downloads.md",
     ".github/workflows/ci.yml",
 ]
 for relative in required_paths:
@@ -123,8 +117,8 @@ expected_env = {
     "HERMES_COMPRESSION_ENABLED": "true",
     "HERMES_COMPRESSION_THRESHOLD_TOKENS": "100000",
     "HERMES_MAX_TURNS": "40",
-    "MODEL_BUILD_UID": "1000",
-    "MODEL_BUILD_GID": "1000",
+    "MODEL_DOWNLOAD_UID": "1000",
+    "MODEL_DOWNLOAD_GID": "1000",
 }
 for key, expected in expected_env.items():
     if env_values.get(key) != expected:
@@ -145,10 +139,10 @@ if services_match is None:
     error("docker-compose.yml has no services block")
 else:
     services = set(re.findall(r"(?m)^  ([a-z0-9][a-z0-9-]*):\s*$", services_match.group(1)))
-    expected_services = {"stock-model-fetcher", "model-fetcher", "model-converter", "ninfer"}
+    expected_services = {"model-downloader", "ninfer"}
     if services != expected_services:
         error(
-            "Compose services must be the two fetchers, model-converter, and ninfer; found "
+            "Compose services must be model-downloader and ninfer; found "
             + ", ".join(sorted(services))
         )
 
@@ -166,9 +160,7 @@ def service_block(name: str) -> str:
     return match.group(1)
 
 
-stock_fetcher_service = service_block("stock-model-fetcher")
-fetcher_service = service_block("model-fetcher")
-converter_service = service_block("model-converter")
+downloader_service = service_block("model-downloader")
 ninfer_service = service_block("ninfer")
 
 networks_match = re.search(r"(?ms)^networks:\s*\n(.*?)(?=^[^ \t\r\n]|\Z)", compose_text)
@@ -186,29 +178,17 @@ if "HERMES_" in compose_text or re.search(r"(?im)^\s*(?:hermes|sandbox|sandbox-[
 if "127.0.0.1:${NINFER_HOST_PORT:-8080}:8080" not in compose_text:
     error("NInfer must publish its authenticated API on host loopback only")
 if "profiles: [tools]" not in compose_text:
-    error("model build utilities must remain isolated behind the tools profile")
+    error("the model downloader must remain isolated behind the tools profile")
 if "profiles:" in ninfer_service:
     error("NInfer must start normally without requiring a Compose profile")
-if (
-    "ports:" in stock_fetcher_service
-    or "ports:" in fetcher_service
-    or "ports:" in converter_service
-    or compose_text.count("    ports:") != 1
-):
+if "ports:" in downloader_service or compose_text.count("    ports:") != 1:
     error("only NInfer may publish a host port")
-if "./model-build:/work" not in fetcher_service:
-    error("model-fetcher must write only to the ignored model-build directory")
-if "./models:/models" not in stock_fetcher_service:
-    error("stock-model-fetcher must write only to the local models directory")
-if "./model-build:/work:ro" not in converter_service or "./models:/models" not in converter_service:
-    error("model-converter must read build inputs and write only local model output")
+if "./models:/models" not in downloader_service:
+    error("model-downloader must write only to the local models directory")
 if "./models:/models:ro" not in ninfer_service:
     error("NInfer must mount the local models directory read-only")
 host_bind_mounts = re.findall(r"(?m)^\s+- (\./[^\s]+)\s*$", compose_text)
 if sorted(host_bind_mounts) != sorted([
-    "./model-build:/work",
-    "./model-build:/work:ro",
-    "./models:/models",
     "./models:/models",
     "./models:/models:ro",
 ]):
@@ -218,18 +198,14 @@ if (
     or "device_ids: [\"${NINFER_GPU_DEVICE:-0}\"]" not in ninfer_service
 ):
     error("NInfer must request only the selected NVIDIA GPU")
-if "capabilities: [gpu]" in fetcher_service:
-    error("model-fetcher must not receive GPU access")
-if "capabilities: [gpu]" in stock_fetcher_service:
-    error("stock-model-fetcher must not receive GPU access")
-if "capabilities: [gpu]" not in converter_service or "network_mode: none" not in converter_service:
-    error("model-converter must receive the selected GPU without runtime network access")
+if "capabilities: [gpu]" in downloader_service:
+    error("model-downloader must not receive GPU access")
 if "${NINFER_API_KEY:?Run python ninfer.py setup to create .env}" not in ninfer_service:
     error("NInfer API authentication must fail closed until setup generates a key")
-if compose_text.count("no-new-privileges:true") != 4 or compose_text.count("      - ALL") != 4:
-    error("all four containers must drop Linux capabilities and forbid privilege escalation")
-if compose_text.count("    init: true") != 4:
-    error("all four containers must use a minimal init process for reliable shutdown")
+if compose_text.count("no-new-privileges:true") != 2 or compose_text.count("      - ALL") != 2:
+    error("both containers must drop Linux capabilities and forbid privilege escalation")
+if compose_text.count("    init: true") != 2:
+    error("both containers must use a minimal init process for reliable shutdown")
 if (
     "driver: local" not in ninfer_service
     or 'max-size: "10m"' not in ninfer_service
@@ -279,25 +255,14 @@ consistency_requirements = {
         "127.0.0.1:${NINFER_HOST_PORT:-8080}:8080",
         "profiles: [tools]",
     ],
-    "model-builder/fetcher/fetch_sources.py": [
-        EXPECTED_SOURCE_REVISION,
-        EXPECTED_CONVERTER_COMMIT,
-    ],
-    "model-builder/fetcher/fetch_stock.py": [
+    "model-downloader/download_model.py": [
         EXPECTED_STOCK_MODEL_FILE,
         "204e3d92c30d9d05f3300d2f52e443ad1edf6ddf",
         "bb3360522a06e136e0367f5703414d26272b7285c8a6ab6194135c17dbd81b32",
-    ],
-    "model-builder/converter/Dockerfile": [
-        "COPY --from=uv /usr/local/bin/uv /usr/local/bin/uvx /usr/local/bin/",
-        "nvidia/cuda:13.1.2-runtime-ubuntu24.04",
-        "uv sync --no-dev --no-install-project",
-    ],
-    "model-builder/converter/convert_model.py": [
         EXPECTED_UNCENSORED_MODEL_FILE,
         EXPECTED_REFERENCE_SHA256,
-        EXPECTED_SOURCE_REVISION,
-        EXPECTED_CONVERTER_COMMIT,
+        EXPECTED_UNCENSORED_REVISION,
+        "DogOnKeyboard/Qwen3.8-27B-Uncensored-NInfer",
     ],
     "scripts/verify.py": [
         EXPECTED_NINFER_COMMIT,
@@ -330,8 +295,8 @@ consistency_requirements = {
         EXPECTED_UNCENSORED_MODEL_FILE,
         EXPECTED_MODEL_ID,
         EXPECTED_REFERENCE_SHA256,
-        EXPECTED_SOURCE_REVISION,
-        EXPECTED_CONVERTER_COMMIT,
+        EXPECTED_UNCENSORED_REVISION,
+        "DogOnKeyboard/Qwen3.8-27B-Uncensored-NInfer",
     ],
 }
 for relative, values in consistency_requirements.items():

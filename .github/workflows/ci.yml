@@ -48,8 +48,7 @@ jobs:
           scripts/benchmark.py
           scripts/validate.py
           scripts/verify.py
-          model-builder/fetcher/fetch_sources.py
-          model-builder/converter/convert_model.py
+          model-downloader/download_model.py
           tests/test_ninfer.py
 
       - name: Run Python unit tests
@@ -74,11 +73,11 @@ jobs:
           docker compose --env-file .env.ci config --quiet
           docker compose --env-file .env.ci --profile tools config --quiet
 
-      - name: Build one-shot model fetcher
+      - name: Build one-shot model downloader
         shell: bash
         run: >-
           docker compose --env-file .env.ci
-          --profile tools build model-fetcher
+          --profile tools build model-downloader
 
   windows-host-helper:
     name: Test Python helper on Windows

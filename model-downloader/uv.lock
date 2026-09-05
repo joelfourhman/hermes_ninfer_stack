@@ -70,7 +70,7 @@ wheels = [
 ]
 
 [[package]]
-name = "hermes-ninfer-model-fetcher"
+name = "hermes-ninfer-model-downloader"
 version = "1.0.0"
 source = { virtual = "." }
 dependencies = [

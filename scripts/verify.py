@@ -30,8 +30,7 @@ MODEL_PROFILES = {
     "uncensored": {
         "file": "qwen3_8_27b_uncensored.ninfer",
         "bytes": 18_210_531_328,
-        "sha256": None,
-        "reference_sha256": "714565ed29db4415322e9bc13a3464dc1fd8fcc911234740a79af67934e49969",
+        "sha256": "714565ed29db4415322e9bc13a3464dc1fd8fcc911234740a79af67934e49969",
         "label": "Qwen3.8-27B Uncensored",
     },
 }
@@ -383,7 +382,6 @@ def main() -> int:
     if model != profile["file"]:
         raise Failure(f"Model {model} does not match profile {profile_key}")
     model_path = ROOT / "models" / model
-    manifest_path = ROOT / "models" / f"{model}.local-manifest.json"
     if not model_path.is_file():
         raise Failure(f"Missing models/{model}", f"python ninfer.py prepare-model --model {profile_key}")
     if model_path.stat().st_size != profile["bytes"]:
@@ -393,22 +391,9 @@ def main() -> int:
         for chunk in iter(lambda: handle.read(8 * 1024 * 1024), b""):
             checksum.update(chunk)
     actual_sha = checksum.hexdigest()
-    if profile_key == "stock":
-        if actual_sha != profile["sha256"]:
-            raise Failure("Stock model checksum does not match the pinned published artifact")
-        detail = "pinned published artifact"
-    else:
-        try:
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
-            raise Failure("Local model provenance manifest is invalid") from exc
-        if actual_sha != manifest.get("sha256"):
-            raise Failure("Model checksum does not match its local manifest", "python ninfer.py prepare-model")
-        detail = (
-            "matches published reference"
-            if actual_sha == profile["reference_sha256"]
-            else "locally recorded GPU build"
-        )
+    if actual_sha != profile["sha256"]:
+        raise Failure(f"{profile_key.capitalize()} model checksum does not match the pin")
+    detail = "pinned published artifact"
     passed(f"{profile['label']} checksum matches ({detail})")
 
     begin("NInfer container health")

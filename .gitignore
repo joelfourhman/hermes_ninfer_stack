@@ -15,6 +15,7 @@ hermes-data/
 # Model weights and generated inference artifacts, regardless of location
 models/*
 !models/.gitkeep
+# Legacy conversion cache from releases before direct artifact downloads.
 model-build/
 *.ninfer
 *.gguf

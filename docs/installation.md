@@ -24,15 +24,14 @@ You need:
 - an NVIDIA GeForce RTX 5090;
 - a supported 64-bit Windows installation;
 - a working internet connection for the first setup;
-- at least 24 GiB free for the recommended stock profile, or 90 GiB for the
-  optional uncensored profile while its 55 GiB source checkpoint is converted;
+- at least 24 GiB free for the recommended stock profile, or 21 GiB for the
+  optional uncensored profile;
 - additional free space in Docker Desktop's storage for the Linux image and
   temporary build files.
 
-The stock NInfer artifact is approximately 20.02 GiB. The uncensored artifact
-is approximately 16.96 GiB, but its source checkpoint and resumable build cache
-remain until you explicitly remove them. Docker image storage is separate.
-Close games and other GPU-heavy programs before setup.
+The stock NInfer artifact is approximately 20.02 GiB and the uncensored
+artifact is approximately 16.96 GiB. Docker image storage is separate. Close
+games and other GPU-heavy programs before loading the model.
 
 ## 1. Install the four prerequisites
 
@@ -126,26 +125,23 @@ The first menu is:
 
 Press Enter for stock. It is the simpler, faster, and safer starting choice: a
 verified 20.02 GiB artifact is downloaded directly. Enter `2` only if you
-specifically want substantially reduced refusal behavior; that path downloads
-approximately 55 GiB and needs at least 90 GiB during local conversion.
+specifically want substantially reduced refusal behavior; that path directly
+downloads a verified 16.96 GiB artifact and needs about 21 GiB free.
 
-Setup next describes the selected transfer and asks whether to download or
-build it. Press Enter to accept yes. Nothing large is downloaded until you
+Setup next describes the selected transfer and asks whether to download it.
+Press Enter to accept yes. Nothing large is downloaded until you
 consent.
 
-The networked fetcher—and, for uncensored, the network-disabled GPU
-converter—use committed uv locks inside temporary Docker containers. They do
-not use pip and install no Python packages on Windows. No Hugging Face account
-or token is required for either public model.
-
-For uncensored, setup temporarily stops a running NInfer service so the
-converter can use the GPU. It validates the result and records its local
-checksum. For stock, it validates the pinned artifact's published checksum.
-The old model file remains available in either case. Setup does not continue to
+The shared downloader uses a committed uv lock inside a temporary, CPU-only
+Docker container. It does not use pip or install Python packages on Windows.
+No Hugging Face account or token is required for either public model. Both
+profiles are pinned to immutable repository revisions and validated against
+their published byte size and SHA-256. The old model file remains available
+when switching. Setup does not continue to
 Hermes until the selected model produces a short authenticated answer.
 
 If you type `n` at the download prompt, setup stops cleanly. Run
-`python ninfer.py setup` again when you are ready for the build.
+`python ninfer.py setup` again when you are ready for the download.
 
 To change profiles later without repeating Hermes setup, run:
 
@@ -211,7 +207,7 @@ read
 
 ## If the Hermes window or setup window was closed
 
-The completed model does not need to be built again. Open Command Prompt in the
+The completed model does not need to be downloaded again. Open Command Prompt in the
 `hermes-ninfer-stack` directory and run:
 
 ```text
@@ -338,6 +334,6 @@ installation.
   separately whether to keep its user data.
 - Run `python ninfer.py down` to stop NInfer.
 - Docker image cleanup and deletion of `models/` are separate, explicit
-  actions. Setup never deletes the built model, old rollback model, or source cache.
+  actions. Setup never deletes a downloaded model or old rollback model.
 
 For other failures, continue with [Troubleshooting](troubleshooting.md).

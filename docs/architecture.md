@@ -24,14 +24,10 @@ flowchart LR
     Runtime -->|OpenAI-compatible HTTP over loopback| HostPort[127.0.0.1:NINFER_HOST_PORT]
 
     subgraph Docker[Docker Compose project]
-        Fetcher[One-shot model fetcher]
-        Converter[One-shot offline converter]
+        Downloader[One-shot model downloader]
         NInfer[NInfer server]
         Model[(models/*.ninfer)]
-        Sources[(model-build cache)]
-        Fetcher -->|pinned downloads| Sources
-        Sources -->|read-only| Converter
-        Converter -->|atomic verified output| Model
+        Downloader -->|pinned, verified download| Model
         Model -->|read-only mount| NInfer
     end
 
@@ -47,8 +43,7 @@ flowchart LR
 | --- | --- | --- |
 | `ninfer.py` | First-run coordination, model consent, Compose lifecycle, stock Hermes discovery, and narrow provider configuration | Hermes packaging, Hermes updates, desktop UI, or agent policy |
 | NInfer container | Artifact validation, model loading, GPU memory, tokenization, generation, and the OpenAI-compatible API | Agent state, tool execution, filesystem work, or Hermes configuration |
-| Model fetcher | Explicit, resumable acquisition and source/frontend verification | GPU access, model serving, or Hermes installation |
-| Model converter | Network-disabled groupwise-int conversion, report validation, and local checksum manifest | Source downloads, normal serving, or Hermes state |
+| Model downloader | Explicit, resumable artifact acquisition plus byte-size and SHA-256 verification | GPU access, model serving, or Hermes installation |
 | Stock Hermes Desktop/runtime | Conversations, tool loop, memory, skills, integrations, and native tool execution | CUDA model execution or Docker lifecycle |
 | Docker Desktop/Engine | NInfer process isolation, GPU assignment, port publication, and restart policy | Confining the native Hermes process |
 
@@ -144,8 +139,8 @@ python ninfer.py setup
 ```
 
 Setup initializes local configuration, offers the verified stock artifact or
-the optional uncensored local build, and asks before either large transfer. It
-downloads or builds and atomically verifies the selection, starts NInfer, and
+the optional uncensored artifact, and asks before either large transfer. It
+downloads and verifies the selection, starts NInfer, and
 waits for a real answer before offering Hermes Desktop configuration. This
 ordering ensures Hermes is pointed at a reachable endpoint and an incomplete
 artifact is never selected.
@@ -170,14 +165,13 @@ the native route is checked separately.
 | --- | --- | --- |
 | Project configuration | `.env` | Ignored host file; used by Compose and `ninfer.py` |
 | Model artifact | `models/` | Ignored host file; read-only inside NInfer |
-| Source checkpoint and converter cache | `model-build/` | Ignored, resumable host data; writable only by the fetcher and read-only to the converter |
-| Local model provenance | `models/*.local-manifest.json` | Ignored checksum and pinned-input identity used by verification |
+| Download cache | `models/.cache/` | Ignored, resumable Hugging Face data; writable only by the one-shot downloader |
 | NInfer image | Docker image store | Rebuildable from the pinned source and base |
 | Hermes config and secret | Standard per-user Hermes home | Owned and migrated by stock Hermes |
 | Hermes sessions, skills, memory, logs | Standard per-user Hermes home | Independent of Docker and this repository |
 | Benchmark output | `benchmarks/` | Ignored host results |
 
-Removing the NInfer container does not remove the built model, build cache, or native
+Removing the NInfer container does not remove the downloaded model, download cache, or native
 Hermes data. Uninstalling Hermes follows the official Hermes lifecycle and is
 not performed by this project.
 

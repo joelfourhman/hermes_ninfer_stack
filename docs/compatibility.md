@@ -21,20 +21,18 @@ Original runtime audit: 2026-08-23. Model-swap implementation review:
 | Docker Compose | 5.3.0 | Compose query |
 | NInfer CUDA base | CUDA 13.1.2 on Ubuntu 24.04 | Pinned upstream Dockerfile |
 | NInfer source | `feaf4dd0983fdaeb2ba4c06eec6da350e644fb3a` | Clean submodule, image build, and OCI revision-label check |
-| Model source | `JonathanColetti/Qwen3.8-27B-Uncensored` at `5bb7aa90f0efef548e87005b1fb7658e522b6b7f` | Pinned public BF16 checkpoint |
-| Converter | NInfer `b2b96bae4dd88f95b9ea8126d68fae3b88caa374`, recipe `qwen3_8_27b-v1` | Pinned local conversion input |
-| Model artifact | Qwen3.8-27B Uncensored groupwise-int | Pipeline and invariants reviewed; live conversion pending because Docker Desktop failed before engine startup on 2026-09-05 |
+| Model source | `JonathanColetti/Qwen3.8-27B-Uncensored` at `5bb7aa90f0efef548e87005b1fb7658e522b6b7f` | Recorded provenance for the uncensored conversion |
+| Artifact download | `DogOnKeyboard/Qwen3.8-27B-Uncensored-NInfer` at `1e15b5919b796bcd96621f13572ad92b5555b641` | Immutable Hugging Face revision, byte size, and SHA-256 pinned |
+| Model artifact | Qwen3.8-27B Uncensored groupwise-int | Hosted artifact exactly matches the locally built reference SHA-256 |
 | Native client target | Official Hermes Desktop for Windows | Upstream installer/config documentation; native route not rerun during this refactor |
 
 The NInfer image built successfully and saw the RTX 5090 during the original
-audit. A later live run with the former NVFP4 artifact completed the
-then-current layered inference verifier. Do not transfer that result to the new
-uncensored artifact: its fetcher, converter, Compose configuration, unit tests,
-and static validation were checked on 2026-09-05, but Docker Desktop 4.82.0
-crashed while initializing its own `dockerInference` endpoint before a live
-conversion could begin. The new artifact and native Hermes route therefore
-still require `python ninfer.py verify` after Docker is repaired. Formal
-throughput evidence is documented separately in [Performance](performance.md).
+audit. A live run with the NVFP4 artifact completed the then-current layered
+inference verifier. The hosted uncensored artifact matches the checksum of the
+subsequently completed local build; run `python ninfer.py verify` after selecting
+it to validate the complete runtime and native Hermes route on the current
+machine. Formal throughput evidence is documented separately in
+[Performance](performance.md).
 
 ## Required NInfer envelope
 

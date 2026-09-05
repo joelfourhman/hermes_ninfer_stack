@@ -1,13 +1,11 @@
 services:
-  stock-model-fetcher:
+  model-downloader:
     profiles: [tools]
     build:
-      context: ./model-builder
-      dockerfile: fetcher/Dockerfile
-    entrypoint: ["/opt/fetcher/bin/python", "/app/fetch_stock.py"]
+      context: ./model-downloader
     init: true
     restart: "no"
-    user: "${MODEL_BUILD_UID:-1000}:${MODEL_BUILD_GID:-1000}"
+    user: "${MODEL_DOWNLOAD_UID:-1000}:${MODEL_DOWNLOAD_GID:-1000}"
     read_only: true
     security_opt:
       - no-new-privileges:true
@@ -21,58 +19,6 @@ services:
       - ./models:/models
     tmpfs:
       - /tmp:size=512m,mode=1777
-
-  model-fetcher:
-    profiles: [tools]
-    build:
-      context: ./model-builder
-      dockerfile: fetcher/Dockerfile
-    init: true
-    restart: "no"
-    user: "${MODEL_BUILD_UID:-1000}:${MODEL_BUILD_GID:-1000}"
-    read_only: true
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    environment:
-      HOME: /tmp
-      HF_HOME: /work/.cache/huggingface
-      HF_TOKEN: ${HF_TOKEN:-}
-    volumes:
-      - ./model-build:/work
-    tmpfs:
-      - /tmp:size=512m,mode=1777
-
-  model-converter:
-    profiles: [tools]
-    build:
-      context: ./model-builder
-      dockerfile: converter/Dockerfile
-    init: true
-    restart: "no"
-    user: "${MODEL_BUILD_UID:-1000}:${MODEL_BUILD_GID:-1000}"
-    read_only: true
-    network_mode: none
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    environment:
-      HOME: /tmp
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              device_ids: ["${NINFER_GPU_DEVICE:-0}"]
-              capabilities: [gpu]
-    volumes:
-      - ./model-build:/work:ro
-      - ./models:/models
-    tmpfs:
-      - /tmp:size=4g,mode=1777
-    shm_size: 2gb
 
   ninfer:
     build:

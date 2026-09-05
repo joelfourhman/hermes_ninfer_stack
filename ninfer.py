@@ -30,6 +30,7 @@ NINFER_URL = "https://github.com/Neroued/ninfer.git"
 STOCK_MODEL_FILE = "qwen3_8_27b_nvfp4.ninfer"
 UNCENSORED_MODEL_FILE = "qwen3_8_27b_uncensored.ninfer"
 STOCK_MODEL_SHA256 = "bb3360522a06e136e0367f5703414d26272b7285c8a6ab6194135c17dbd81b32"
+UNCENSORED_MODEL_SHA256 = "714565ed29db4415322e9bc13a3464dc1fd8fcc911234740a79af67934e49969"
 
 
 @dataclass(frozen=True)
@@ -37,7 +38,7 @@ class ModelProfile:
     key: str
     label: str
     filename: str
-    method: str
+    sha256: str
     expected_bytes: int
     required_free_gib: int
     transfer_description: str
@@ -49,7 +50,7 @@ MODEL_PROFILES = {
         key="stock",
         label="Stock Qwen3.8-27B NVFP4",
         filename=STOCK_MODEL_FILE,
-        method="download",
+        sha256=STOCK_MODEL_SHA256,
         expected_bytes=21_492_695_040,
         required_free_gib=24,
         transfer_description="20.02 GiB verified artifact download",
@@ -59,10 +60,10 @@ MODEL_PROFILES = {
         key="uncensored",
         label="Qwen3.8-27B Uncensored",
         filename=UNCENSORED_MODEL_FILE,
-        method="convert",
+        sha256=UNCENSORED_MODEL_SHA256,
         expected_bytes=18_210_531_328,
-        required_free_gib=90,
-        transfer_description="approximately 55 GiB of source weights plus local conversion",
+        required_free_gib=21,
+        transfer_description="16.96 GiB verified artifact download",
         final_size_gib="16.96",
     ),
 }
@@ -238,8 +239,8 @@ def choose_model_profile(default_key: str | None = None) -> ModelProfile:
     print("     Download: 20.02 GiB")
     print()
     print("  2. Qwen3.8-27B Uncensored")
-    print("     Reduced refusals; locally converted and less tested for agent work")
-    print("     Download: ~55 GiB; requires ~90 GiB temporarily")
+    print("     Reduced refusals and less tested for agent work")
+    print("     Download: 16.96 GiB")
     while True:
         answer = input(f"Selection [{default_number}]: ").strip().lower()
         if not answer:
@@ -265,9 +266,7 @@ def check_setup_prerequisites(profile: ModelProfile | None = None) -> str:
     print(f"Python {sys.version_info.major}.{sys.version_info.minor} is ready.")
 
     model_path = ROOT / "models" / profile.filename
-    manifest_path = ROOT / "models" / f"{profile.filename}.local-manifest.json"
-    metadata_ready = profile.method == "download" or manifest_path.is_file()
-    if model_path.is_file() and model_path.stat().st_size == profile.expected_bytes and metadata_ready:
+    if model_path.is_file() and model_path.stat().st_size == profile.expected_bytes:
         print(f"The {profile.label} artifact is already present; its checksum will be verified.")
     else:
         free = shutil.disk_usage(ROOT).free
@@ -477,10 +476,10 @@ def merge_env(detected_gpu_device: str | None = None) -> None:
     if detected_gpu_device is not None and not original_values.get("NINFER_GPU_DEVICE"):
         forced["NINFER_GPU_DEVICE"] = detected_gpu_device
     if os.name != "nt" and hasattr(os, "getuid") and hasattr(os, "getgid"):
-        if not original_values.get("MODEL_BUILD_UID"):
-            forced["MODEL_BUILD_UID"] = str(os.getuid())
-        if not original_values.get("MODEL_BUILD_GID"):
-            forced["MODEL_BUILD_GID"] = str(os.getgid())
+        if not original_values.get("MODEL_DOWNLOAD_UID"):
+            forced["MODEL_DOWNLOAD_UID"] = str(os.getuid())
+        if not original_values.get("MODEL_DOWNLOAD_GID"):
+            forced["MODEL_DOWNLOAD_GID"] = str(os.getgid())
     values = {}
     for line in merged:
         if re.match(r"^[A-Z][A-Z0-9_]*=", line):
@@ -506,8 +505,8 @@ def validate_env() -> None:
     values = read_env()
     required = [
         "NINFER_API_KEY",
-        "MODEL_BUILD_UID",
-        "MODEL_BUILD_GID",
+        "MODEL_DOWNLOAD_UID",
+        "MODEL_DOWNLOAD_GID",
         "NINFER_HOST_PORT",
         "NINFER_GPU_DEVICE",
         "NINFER_MODEL_PROFILE",
@@ -531,7 +530,7 @@ def validate_env() -> None:
     if not values["NINFER_GPU_DEVICE"].isdigit():
         raise StackError("NINFER_GPU_DEVICE must be a non-negative integer")
     profile = model_profile(values["NINFER_MODEL_PROFILE"])
-    for key in ("MODEL_BUILD_UID", "MODEL_BUILD_GID"):
+    for key in ("MODEL_DOWNLOAD_UID", "MODEL_DOWNLOAD_GID"):
         if not values[key].isdigit() or int(values[key]) < 0:
             raise StackError(f"{key} must be a non-negative integer")
     if not re.fullmatch(r"[A-Za-z0-9._-]+\.ninfer", values["NINFER_MODEL_FILE"]):
@@ -697,13 +696,9 @@ def confirm_model_download(profile: ModelProfile) -> bool:
     print(f"Selected: {profile.label}")
     print(f"Transfer: {profile.transfer_description}")
     print(f"Final artifact: {profile.final_size_gib} GiB at models/{profile.filename}")
-    if profile.method == "convert":
-        print("Pinned inputs are downloaded with uv, then converted in a network-disabled container.")
-    else:
-        print("The published NInfer artifact is downloaded with uv and SHA-256 verified.")
+    print("The published NInfer artifact is downloaded with uv and SHA-256 verified.")
     print("You can interrupt and rerun setup later; completed download data is preserved.")
-    action = "Download and build" if profile.method == "convert" else "Download"
-    answer = input(f"{action} the {profile.key} model now? [Y/n]: ").strip().lower()
+    answer = input(f"Download the {profile.key} model now? [Y/n]: ").strip().lower()
     return answer in {"", "y", "yes"}
 
 
@@ -725,11 +720,7 @@ def file_sha256(path: Path) -> str:
 
 def model_artifact_candidate_ready(profile: ModelProfile) -> bool:
     model_path = ROOT / "models" / profile.filename
-    if not model_path.is_file() or model_path.stat().st_size != profile.expected_bytes:
-        return False
-    if profile.method == "convert":
-        return (ROOT / "models" / f"{profile.filename}.local-manifest.json").is_file()
-    return True
+    return model_path.is_file() and model_path.stat().st_size == profile.expected_bytes
 
 
 def require_model_artifact(profile: ModelProfile) -> dict[str, object]:
@@ -745,44 +736,25 @@ def require_model_artifact(profile: ModelProfile) -> dict[str, object]:
             f"expected {profile.expected_bytes:,}"
         )
     actual = file_sha256(model_path)
-    if profile.method == "download":
-        if actual != STOCK_MODEL_SHA256:
-            raise StackError(
-                f"The stock model checksum is {actual}; expected {STOCK_MODEL_SHA256}"
-            )
-        return {
-            "artifact": profile.filename,
-            "bytes": profile.expected_bytes,
-            "sha256": actual,
-            "profile": profile.key,
-            "verified_published_artifact": True,
-        }
-
-    manifest_path = ROOT / "models" / f"{profile.filename}.local-manifest.json"
-    try:
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        raise StackError("The local model provenance manifest is missing or invalid") from exc
-    if manifest.get("sha256") != actual:
+    if actual != profile.sha256:
         raise StackError(
-            f"The local model checksum is {actual}, but its manifest records "
-            f"{manifest.get('sha256')}"
+            f"The {profile.key} model checksum is {actual}; expected {profile.sha256}"
         )
-    return manifest
-
-
-def ninfer_is_running() -> bool:
-    result = compose("ps", "--status", "running", "--services", check=False, capture=True)
-    return "ninfer" in {line.strip() for line in result.stdout.splitlines()}
+    return {
+        "artifact": profile.filename,
+        "bytes": profile.expected_bytes,
+        "sha256": actual,
+        "profile": profile.key,
+        "verified_published_artifact": True,
+    }
 
 
 def prepare_model(args: argparse.Namespace) -> bool:
     merge_env()
     validate_env()
     profile = model_profile(getattr(args, "model", None) or configured_model_profile_key())
-    # Create bind-mount sources as the host user. Letting Docker create them can
-    # leave root-owned directories that the non-root utility containers cannot use.
-    (ROOT / "model-build").mkdir(parents=True, exist_ok=True)
+    # Create the bind-mount source as the host user. Letting Docker create it can
+    # leave a root-owned directory that the non-root downloader cannot use.
     (ROOT / "models").mkdir(parents=True, exist_ok=True)
     if model_artifact_candidate_ready(profile):
         print(f"The {profile.label} artifact already exists; verifying its checksum...")
@@ -790,34 +762,15 @@ def prepare_model(args: argparse.Namespace) -> bool:
         print(f"Verified {profile.filename}: {manifest['sha256']}")
         return True
     if not args.yes and not confirm_model_download(profile):
-        print("Model preparation cancelled. Existing models and build downloads were preserved.")
+        print("Model preparation cancelled. Existing models and partial downloads were preserved.")
         return False
 
-    if profile.method == "download":
-        print("Downloading and verifying the pinned stock NInfer artifact...")
-        compose("--profile", "tools", "run", "--rm", "--build", "stock-model-fetcher")
-        manifest = require_model_artifact(profile)
-        print(f"Stock model verified: {manifest['sha256']}")
-        return True
-
-    print("Downloading and verifying the pinned model-build inputs...")
-    compose("--profile", "tools", "run", "--rm", "--build", "model-fetcher")
-    was_running = ninfer_is_running()
-    conversion_succeeded = False
-    if was_running:
-        print("Stopping NInfer temporarily so the converter can use the GPU...")
-        compose("stop", "ninfer")
-    try:
-        print("Building the local NInfer artifact. Existing model files will not be overwritten.")
-        compose("--profile", "tools", "run", "--rm", "--build", "model-converter")
-        manifest = require_model_artifact(profile)
-        print(f"Model build verified: {manifest['sha256']}")
-        conversion_succeeded = True
-    finally:
-        should_restart = not conversion_succeeded or not getattr(args, "leave_stopped", False)
-        if was_running and should_restart:
-            print("Restarting the previously selected model...")
-            compose("up", "-d", "ninfer")
+    print(f"Downloading and verifying the pinned {profile.key} NInfer artifact...")
+    compose(
+        "--profile", "tools", "run", "--rm", "--build", "model-downloader", profile.key
+    )
+    manifest = require_model_artifact(profile)
+    print(f"{profile.label} verified: {manifest['sha256']}")
     return True
 
 
@@ -1229,20 +1182,20 @@ def setup(args: argparse.Namespace) -> None:
     stage(3, 6, "Prepare the private local configuration")
     initialize_local_state(detected_gpu_device)
 
-    stage(4, 6, "Download or build and verify the AI model")
+    stage(4, 6, "Download and verify the AI model")
     if not model_artifact_candidate_ready(profile):
         if not confirm_model_download(profile):
             print(f"Setup paused before model preparation. Run '{SETUP_COMMAND}' when ready.")
             return
     try:
         prepared = prepare_model(
-            argparse.Namespace(model=profile.key, yes=True, leave_stopped=True)
+            argparse.Namespace(model=profile.key, yes=True)
         )
     except StackError as exc:
         raise StackError(
             "Model preparation did not finish. Read the message above, check Docker, the internet "
-            "connection, GPU availability, and free disk space, then rerun setup. Downloaded "
-            "source data was preserved for resumption; the previous model was not deleted."
+            "connection, and free disk space, then rerun setup. Partial download data was "
+            "preserved for resumption; the previous model was not deleted."
         ) from exc
     if not prepared:
         return
@@ -1327,7 +1280,7 @@ def select_model(args: argparse.Namespace) -> None:
     detected_gpu_device = check_setup_prerequisites(profile)
     initialize_local_state(detected_gpu_device)
     prepared = prepare_model(
-        argparse.Namespace(model=profile.key, yes=args.yes, leave_stopped=True)
+        argparse.Namespace(model=profile.key, yes=args.yes)
     )
     if not prepared:
         return
@@ -1384,7 +1337,7 @@ def main() -> int:
     )
     prepare.add_argument("--yes", action="store_true", help="skip the model preparation confirmation")
     prepare.add_argument("--model", choices=tuple(MODEL_PROFILES), help="model profile to prepare")
-    prepare.set_defaults(func=prepare_model, leave_stopped=False)
+    prepare.set_defaults(func=prepare_model)
     install = sub.add_parser(
         "install-hermes",
         help="install/configure stock Hermes Desktop after NInfer is ready",
@@ -1405,7 +1358,7 @@ def main() -> int:
         help="prepare and safely switch between stock and uncensored models",
     )
     select.add_argument("--model", choices=tuple(MODEL_PROFILES), help="profile to select")
-    select.add_argument("--yes", action="store_true", help="skip the download/build confirmation")
+    select.add_argument("--yes", action="store_true", help="skip the download confirmation")
     select.set_defaults(func=select_model)
     sub.add_parser("build", help="build the NInfer image").set_defaults(func=passthrough(("build", "ninfer")))
     sub.add_parser("up", help="start NInfer and wait until the model is ready").set_defaults(func=up)

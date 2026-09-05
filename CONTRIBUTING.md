@@ -37,7 +37,7 @@ python ninfer.py setup
 ```
 
 Setup explicitly asks before either profile's large transfer: about 20 GiB for
-stock or 55 GiB of source weights for uncensored. It starts the verified NInfer artifact first,
+stock or 17 GiB for uncensored. It starts the verified NInfer artifact first,
 then offers to install and configure the official stock Hermes
 Desktop/native package for the current host user. The Hermes-only step can be
 rerun without rebuilding NInfer:
@@ -58,7 +58,7 @@ Run the checks relevant to the change. The normal non-GPU validation set is:
 python ninfer.py validate
 docker compose config --quiet
 python -m py_compile ninfer.py scripts/benchmark.py scripts/validate.py scripts/verify.py
-docker compose --profile tools build model-fetcher
+docker compose --profile tools build model-downloader
 ```
 
 The GitHub workflow runs equivalent lightweight checks. It does not build
@@ -83,12 +83,11 @@ GPU, latency, throughput, or compatibility results.
 - Keep NInfer bound to host loopback. Do not mount the Docker socket, add
   privileged mode or host networking, or broaden host mounts without a
   documented threat model and strong justification.
-- Give GPU access only to NInfer and the short-lived network-disabled converter.
+- Give GPU access only to NInfer; the short-lived downloader does not need it.
 - Keep Hermes installation and provider changes within the official stock
   install and configuration mechanisms.
 - Pin externally downloaded inputs and verify checksums where practical.
 - Keep Python dependencies uv-locked; do not introduce pip commands.
-- Never treat a GPU-dependent conversion checksum as universal without evidence.
 - Keep setup idempotent and avoid deleting model files or the user's Hermes
   configuration implicitly.
 - Update documentation, examples, validation, and changelog entries with

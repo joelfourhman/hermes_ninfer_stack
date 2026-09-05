@@ -32,7 +32,7 @@ MODEL_PROFILES = {
     },
     "uncensored": {
         "file": "qwen3_8_27b_uncensored.ninfer",
-        "sha256": None,
+        "sha256": "714565ed29db4415322e9bc13a3464dc1fd8fcc911234740a79af67934e49969",
         "quantization": "NInfer qwen3_8_27b-v1 groupwise-int",
     },
 }
@@ -186,23 +186,12 @@ def main() -> int:
     ).stdout.splitlines()[0]
     gpu_name, driver, vram_total = [item.strip() for item in gpu_line.split(",")[:3]]
     model_path = ROOT / "models" / values["NINFER_MODEL_FILE"]
-    manifest_path = ROOT / "models" / f"{values['NINFER_MODEL_FILE']}.local-manifest.json"
     profile = MODEL_PROFILES.get(values["NINFER_MODEL_PROFILE"])
     if profile is None or values["NINFER_MODEL_FILE"] != profile["file"] or not model_path.is_file():
         die("the configured model profile or artifact is invalid")
     model_sha256 = file_sha256(model_path)
-    if values["NINFER_MODEL_PROFILE"] == "stock":
-        if model_sha256 != profile["sha256"]:
-            die("stock model does not match its pinned checksum")
-    else:
-        if not manifest_path.is_file():
-            die("the locally built model provenance manifest is absent")
-        try:
-            local_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
-            die(f"local model provenance manifest is invalid: {exc}")
-        if model_sha256 != local_manifest.get("sha256"):
-            die("model file does not match its local provenance manifest")
+    if model_sha256 != profile["sha256"]:
+        die(f"{values['NINFER_MODEL_PROFILE']} model does not match its pinned checksum")
 
     environment = {
         "collected_at_utc": timestamp,

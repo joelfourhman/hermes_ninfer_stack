@@ -1,6 +1,6 @@
 # ADR 0003: Keep model artifacts outside Git and images
 
-- Status: Superseded by [ADR 0006](0006-locally-built-uncensored-model.md)
+- Status: Superseded by [ADR 0009](0009-direct-model-downloads.md)
 - Date: 2026-08-23
 
 ## Context
