@@ -25,7 +25,7 @@ services:
       context: ./ninfer
       labels:
         org.opencontainers.image.source: https://github.com/Neroued/ninfer
-        org.opencontainers.image.revision: feaf4dd0983fdaeb2ba4c06eec6da350e644fb3a
+        org.opencontainers.image.revision: ad0f3d384b5cbcec4a48a3951c287b4e9831443e
         org.opencontainers.image.base.name: docker.io/nvidia/cuda:13.1.2-runtime-ubuntu24.04
     command:
       - ninfer-serve
@@ -41,20 +41,30 @@ services:
       - --max-context
       - ${NINFER_CONTEXT_LENGTH:-131072}
       - --kv-capacity
-      - ${NINFER_KV_CAPACITY:-131072}
+      - ${NINFER_KV_CAPACITY:-196608}
       - --max-concurrency
-      - ${NINFER_MAX_CONCURRENCY:-1}
+      - ${NINFER_MAX_CONCURRENCY:-2}
+      - --pending-timeout-ms
+      - ${NINFER_PENDING_TIMEOUT_MS:-120000}
       - --prefill-chunk
       - "1024"
       - --kv-dtype
-      - int8
+      - ${NINFER_KV_DTYPE:-fp8}
+      - --device-state-slots
+      - ${NINFER_DEVICE_STATE_SLOTS:-2}
+      - --host-state-slots
+      - ${NINFER_HOST_STATE_SLOTS:-8}
+      - --host-kv-mib
+      - ${NINFER_HOST_KV_MIB:-8192}
       - --spec
       - mtp
       - --draft-tokens
       - "3"
       - --lm-head-draft
+      - --preserve-thinking
     init: true
     restart: unless-stopped
+    read_only: true
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -70,6 +80,10 @@ services:
       - "127.0.0.1:${NINFER_HOST_PORT:-8080}:8080"
     volumes:
       - ./models:/models:ro
+    environment:
+      HOME: /tmp
+    tmpfs:
+      - /tmp:size=256m,mode=1777
     shm_size: 2gb
     stop_grace_period: 2m
     logging:

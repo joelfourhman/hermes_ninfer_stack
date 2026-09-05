@@ -27,6 +27,10 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Pinned, resumable, checksum-verified direct downloads for both stock and
   uncensored NInfer artifacts through one uv-locked downloader.
 - Layered validation, direct-NInfer verification, and RTX 5090 benchmark helpers.
+- Reviewed `balanced`, `single-session`, and `max-context` runtime profiles,
+  plus `select-runtime` with startup testing, rollback, and Hermes synchronization.
+- `diagnose-performance` for prompt-safe summaries of TTFT, throughput, cache
+  reuse, MTP acceptance, queue pressure, and context failures from bounded logs.
 
 ### Changed
 
@@ -38,9 +42,9 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Removed the contradictory internal-network flag so Docker Desktop can
   actually publish that loopback port, and added one automatic network
   recreation when a healthy container has no reachable localhost endpoint.
-- Tuned the single-user interactive profile to 131,072 context tokens, a
-  131,072-token INT8 KV pool, concurrency 1, MTP speculative decoding, three
-  draft tokens, and Hermes compression at 100,000 tokens.
+- Updated NInfer to its resource-aware Device/Host context-cache runtime and
+  made the balanced 131K-context, 196K shared-KV, two-lane FP8 profile the
+  beginner default. Hermes now compresses at 90K tokens.
 - Made `python ninfer.py` the single supported control surface for setup,
   lifecycle, Hermes integration, validation, verification, and benchmarking.
 - Made Enter accept both normal first-run choices, added numbered progress and
@@ -74,6 +78,9 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   host-filesystem mount, Docker socket, privileged mode, or host networking.
 - Dropped container capabilities, enabled no-new-privileges and init handling,
   and bounded NInfer logs so they cannot grow without limit.
+- Made both container root filesystems read-only and gave NInfer only a bounded
+  temporary filesystem; setup now backs up and removes obsolete legacy secrets
+  and container settings from the local `.env`.
 - Configured and verified Hermes `approvals.mode: manual` for the native
   beginner profile instead of relying on the stock smart-approval default.
 - Kept manual command approvals but restored stock Hermes working-directory and

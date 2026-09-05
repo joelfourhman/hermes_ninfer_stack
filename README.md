@@ -112,10 +112,12 @@ updates in the standard Hermes locations.
   Qwen3.8-27B Uncensored groupwise-int.
 - An interactive first-run choice and a safe `select-model` command that retain
   both artifacts and restore the previous profile if the new one cannot start.
+- Three reviewed RTX 5090 runtime profiles, with a balanced two-request agent
+  profile selected automatically for first-time users.
 - An authenticated OpenAI-compatible endpoint published only at
   `127.0.0.1:${NINFER_HOST_PORT}`.
 - A single Python control command, `ninfer.py`, for setup, operation,
-  verification, and benchmarking.
+  verification, performance diagnosis, and benchmarking.
 - A helper that finds or directs the user to the official Hermes Desktop
   installer and configures the stock installation for NInfer.
 
@@ -169,7 +171,8 @@ host is not compatible with the current stock Windows Hermes distribution.
 ## What the setup command does
 
 `python ninfer.py setup` asks which pinned model profile to use, initializes the
-exact NInfer source and private local settings, asks before the large transfer,
+exact NInfer source and the balanced runtime profile, safely migrates obsolete
+local settings, asks before the large transfer,
 downloads and verifies the selected model in a short-lived CPU-only container,
 starts NInfer, waits for a real answer, and then offers the official
 stock Hermes Desktop installation. It is safe to rerun after an interruption.
@@ -247,7 +250,7 @@ approvals:
 compression:
   enabled: true
   threshold: 0.9
-  threshold_tokens: 100000
+  threshold_tokens: 90000
 ```
 
 The actual port comes from `NINFER_HOST_PORT`; it is not assumed to be 8080.
@@ -268,22 +271,32 @@ protected-path denylist remains active.
 | Quantization | NVFP4 | NInfer `qwen3_8_27b-v1` groupwise-int |
 | Behavior | Stock model behavior; recommended | Reduced refusal behavior; use deliberately |
 
-Both profiles use these runtime settings:
+Model choice and runtime tuning are independent. Fresh setup uses `balanced`:
 
-| Setting | Value |
-| --- | --- |
-| Public model alias | `qwen-local` |
-| Context length | 131,072 tokens |
-| KV capacity | 131,072 tokens |
-| Maximum concurrency | 1 |
-| KV cache | INT8 |
-| Prefill chunk | 1,024 tokens |
-| Speculation | MTP, 3 draft tokens, optimized draft head |
-| Vision | Disabled |
+| Runtime | Context | Shared device KV | Lanes | Hermes compression | Use case |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `balanced` (default) | 131,072 | 196,608 | 2 | 90,000 | Long AFK task plus a smaller interactive request |
+| `single-session` | 131,072 | 131,072 | 1 | 100,000 | One isolated request with the smallest device allocation |
+| `max-context` | 240,000 | 240,000 | 2 | 200,000 | Very large histories; slower prompt ingestion |
 
-These settings prioritize one long interactive Hermes session on a 32 GB RTX
-5090. See [Models](docs/models.md) and [Performance](docs/performance.md) before
-changing memory-sensitive values.
+All profiles use FP8 KV, a 1,024-token prefill chunk, MTP with three draft
+tokens, CUDA Graphs, prefix reuse, retained thinking, and bounded device/host
+checkpoint caches. Vision remains disabled. Switch safely with
+`python ninfer.py select-runtime`; the command restarts NInfer, runs a real
+answer test, rolls back on failure, and updates stock Hermes when installed.
+See [Models](docs/models.md) and [Performance](docs/performance.md).
+
+For the recommended Frogue Gallery configuration, use these exact commands:
+
+```text
+python ninfer.py select-model --model stock
+python ninfer.py select-runtime --profile balanced
+python ninfer.py verify
+```
+
+Model selection uses `--model`; runtime selection uses `--profile`. Close and
+reopen Hermes Desktop after switching so it reloads the updated provider
+metadata.
 
 > **Model behavior is not a safety boundary.** For the uncensored profile, its publisher measured
 > substantially fewer refusals on harmful prompts, not zero refusals, and did
@@ -314,12 +327,14 @@ python ninfer.py validate
 ```text
 python ninfer.py prepare-model
 python ninfer.py select-model
+python ninfer.py select-runtime
 python ninfer.py build
 python ninfer.py up
 python ninfer.py status
 python ninfer.py logs
 python ninfer.py shell
 python ninfer.py verify
+python ninfer.py diagnose-performance
 python ninfer.py down
 ```
 
@@ -327,6 +342,11 @@ python ninfer.py down
 `--model stock|uncensored`). `select-model` displays the same two choices,
 prepares the selection if necessary, starts it, and restores the previous
 profile if the live test fails. Both model files are retained.
+`select-runtime` chooses one of the reviewed memory/performance profiles without
+changing or redownloading the model. For non-interactive selection, use
+`select-model --model stock|uncensored` and
+`select-runtime --profile balanced|single-session|max-context`; the option
+names are intentionally different.
 `down` stops NInfer without removing the downloaded model. The model is a host
 file mounted read-only into the container.
 `shell` opens Bash inside the NInfer container; it does not install or invoke a
@@ -338,6 +358,9 @@ After verification passes, collect direct NInfer measurements with:
 python ninfer.py benchmark
 python ninfer.py benchmark --runs 5 --max-tokens 1024
 ```
+
+To summarize recent private NInfer counters without printing prompts or model
+responses, run `python ninfer.py diagnose-performance`.
 
 ## Configuration
 
@@ -351,12 +374,16 @@ and generates a random NInfer bearer key. The main settings are:
 | `NINFER_MODEL_PROFILE` | `stock` | Fixed profile: `stock` or `uncensored` |
 | `NINFER_MODEL_FILE` | `qwen3_8_27b_nvfp4.ninfer` | Profile-controlled artifact mounted read-only |
 | `NINFER_MODEL_ID` | `qwen-local` | API alias configured in Hermes |
+| `NINFER_RUNTIME_PROFILE` | `balanced` | Reviewed runtime profile |
 | `NINFER_CONTEXT_LENGTH` | `131072` | Per-request sequence ceiling |
-| `NINFER_KV_CAPACITY` | `131072` | Total resident KV-token budget |
-| `NINFER_MAX_CONCURRENCY` | `1` | Simultaneous request limit |
+| `NINFER_KV_CAPACITY` | `196608` | Shared device KV-token budget |
+| `NINFER_MAX_CONCURRENCY` | `2` | Simultaneous request limit |
+| `NINFER_PENDING_TIMEOUT_MS` | `120000` | Preparation and admission deadline |
+| `NINFER_KV_DTYPE` | `fp8` | Device KV storage format |
+| `NINFER_HOST_KV_MIB` | `8192` | Pinned host checkpoint KV budget |
 | `NINFER_API_KEY` | generated | Bearer key shared with native Hermes |
 | `HERMES_COMPRESSION_ENABLED` | `true` | Native Hermes long-session compression |
-| `HERMES_COMPRESSION_THRESHOLD_TOKENS` | `100000` | Compress before exhausting input/output headroom |
+| `HERMES_COMPRESSION_THRESHOLD_TOKENS` | `90000` | Compress before prompt ingestion dominates latency |
 | `HERMES_MAX_TURNS` | `40` | Native Hermes tool-loop turn cap |
 
 Changing the port, model alias, context, or key requires NInfer recreation and
@@ -375,7 +402,8 @@ See [Configuration](docs/configuration.md) for validation rules and coupling.
 
 - NInfer is bound to `127.0.0.1`, not all host interfaces.
 - The API requires the generated bearer key.
-- Only NInfer receives the GPU reservation and read-only model mount.
+- Only NInfer receives the GPU reservation and read-only model mount; both
+  container root filesystems are read-only with bounded temporary storage.
 - No Docker socket is mounted into the container or exposed to Hermes.
 - Hermes runs outside Docker with the current user's normal authority.
 - Hermes retains its stock protected-path denylist, but other file and terminal

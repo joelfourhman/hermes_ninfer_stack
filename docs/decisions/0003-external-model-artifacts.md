@@ -26,7 +26,7 @@ during CI or Docker build, or during setup without the owner's explicit prompt
 response.
 
 Pin the NInfer implementation separately as a Git submodule at
-`feaf4dd0983fdaeb2ba4c06eec6da350e644fb3a`. The source pin identifies the runtime; the artifact
+`ad0f3d384b5cbcec4a48a3951c287b4e9831443e`. The source pin identifies the runtime; the artifact
 checksum identifies the model bytes. Both are required for a reproducible profile.
 
 ## Alternatives considered

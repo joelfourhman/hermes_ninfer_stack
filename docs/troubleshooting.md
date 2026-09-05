@@ -72,7 +72,7 @@ python ninfer.py setup
 ```
 
 The expected revision is
-`feaf4dd0983fdaeb2ba4c06eec6da350e644fb3a`. Do not replace it with an
+`ad0f3d384b5cbcec4a48a3951c287b4e9831443e`. Do not replace it with an
 unpinned checkout as a troubleshooting shortcut. If setup reports local or
 untracked changes, it deliberately leaves them untouched; move your own NInfer
 source edits to a separate clone before rerunning setup.
@@ -194,18 +194,16 @@ Close competing GPU programs in Task Manager, then inspect NInfer's output:
 python ninfer.py logs
 ```
 
-Stop unrelated GPU workloads. If the profile must be reduced, lower
-`NINFER_CONTEXT_LENGTH` and `NINFER_KV_CAPACITY` together for concurrency one,
-recreate NInfer, and reapply the matching Hermes metadata:
+Stop unrelated GPU workloads. Select the smaller reviewed runtime instead of
+editing coupled memory values independently:
 
 ```text
-python ninfer.py down
-python ninfer.py up
-python ninfer.py install-hermes
+python ninfer.py select-runtime --profile single-session
 python ninfer.py verify
 ```
 
-Treat the changed profile as unbenchmarked until measured.
+The selector starts the replacement, tests generation, restores the previous
+runtime on failure, and updates Hermes when it is installed.
 
 ## Host port is already in use
 

@@ -11,13 +11,13 @@ from urllib.parse import unquote, urlsplit
 
 
 ROOT = Path(__file__).resolve().parent.parent
-EXPECTED_NINFER_COMMIT = "feaf4dd0983fdaeb2ba4c06eec6da350e644fb3a"
+EXPECTED_NINFER_COMMIT = "ad0f3d384b5cbcec4a48a3951c287b4e9831443e"
 EXPECTED_STOCK_MODEL_FILE = "qwen3_8_27b_nvfp4.ninfer"
 EXPECTED_UNCENSORED_MODEL_FILE = "qwen3_8_27b_uncensored.ninfer"
 EXPECTED_MODEL_ID = "qwen-local"
 EXPECTED_CONTEXT = "131072"
-EXPECTED_KV_CAPACITY = "131072"
-EXPECTED_CONCURRENCY = "1"
+EXPECTED_KV_CAPACITY = "196608"
+EXPECTED_CONCURRENCY = "2"
 EXPECTED_REFERENCE_SHA256 = "714565ed29db4415322e9bc13a3464dc1fd8fcc911234740a79af67934e49969"
 EXPECTED_UNCENSORED_REVISION = "1e15b5919b796bcd96621f13572ad92b5555b641"
 
@@ -80,6 +80,7 @@ required_paths = [
     "docs/decisions/0007-selectable-model-profiles.md",
     "docs/decisions/0008-stock-hermes-working-directory.md",
     "docs/decisions/0009-direct-model-downloads.md",
+    "docs/decisions/0010-runtime-profiles-and-context-cache.md",
     ".github/workflows/ci.yml",
 ]
 for relative in required_paths:
@@ -111,11 +112,18 @@ expected_env = {
     "NINFER_MODEL_PROFILE": "stock",
     "NINFER_MODEL_FILE": EXPECTED_STOCK_MODEL_FILE,
     "NINFER_MODEL_ID": EXPECTED_MODEL_ID,
+    "NINFER_RUNTIME_PROFILE": "balanced",
     "NINFER_CONTEXT_LENGTH": EXPECTED_CONTEXT,
     "NINFER_KV_CAPACITY": EXPECTED_KV_CAPACITY,
     "NINFER_MAX_CONCURRENCY": EXPECTED_CONCURRENCY,
+    "NINFER_PENDING_TIMEOUT_MS": "120000",
+    "NINFER_KV_DTYPE": "fp8",
+    "NINFER_DEVICE_STATE_SLOTS": "2",
+    "NINFER_HOST_STATE_SLOTS": "8",
+    "NINFER_HOST_KV_MIB": "8192",
+    "NINFER_PRESERVE_THINKING": "true",
     "HERMES_COMPRESSION_ENABLED": "true",
-    "HERMES_COMPRESSION_THRESHOLD_TOKENS": "100000",
+    "HERMES_COMPRESSION_THRESHOLD_TOKENS": "90000",
     "HERMES_MAX_TURNS": "40",
     "MODEL_DOWNLOAD_UID": "1000",
     "MODEL_DOWNLOAD_GID": "1000",
@@ -206,6 +214,10 @@ if compose_text.count("no-new-privileges:true") != 2 or compose_text.count("    
     error("both containers must drop Linux capabilities and forbid privilege escalation")
 if compose_text.count("    init: true") != 2:
     error("both containers must use a minimal init process for reliable shutdown")
+if compose_text.count("    read_only: true") != 2:
+    error("both containers must use read-only root filesystems")
+if "/tmp:size=256m,mode=1777" not in ninfer_service:
+    error("NInfer must receive only a bounded temporary writable filesystem")
 if (
     "driver: local" not in ninfer_service
     or 'max-size: "10m"' not in ninfer_service
@@ -234,6 +246,8 @@ consistency_requirements = {
         EXPECTED_UNCENSORED_MODEL_FILE,
         "Choose a model:",
         "select-model",
+        "select-runtime",
+        "diagnose-performance",
         "install-hermes",
         "https://hermes-agent.nousresearch.com/desktop",
         "providers.ninfer",

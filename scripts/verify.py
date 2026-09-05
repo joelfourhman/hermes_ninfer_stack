@@ -19,7 +19,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 ENV_FILE = ROOT / ".env"
 COMPOSE_FILE = ROOT / "docker-compose.yml"
-EXPECTED_COMMIT = "feaf4dd0983fdaeb2ba4c06eec6da350e644fb3a"
+EXPECTED_COMMIT = "ad0f3d384b5cbcec4a48a3951c287b4e9831443e"
 MODEL_PROFILES = {
     "stock": {
         "file": "qwen3_8_27b_nvfp4.ninfer",
@@ -32,6 +32,44 @@ MODEL_PROFILES = {
         "bytes": 18_210_531_328,
         "sha256": "714565ed29db4415322e9bc13a3464dc1fd8fcc911234740a79af67934e49969",
         "label": "Qwen3.8-27B Uncensored",
+    },
+}
+RUNTIME_PROFILES = {
+    "balanced": {
+        "NINFER_CONTEXT_LENGTH": "131072",
+        "NINFER_KV_CAPACITY": "196608",
+        "NINFER_MAX_CONCURRENCY": "2",
+        "NINFER_PENDING_TIMEOUT_MS": "120000",
+        "NINFER_KV_DTYPE": "fp8",
+        "NINFER_DEVICE_STATE_SLOTS": "2",
+        "NINFER_HOST_STATE_SLOTS": "8",
+        "NINFER_HOST_KV_MIB": "8192",
+        "NINFER_PRESERVE_THINKING": "true",
+        "HERMES_COMPRESSION_THRESHOLD_TOKENS": "90000",
+    },
+    "single-session": {
+        "NINFER_CONTEXT_LENGTH": "131072",
+        "NINFER_KV_CAPACITY": "131072",
+        "NINFER_MAX_CONCURRENCY": "1",
+        "NINFER_PENDING_TIMEOUT_MS": "120000",
+        "NINFER_KV_DTYPE": "fp8",
+        "NINFER_DEVICE_STATE_SLOTS": "1",
+        "NINFER_HOST_STATE_SLOTS": "4",
+        "NINFER_HOST_KV_MIB": "4096",
+        "NINFER_PRESERVE_THINKING": "true",
+        "HERMES_COMPRESSION_THRESHOLD_TOKENS": "100000",
+    },
+    "max-context": {
+        "NINFER_CONTEXT_LENGTH": "240000",
+        "NINFER_KV_CAPACITY": "240000",
+        "NINFER_MAX_CONCURRENCY": "2",
+        "NINFER_PENDING_TIMEOUT_MS": "120000",
+        "NINFER_KV_DTYPE": "fp8",
+        "NINFER_DEVICE_STATE_SLOTS": "2",
+        "NINFER_HOST_STATE_SLOTS": "8",
+        "NINFER_HOST_KV_MIB": "8192",
+        "NINFER_PRESERVE_THINKING": "true",
+        "HERMES_COMPRESSION_THRESHOLD_TOKENS": "200000",
     },
 }
 EXPECTED_BASE = "docker.io/nvidia/cuda:13.1.2-runtime-ubuntu24.04"
@@ -294,6 +332,7 @@ def main() -> int:
     host_port = values.get("NINFER_HOST_PORT", "")
     gpu = values.get("NINFER_GPU_DEVICE", "")
     profile_key = values.get("NINFER_MODEL_PROFILE", "")
+    runtime_key = values.get("NINFER_RUNTIME_PROFILE", "")
     model = values.get("NINFER_MODEL_FILE", "")
     model_id = values.get("NINFER_MODEL_ID", "")
     context = values.get("NINFER_CONTEXT_LENGTH", "")
@@ -310,6 +349,18 @@ def main() -> int:
         raise Failure("NINFER_HOST_PORT must be from 1 through 65535", "edit .env")
     if profile_key not in MODEL_PROFILES:
         raise Failure("NINFER_MODEL_PROFILE must be stock or uncensored", "python ninfer.py setup")
+    if runtime_key not in RUNTIME_PROFILES:
+        raise Failure("NINFER_RUNTIME_PROFILE is invalid", "python ninfer.py select-runtime")
+    runtime_mismatches = [
+        key
+        for key, expected in RUNTIME_PROFILES[runtime_key].items()
+        if values.get(key) != expected
+    ]
+    if runtime_mismatches:
+        raise Failure(
+            f"The {runtime_key} runtime has inconsistent values: " + ", ".join(runtime_mismatches),
+            "python ninfer.py select-runtime",
+        )
     if not gpu.isdigit() or not re.fullmatch(r"[A-Za-z0-9._-]+\.ninfer", model):
         raise Failure("GPU device or model filename is invalid", "compare .env with .env.example")
     if not re.fullmatch(r"[A-Za-z0-9._-]+", model_id) or not context.isdigit():
@@ -324,7 +375,7 @@ def main() -> int:
         or not max_turns.isdigit()
     ):
         raise Failure("Hermes compression or maximum turns is invalid", "compare .env with .env.example")
-    passed(f"model={model_id} context={context} KV={kv_capacity} concurrency={concurrency} GPU={gpu}")
+    passed(f"model={model_id} runtime={runtime_key} context={context} KV={kv_capacity} concurrency={concurrency} GPU={gpu}")
 
     begin("Compose and source pin")
     rendered_compose = compose("config").stdout
@@ -401,7 +452,18 @@ def main() -> int:
     running_image = run(["docker", "inspect", "--format", "{{.Image}}", ninfer_id]).stdout.strip()
     if health != "healthy" or running_image != image_id:
         raise Failure(f"NInfer health is '{health}' or its running image is stale", "docker compose logs --tail=200 ninfer")
-    passed("NInfer /health reports ready")
+    confinement = run(
+        [
+            "docker",
+            "inspect",
+            "--format",
+            "{{.HostConfig.ReadonlyRootfs}}|{{json .HostConfig.Tmpfs}}",
+            ninfer_id,
+        ]
+    ).stdout.strip()
+    if not confinement.startswith("true|") or '"/tmp"' not in confinement:
+        raise Failure("NInfer does not have the reviewed read-only root and temporary filesystem")
+    passed("NInfer /health reports ready; container root is read-only")
 
     begin("NInfer authentication boundary")
     models_url = f"http://127.0.0.1:{host_port}/v1/models"

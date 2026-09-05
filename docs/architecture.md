@@ -124,11 +124,16 @@ Only NInfer receives the NVIDIA device reservation. Its source build targets
 Blackwell `sm_120a`, and the selected artifact is mounted read-only from
 `./models`.
 
-The source revision, artifact filename, artifact checksum, public model alias,
-context, KV capacity, concurrency, prefill chunk, and speculative settings form
-one reviewed compatibility profile. Changing one can affect both correctness
-and VRAM use. The public alias and context also have to be reapplied to Hermes
-with `python ninfer.py install-hermes`.
+Model identity and runtime allocation are separate reviewed profiles. The
+runtime profile owns context, shared device KV, concurrency, admission timeout,
+KV format, Device/Host checkpoint capacity, and the coupled Hermes compression
+threshold. `python ninfer.py select-runtime` changes them atomically, tests the
+new service, rolls back on failure, and reapplies the Hermes metadata.
+
+The long-running NInfer root filesystem and model mount are read-only. A
+bounded in-memory `/tmp` is its only writable filesystem. The resource-aware
+cache can retain prefix state and KV in pinned host memory, but it does not
+mount host storage, swap active requests, or execute tools.
 
 ## Startup and recovery
 
@@ -152,6 +157,8 @@ The two lifecycles remain independent after setup:
 - The official Hermes installer and updater manage Hermes Desktop.
 - `python ninfer.py install-hermes` repairs the integration settings and
   reapplies the documented compression, turn-cap, and manual-approval defaults.
+- `python ninfer.py select-runtime` switches the complete memory/performance
+  allocation without changing the model artifact.
 - `python ninfer.py down` stops NInfer without deleting the model or Hermes
   state.
 
@@ -206,3 +213,5 @@ See [Security](security.md) for the operational consequences.
   is historical and superseded; the active project has no SSH sandbox.
 - [ADR 0005: Stock native Hermes Desktop](decisions/0005-stock-native-hermes-desktop.md)
   records the active deployment decision.
+- [ADR 0010: Runtime profiles and context cache](decisions/0010-runtime-profiles-and-context-cache.md)
+  defines the reviewed RTX 5090 memory, concurrency, and compression profiles.

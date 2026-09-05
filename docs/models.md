@@ -44,10 +44,11 @@ built by this project. That build used
 `qwen3_8_27b-v1`. These details are retained for reproducibility; normal users
 do not need the 55 GiB source checkpoint or a local GPU conversion.
 
-Both profiles use the API alias `qwen-local`, 131,072-token context and KV
-capacity, concurrency one, INT8 KV, a 1,024-token prefill chunk, and MTP with
-three draft tokens. Vision is disabled. Keeping the alias stable means Hermes
-does not need reconfiguration when the underlying profile changes.
+Both profiles use the stable API alias `qwen-local`; changing weights therefore
+does not require Hermes reconfiguration. Runtime capacity is selected
+independently with `python ninfer.py select-runtime`. Fresh setup uses the
+balanced 131K-context, two-lane profile. Vision is disabled for every reviewed
+profile.
 
 ## Switch later
 
@@ -60,6 +61,18 @@ Or select explicitly:
 ```text
 python ninfer.py select-model --model stock
 python ninfer.py select-model --model uncensored
+```
+
+The model command accepts `--model`, not `--profile`. Runtime profiles are a
+separate setting and use `python ninfer.py select-runtime --profile ...`.
+
+For software development and long autonomous work, start with the stock model
+and balanced runtime:
+
+```text
+python ninfer.py select-model --model stock
+python ninfer.py select-runtime --profile balanced
+python ninfer.py verify
 ```
 
 The command checks prerequisites and storage, asks before a missing download,

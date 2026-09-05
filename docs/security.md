@@ -22,7 +22,8 @@ modifying or deleting files the current user can modify or delete.
 
 NInfer is the only long-running container. No Docker socket, broad host path,
 host network, host PID namespace, or privileged mode is exposed to it. The
-model is mounted read-only. Its bridge is not an `internal` Docker network
+root filesystem and model mount are read-only; a bounded in-memory `/tmp` is
+the only writable container filesystem. Its bridge is not an `internal` Docker network
 because Docker Desktop cannot publish an internal-network service to the host
 loopback interface; therefore the container is not an egress sandbox.
 

@@ -140,6 +140,11 @@ their published byte size and SHA-256. The old model file remains available
 when switching. Setup does not continue to
 Hermes until the selected model produces a short authenticated answer.
 
+Setup automatically uses the balanced RTX 5090 runtime: two request lanes,
+131K context, a larger shared device KV pool, resource-aware host prefix cache,
+and Hermes compression at 90K. This avoids adding a technical tuning question
+to the beginner flow.
+
 If you type `n` at the download prompt, setup stops cleanly. Run
 `python ninfer.py setup` again when you are ready for the download.
 
@@ -149,8 +154,34 @@ To change profiles later without repeating Hermes setup, run:
 python ninfer.py select-model
 ```
 
+To choose without an interactive prompt, pass the model with `--model`:
+
+```text
+python ninfer.py select-model --model stock
+python ninfer.py select-model --model uncensored
+```
+
 It preserves both artifacts and restores the old profile if the selected one
 does not pass its live test.
+
+To change performance/context behavior without downloading another model, run:
+
+```text
+python ninfer.py select-runtime
+```
+
+For example, explicitly select the recommended default with:
+
+```text
+python ninfer.py select-runtime --profile balanced
+```
+
+Do not use `--profile stock`: `--profile` belongs to runtime selection, while
+`select-model` uses `--model`.
+
+The recommended balanced profile is the default. Choose `single-session` for
+one isolated lane or `max-context` for a 240K ceiling. The selector verifies
+the new service, rolls back on failure, and updates Hermes automatically.
 
 ### Hermes Desktop prompt
 
@@ -244,6 +275,13 @@ python ninfer.py logs
 Press Ctrl+C when you are finished viewing the output; that stops the log view,
 not the NInfer container.
 
+For a concise, prompt-safe report of recent latency, throughput, cache reuse,
+queue timeouts, and context failures, run:
+
+```text
+python ninfer.py diagnose-performance
+```
+
 ## Using Hermes after restarting Windows
 
 The selected model remains on disk. You do not repeat setup.
@@ -301,7 +339,8 @@ access.
 
 Setup creates an ignored `.env` file containing the private NInfer key and
 saves the model under `models/`. Only NInfer receives GPU access, and the model
-is mounted read-only in its container. NInfer listens only at the private
+and container root filesystem are read-only; only bounded temporary memory is
+writable. NInfer listens only at the private
 `127.0.0.1` loopback address, not on the local network.
 
 The official Windows Hermes installation normally keeps its runtime under
@@ -312,7 +351,9 @@ processes is not compatible with the current stock Hermes distribution.
 
 When upgrading from this repository's former all-container release, setup may
 remove its obsolete Hermes, relay, and SSH-sandbox containers as Compose
-orphans. It does not delete their ignored host data or named volumes.
+orphans. It also backs up `.env` and removes only the obsolete legacy
+container/dashboard/model-builder variables. It does not delete ignored host
+data or named volumes.
 
 ## Updating
 

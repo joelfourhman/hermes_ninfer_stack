@@ -23,7 +23,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 ENV_FILE = ROOT / ".env"
 COMPOSE_FILE = ROOT / "docker-compose.yml"
-EXPECTED_COMMIT = "feaf4dd0983fdaeb2ba4c06eec6da350e644fb3a"
+EXPECTED_COMMIT = "ad0f3d384b5cbcec4a48a3951c287b4e9831443e"
 MODEL_PROFILES = {
     "stock": {
         "file": "qwen3_8_27b_nvfp4.ninfer",
@@ -207,10 +207,16 @@ def main() -> int:
         "model_file": values["NINFER_MODEL_FILE"],
         "model_sha256": model_sha256,
         "model_profile": values["NINFER_MODEL_PROFILE"],
+        "runtime_profile": values["NINFER_RUNTIME_PROFILE"],
         "quantization": profile["quantization"],
         "context_length": int(values["NINFER_CONTEXT_LENGTH"]),
         "kv_capacity": int(values["NINFER_KV_CAPACITY"]),
         "max_concurrency": int(values["NINFER_MAX_CONCURRENCY"]),
+        "pending_timeout_ms": int(values["NINFER_PENDING_TIMEOUT_MS"]),
+        "kv_dtype": values["NINFER_KV_DTYPE"],
+        "device_state_slots": int(values["NINFER_DEVICE_STATE_SLOTS"]),
+        "host_state_slots": int(values["NINFER_HOST_STATE_SLOTS"]),
+        "host_kv_mib": int(values["NINFER_HOST_KV_MIB"]),
         "benchmark_runs": runs,
         "max_completion_tokens": max_tokens,
         "timing": "client-observed SSE wall clock",

@@ -10,6 +10,7 @@ import os
 import re
 import secrets
 import shutil
+import statistics
 import subprocess
 import sys
 import tempfile
@@ -25,7 +26,7 @@ ROOT = Path(__file__).resolve().parent
 ENV_FILE = ROOT / ".env"
 ENV_EXAMPLE = ROOT / ".env.example"
 COMPOSE_FILE = ROOT / "docker-compose.yml"
-NINFER_COMMIT = "feaf4dd0983fdaeb2ba4c06eec6da350e644fb3a"
+NINFER_COMMIT = "ad0f3d384b5cbcec4a48a3951c287b4e9831443e"
 NINFER_URL = "https://github.com/Neroued/ninfer.git"
 STOCK_MODEL_FILE = "qwen3_8_27b_nvfp4.ninfer"
 UNCENSORED_MODEL_FILE = "qwen3_8_27b_uncensored.ninfer"
@@ -43,6 +44,23 @@ class ModelProfile:
     required_free_gib: int
     transfer_description: str
     final_size_gib: str
+
+
+@dataclass(frozen=True)
+class RuntimeProfile:
+    key: str
+    label: str
+    description: str
+    context_length: int
+    kv_capacity: int
+    max_concurrency: int
+    pending_timeout_ms: int
+    kv_dtype: str
+    device_state_slots: int
+    host_state_slots: int
+    host_kv_mib: int
+    preserve_thinking: bool
+    compression_threshold_tokens: int
 
 
 MODEL_PROFILES = {
@@ -68,6 +86,78 @@ MODEL_PROFILES = {
     ),
 }
 DEFAULT_MODEL_PROFILE = "stock"
+RUNTIME_PROFILES = {
+    "balanced": RuntimeProfile(
+        key="balanced",
+        label="Balanced agent",
+        description="Two request lanes, earlier compression, and room for a long task plus a smaller request",
+        context_length=131_072,
+        kv_capacity=196_608,
+        max_concurrency=2,
+        pending_timeout_ms=120_000,
+        kv_dtype="fp8",
+        device_state_slots=2,
+        host_state_slots=8,
+        host_kv_mib=8192,
+        preserve_thinking=True,
+        compression_threshold_tokens=90_000,
+    ),
+    "single-session": RuntimeProfile(
+        key="single-session",
+        label="Single session",
+        description="One isolated request lane with the smallest resident cache allocation",
+        context_length=131_072,
+        kv_capacity=131_072,
+        max_concurrency=1,
+        pending_timeout_ms=120_000,
+        kv_dtype="fp8",
+        device_state_slots=1,
+        host_state_slots=4,
+        host_kv_mib=4096,
+        preserve_thinking=True,
+        compression_threshold_tokens=100_000,
+    ),
+    "max-context": RuntimeProfile(
+        key="max-context",
+        label="Maximum context",
+        description="NInfer's reviewed 240K long-agent allocation with two request lanes",
+        context_length=240_000,
+        kv_capacity=240_000,
+        max_concurrency=2,
+        pending_timeout_ms=120_000,
+        kv_dtype="fp8",
+        device_state_slots=2,
+        host_state_slots=8,
+        host_kv_mib=8192,
+        preserve_thinking=True,
+        compression_threshold_tokens=200_000,
+    ),
+}
+DEFAULT_RUNTIME_PROFILE = "balanced"
+
+# These variables belonged to the removed all-container Hermes and local model-build paths.
+# Setup removes only this reviewed allowlist and preserves every unrelated user setting.
+OBSOLETE_ENV_KEYS = frozenset(
+    {
+        "HERMES_IMAGE",
+        "HERMES_UID",
+        "HERMES_GID",
+        "HERMES_API_SERVER_KEY",
+        "HERMES_CPUS",
+        "HERMES_MEMORY",
+        "HERMES_PIDS",
+        "HERMES_DASHBOARD_ENABLED",
+        "HERMES_DASHBOARD_HOST_PORT",
+        "HERMES_DASHBOARD_USERNAME",
+        "HERMES_DASHBOARD_PASSWORD",
+        "HERMES_DASHBOARD_SECRET",
+        "SANDBOX_CPUS",
+        "SANDBOX_MEMORY",
+        "SANDBOX_PIDS",
+        "MODEL_BUILD_UID",
+        "MODEL_BUILD_GID",
+    }
+)
 HERMES_DESKTOP_URL = "https://hermes-agent.nousresearch.com/desktop"
 DOCKER_DESKTOP_URL = "https://www.docker.com/products/docker-desktop/"
 DOCKER_ENGINE_URL = "https://docs.docker.com/engine/install/"
@@ -216,6 +306,14 @@ def model_profile(key: str) -> ModelProfile:
         ) from exc
 
 
+def runtime_profile(key: str) -> RuntimeProfile:
+    try:
+        return RUNTIME_PROFILES[key]
+    except KeyError as exc:
+        choices = ", ".join(RUNTIME_PROFILES)
+        raise StackError(f"Unknown runtime profile {key!r}; choose {choices}") from exc
+
+
 def configured_model_profile_key() -> str:
     values = read_env() if ENV_FILE.is_file() else {}
     configured = values.get("NINFER_MODEL_PROFILE", "")
@@ -226,6 +324,11 @@ def configured_model_profile_key() -> str:
         if filename == profile.filename:
             return profile.key
     return DEFAULT_MODEL_PROFILE
+
+
+def configured_runtime_profile_key() -> str:
+    configured = read_env().get("NINFER_RUNTIME_PROFILE", "") if ENV_FILE.is_file() else ""
+    return configured if configured in RUNTIME_PROFILES else DEFAULT_RUNTIME_PROFILE
 
 
 def choose_model_profile(default_key: str | None = None) -> ModelProfile:
@@ -250,6 +353,28 @@ def choose_model_profile(default_key: str | None = None) -> ModelProfile:
         if answer in {"2", "uncensored"}:
             return model_profile("uncensored")
         print("Enter 1 for stock or 2 for uncensored.")
+
+
+def choose_runtime_profile(default_key: str | None = None) -> RuntimeProfile:
+    default = default_key or configured_runtime_profile_key()
+    keys = tuple(RUNTIME_PROFILES)
+    default_number = str(keys.index(default) + 1)
+    print()
+    print("Choose how NInfer should use the RTX 5090:")
+    print()
+    for number, profile in enumerate(RUNTIME_PROFILES.values(), start=1):
+        recommended = " (recommended)" if profile.key == DEFAULT_RUNTIME_PROFILE else ""
+        print(f"  {number}. {profile.label}{recommended}")
+        print(f"     {profile.description}")
+    while True:
+        answer = input(f"Selection [{default_number}]: ").strip().lower()
+        if not answer:
+            return runtime_profile(default)
+        if answer.isdigit() and 1 <= int(answer) <= len(keys):
+            return runtime_profile(keys[int(answer) - 1])
+        if answer in RUNTIME_PROFILES:
+            return runtime_profile(answer)
+        print(f"Enter a number from 1 through {len(keys)}, or a profile name.")
 
 
 def check_setup_prerequisites(profile: ModelProfile | None = None) -> str:
@@ -416,6 +541,29 @@ def atomic_write(path: Path, text: str) -> None:
         raise
 
 
+def env_backup_path(prefix: str = ".env.backup-before") -> Path:
+    return ENV_FILE.with_name(f"{prefix}-{time.time_ns()}")
+
+
+def runtime_env_values(profile: RuntimeProfile) -> dict[str, str]:
+    return {
+        "NINFER_RUNTIME_PROFILE": profile.key,
+        "NINFER_CONTEXT_LENGTH": str(profile.context_length),
+        "NINFER_KV_CAPACITY": str(profile.kv_capacity),
+        "NINFER_MAX_CONCURRENCY": str(profile.max_concurrency),
+        "NINFER_PENDING_TIMEOUT_MS": str(profile.pending_timeout_ms),
+        "NINFER_KV_DTYPE": profile.kv_dtype,
+        "NINFER_DEVICE_STATE_SLOTS": str(profile.device_state_slots),
+        "NINFER_HOST_STATE_SLOTS": str(profile.host_state_slots),
+        "NINFER_HOST_KV_MIB": str(profile.host_kv_mib),
+        "NINFER_PRESERVE_THINKING": "true" if profile.preserve_thinking else "false",
+        "HERMES_COMPRESSION_ENABLED": "true",
+        "HERMES_COMPRESSION_THRESHOLD_TOKENS": str(
+            profile.compression_threshold_tokens
+        ),
+    }
+
+
 def remove_private_env_value(path: Path, key: str) -> None:
     """Atomically remove one dotenv value while preserving unrelated settings."""
     if not re.fullmatch(r"[A-Z][A-Z0-9_]*", key):
@@ -440,6 +588,15 @@ def merge_env(detected_gpu_device: str | None = None) -> None:
     creating = not ENV_FILE.is_file()
     example_lines = ENV_EXAMPLE.read_text(encoding="utf-8").splitlines()
     existing = ENV_FILE.read_text(encoding="utf-8").splitlines() if ENV_FILE.is_file() else []
+    original_text = "\n".join(existing).rstrip() + ("\n" if existing else "")
+    existing = [
+        line
+        for line in existing
+        if not (
+            re.match(r"^([A-Z][A-Z0-9_]*)=", line)
+            and line.split("=", 1)[0] in OBSOLETE_ENV_KEYS
+        )
+    ]
     existing_keys = {
         line.split("=", 1)[0]
         for line in existing
@@ -473,6 +630,13 @@ def merge_env(detected_gpu_device: str | None = None) -> None:
             DEFAULT_MODEL_PROFILE,
         )
         forced["NINFER_MODEL_PROFILE"] = inferred
+    configured_runtime = original_values.get("NINFER_RUNTIME_PROFILE", "")
+    selected_runtime = (
+        configured_runtime
+        if configured_runtime in RUNTIME_PROFILES
+        else DEFAULT_RUNTIME_PROFILE
+    )
+    forced.update(runtime_env_values(runtime_profile(selected_runtime)))
     if detected_gpu_device is not None and not original_values.get("NINFER_GPU_DEVICE"):
         forced["NINFER_GPU_DEVICE"] = detected_gpu_device
     if os.name != "nt" and hasattr(os, "getuid") and hasattr(os, "getgid"):
@@ -498,7 +662,12 @@ def merge_env(detected_gpu_device: str | None = None) -> None:
             elif key in replacements:
                 line = f"{key}={replacements[key]}"
         output.append(line)
-    atomic_write(ENV_FILE, "\n".join(output).rstrip() + "\n")
+    updated_text = "\n".join(output).rstrip() + "\n"
+    if not creating and updated_text != original_text:
+        backup = env_backup_path()
+        shutil.copy2(ENV_FILE, backup)
+        print(f"Updated the local configuration; previous values are backed up in {backup.name}.")
+    atomic_write(ENV_FILE, updated_text)
 
 
 def validate_env() -> None:
@@ -512,9 +681,16 @@ def validate_env() -> None:
         "NINFER_MODEL_PROFILE",
         "NINFER_MODEL_FILE",
         "NINFER_MODEL_ID",
+        "NINFER_RUNTIME_PROFILE",
         "NINFER_CONTEXT_LENGTH",
         "NINFER_KV_CAPACITY",
         "NINFER_MAX_CONCURRENCY",
+        "NINFER_PENDING_TIMEOUT_MS",
+        "NINFER_KV_DTYPE",
+        "NINFER_DEVICE_STATE_SLOTS",
+        "NINFER_HOST_STATE_SLOTS",
+        "NINFER_HOST_KV_MIB",
+        "NINFER_PRESERVE_THINKING",
         "HERMES_COMPRESSION_ENABLED",
         "HERMES_COMPRESSION_THRESHOLD_TOKENS",
         "HERMES_MAX_TURNS",
@@ -546,6 +722,7 @@ def validate_env() -> None:
     kv_capacity = values["NINFER_KV_CAPACITY"]
     concurrency = values["NINFER_MAX_CONCURRENCY"]
     max_turns = values["HERMES_MAX_TURNS"]
+    selected_runtime = runtime_profile(values["NINFER_RUNTIME_PROFILE"])
     if not context.isdigit() or not 1024 <= int(context) <= 262144:
         raise StackError("NINFER_CONTEXT_LENGTH must be from 1024 through 262144")
     if not concurrency.isdigit() or not 1 <= int(concurrency) <= 8:
@@ -564,6 +741,16 @@ def validate_env() -> None:
         )
     if not max_turns.isdigit() or not 1 <= int(max_turns) <= 1000:
         raise StackError("HERMES_MAX_TURNS must be from 1 through 1000")
+    expected_runtime = runtime_env_values(selected_runtime)
+    drifted = [
+        key for key, expected in expected_runtime.items() if values.get(key) != expected
+    ]
+    if drifted:
+        raise StackError(
+            f"The {selected_runtime.key} runtime profile has inconsistent values: "
+            + ", ".join(drifted)
+            + ". Run 'python ninfer.py select-runtime'."
+        )
 
 
 def initialize_ninfer_source() -> None:
@@ -779,7 +966,7 @@ def replace_env_values(replacements: dict[str, str]) -> Path | None:
     current = read_env()
     if all(current.get(key) == value for key, value in replacements.items()):
         return None
-    backup = ENV_FILE.with_name(f".env.backup-before-{int(time.time())}")
+    backup = env_backup_path()
     shutil.copy2(ENV_FILE, backup)
     output: list[str] = []
     seen: set[str] = set()
@@ -806,13 +993,12 @@ def activate_model_profile(profile: ModelProfile) -> Path | None:
             "NINFER_MODEL_PROFILE": profile.key,
             "NINFER_MODEL_FILE": profile.filename,
             "NINFER_MODEL_ID": "qwen-local",
-            "NINFER_CONTEXT_LENGTH": "131072",
-            "NINFER_KV_CAPACITY": "131072",
-            "NINFER_MAX_CONCURRENCY": "1",
-            "HERMES_COMPRESSION_ENABLED": "true",
-            "HERMES_COMPRESSION_THRESHOLD_TOKENS": "100000",
         }
     )
+
+
+def activate_runtime_profile(profile: RuntimeProfile) -> Path | None:
+    return replace_env_values(runtime_env_values(profile))
 
 
 def activate_and_start_profile(profile: ModelProfile, *, build_runtime: bool) -> None:
@@ -842,6 +1028,34 @@ def activate_and_start_profile(profile: ModelProfile, *, build_runtime: bool) ->
             raise StackError(
                 f"The {profile.label} profile failed its live test. The previous "
                 "model and configuration were restored successfully."
+            ) from selected_error
+        raise
+
+
+def activate_and_start_runtime(profile: RuntimeProfile) -> None:
+    previous = runtime_profile(configured_runtime_profile_key())
+    env_backup = activate_runtime_profile(profile)
+    validate_env()
+    try:
+        start_ninfer(read_env())
+    except StackError as selected_error:
+        if env_backup is not None:
+            print("The selected runtime did not pass startup. Restoring the previous profile...")
+            failed_env = ENV_FILE.with_name(
+                f".env.failed-runtime-{profile.key}-{int(time.time())}"
+            )
+            shutil.copy2(ENV_FILE, failed_env)
+            atomic_write(ENV_FILE, env_backup.read_text(encoding="utf-8"))
+            try:
+                start_ninfer(read_env())
+            except StackError as rollback_error:
+                raise StackError(
+                    "The selected runtime failed and the previous configuration was restored, "
+                    "but the former service also needs attention. Run 'python ninfer.py logs'."
+                ) from rollback_error
+            raise StackError(
+                f"The {profile.label} runtime failed its live test. The previous "
+                f"{previous.label} configuration was restored successfully."
             ) from selected_error
         raise
 
@@ -1044,7 +1258,14 @@ def configure_native_hermes(command: list[str], process_env: dict[str, str], val
     # Earlier project releases imposed a repository-local workspace. Remove
     # those overrides so Desktop/gateway sessions use Hermes's stock home
     # directory and CLI sessions use the directory from which Hermes launches.
-    run([*command, "config", "unset", "terminal.cwd"], env=process_env)
+    # Current Hermes returns a non-zero status when the key is already absent.
+    # Absence is the desired idempotent state, so do not turn that into failure.
+    run(
+        [*command, "config", "unset", "terminal.cwd"],
+        check=False,
+        capture=True,
+        env=process_env,
+    )
     remove_private_env_value(profile_home / ".env", "HERMES_WRITE_SAFE_ROOT")
     process_env.pop("HERMES_WRITE_SAFE_ROOT", None)
     for key, value in settings:
@@ -1137,6 +1358,7 @@ def install_hermes(args: argparse.Namespace) -> None:
     print("Hermes Desktop is configured for the authenticated local NInfer endpoint.")
     print(f"  Endpoint: {ninfer_endpoint(values)}")
     print(f"  Model: {values['NINFER_MODEL_ID']}")
+    print(f"  Runtime profile: {values['NINFER_RUNTIME_PROFILE']}")
     print(f"  Context: {values['NINFER_CONTEXT_LENGTH']} tokens")
     print(f"  Automatic compression: {values['HERMES_COMPRESSION_THRESHOLD_TOKENS']} tokens")
     print("  Vision: disabled")
@@ -1181,6 +1403,8 @@ def setup(args: argparse.Namespace) -> None:
 
     stage(3, 6, "Prepare the private local configuration")
     initialize_local_state(detected_gpu_device)
+    active_runtime = runtime_profile(configured_runtime_profile_key())
+    print(f"Runtime profile: {active_runtime.label} ({active_runtime.key})")
 
     stage(4, 6, "Download and verify the AI model")
     if not model_artifact_candidate_ready(profile):
@@ -1289,6 +1513,26 @@ def select_model(args: argparse.Namespace) -> None:
     print("The other model artifact, if present, was preserved for later switching.")
 
 
+def select_runtime(args: argparse.Namespace) -> None:
+    print("NInfer runtime profile selection")
+    profile = runtime_profile(args.profile) if args.profile else choose_runtime_profile()
+    print(f"Selected runtime: {profile.label}")
+    check_setup_prerequisites()
+    if not ENV_FILE.is_file():
+        raise StackError(f"Setup has not been completed. Start with '{SETUP_COMMAND}'.")
+    merge_env()
+    activate_and_start_runtime(profile)
+    values = read_env()
+    resolved = native_hermes_command()
+    if resolved is not None:
+        command, process_env = resolved
+        configure_native_hermes(command, process_env, values)
+        print("Hermes was updated too. Restart Hermes Desktop to use the new context profile.")
+    else:
+        print("Hermes was not found. Run 'python ninfer.py install-hermes' after installing it.")
+    print(f"ACTIVE: {profile.label} is serving {values['NINFER_MODEL_ID']}.")
+
+
 def shell(_: argparse.Namespace) -> None:
     compose("exec", "ninfer", "bash")
 
@@ -1304,6 +1548,166 @@ def benchmark(args: argparse.Namespace) -> None:
             str(args.max_tokens),
         ]
     )
+
+
+def _pretty_number(text: str) -> float:
+    normalized = text.strip().replace(",", "")
+    match = re.fullmatch(r"([0-9]+(?:\.[0-9]+)?)([KMG]?)", normalized, re.IGNORECASE)
+    if not match:
+        raise ValueError(text)
+    scale = {"": 1.0, "K": 1_000.0, "M": 1_000_000.0, "G": 1_000_000_000.0}
+    return float(match.group(1)) * scale[match.group(2).upper()]
+
+
+def _pretty_duration_ms(text: str) -> float:
+    normalized = text.strip().lower()
+    milliseconds = re.fullmatch(r"([0-9]+(?:\.[0-9]+)?)\s*ms", normalized)
+    if milliseconds:
+        return float(milliseconds.group(1))
+    seconds = re.fullmatch(
+        r"(?:(\d+)\s*m\s*)?([0-9]+(?:\.[0-9]+)?)\s*s", normalized
+    )
+    if seconds:
+        return (float(seconds.group(1) or 0) * 60.0 + float(seconds.group(2))) * 1000.0
+    raise ValueError(text)
+
+
+def _percentile(values: list[float], fraction: float) -> float | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    position = (len(ordered) - 1) * fraction
+    lower = int(position)
+    upper = min(lower + 1, len(ordered) - 1)
+    weight = position - lower
+    return ordered[lower] * (1.0 - weight) + ordered[upper] * weight
+
+
+def summarize_performance_log(log_text: str) -> dict[str, object]:
+    prompts: list[float] = []
+    ttft_ms: list[float] = []
+    prefill_rates: list[float] = []
+    decode_rates: list[float] = []
+    cache_percentages: list[float] = []
+    mtp_acceptance: list[float] = []
+    queue_timeouts = 0
+    context_rejections = 0
+    peak_waiting = 0
+
+    for line in log_text.splitlines():
+        if "expired while waiting for admission" in line or "request_queue_timeout" in line:
+            queue_timeouts += 1
+        if "context_length_exceeded" in line or "exceeding Engine max_context" in line:
+            context_rejections += 1
+        waiting = re.search(r"(?:waiting=|\| waiting )([0-9]+)", line)
+        if waiting:
+            peak_waiting = max(peak_waiting, int(waiting.group(1)))
+
+        if " done " not in line and " done |" not in line:
+            continue
+        old_prompt = re.search(r"\bprompt=([0-9]+)", line)
+        new_prompt = re.search(r"\| prompt ([0-9.,]+[KMG]?) \|", line, re.IGNORECASE)
+        prompt = old_prompt.group(1) if old_prompt else (new_prompt.group(1) if new_prompt else None)
+        if prompt:
+            prompts.append(_pretty_number(prompt))
+
+        old_ttft = re.search(r"\bttft=([0-9.]+)ms", line)
+        new_ttft = re.search(r"\| TTFT ([^|]+?) \|", line, re.IGNORECASE)
+        if old_ttft:
+            ttft_ms.append(float(old_ttft.group(1)))
+        elif new_ttft:
+            try:
+                ttft_ms.append(_pretty_duration_ms(new_ttft.group(1)))
+            except ValueError:
+                pass
+
+        for label, target in (("prefill", prefill_rates), ("decode", decode_rates)):
+            old_rate = re.search(rf"\b{label}=([0-9.]+)tok/s", line)
+            new_rate = re.search(
+                rf"\| {label} ([0-9.,]+[KMG]?)\s+tok/s", line, re.IGNORECASE
+            )
+            rate = old_rate.group(1) if old_rate else (new_rate.group(1) if new_rate else None)
+            if rate:
+                target.append(_pretty_number(rate))
+
+        old_cache = re.search(r"\bprompt=([0-9]+).*?\bcache=([0-9]+)", line)
+        new_cache = re.search(r"\| cache [0-9.,]+[KMG]? \(([0-9.]+)%", line, re.IGNORECASE)
+        if old_cache and int(old_cache.group(1)):
+            cache_percentages.append(
+                100.0 * int(old_cache.group(2)) / int(old_cache.group(1))
+            )
+        elif new_cache:
+            cache_percentages.append(float(new_cache.group(1)))
+
+        old_mtp = re.search(r"speculative=mtp .*?\(([0-9.]+)%\)", line)
+        new_mtp = re.search(r"\| mtp accepted .*?\(([0-9.]+)%\)", line, re.IGNORECASE)
+        acceptance = old_mtp or new_mtp
+        if acceptance:
+            mtp_acceptance.append(float(acceptance.group(1)))
+
+    return {
+        "completed_requests": len(ttft_ms),
+        "max_prompt_tokens": max(prompts) if prompts else None,
+        "ttft_p50_ms": _percentile(ttft_ms, 0.50),
+        "ttft_p95_ms": _percentile(ttft_ms, 0.95),
+        "prefill_median": statistics.median(prefill_rates) if prefill_rates else None,
+        "decode_median": statistics.median(decode_rates) if decode_rates else None,
+        "cache_median_percent": statistics.median(cache_percentages) if cache_percentages else None,
+        "mtp_median_percent": statistics.median(mtp_acceptance) if mtp_acceptance else None,
+        "queue_timeouts": queue_timeouts,
+        "context_rejections": context_rejections,
+        "peak_waiting": peak_waiting,
+    }
+
+
+def _format_optional(value: object, suffix: str = "") -> str:
+    return "not observed" if value is None else f"{float(value):,.1f}{suffix}"
+
+
+def diagnose_performance(args: argparse.Namespace) -> None:
+    if args.lines < 1 or args.lines > 100_000:
+        raise StackError("--lines must be from 1 through 100000")
+    if not ENV_FILE.is_file():
+        raise StackError(f"Setup has not been completed. Start with '{SETUP_COMMAND}'.")
+    merge_env()
+    validate_env()
+    values = read_env()
+    result = compose(
+        "logs", "--no-color", "--tail", str(args.lines), "ninfer", capture=True
+    )
+    summary = summarize_performance_log(result.stdout)
+    profile = runtime_profile(values["NINFER_RUNTIME_PROFILE"])
+    print("NInfer performance diagnosis")
+    print(f"  Runtime: {profile.key} ({profile.label})")
+    print(f"  Completed requests sampled: {summary['completed_requests']}")
+    print(f"  Largest prompt: {_format_optional(summary['max_prompt_tokens'], ' tokens')}")
+    print(f"  TTFT p50 / p95: {_format_optional(summary['ttft_p50_ms'], ' ms')} / {_format_optional(summary['ttft_p95_ms'], ' ms')}")
+    print(f"  Median prefill: {_format_optional(summary['prefill_median'], ' tok/s')}")
+    print(f"  Median decode: {_format_optional(summary['decode_median'], ' tok/s')}")
+    print(f"  Median prefix reuse: {_format_optional(summary['cache_median_percent'], '%')}")
+    print(f"  Median MTP acceptance: {_format_optional(summary['mtp_median_percent'], '%')}")
+    print(f"  Queue timeouts: {summary['queue_timeouts']} (peak waiting: {summary['peak_waiting']})")
+    print(f"  Context-limit rejections: {summary['context_rejections']}")
+
+    recommendations: list[str] = []
+    if int(summary["queue_timeouts"]):
+        recommendations.append(
+            "Queue timeouts were observed. Use the balanced or max-context runtime profile."
+        )
+    if int(summary["context_rejections"]):
+        recommendations.append(
+            "Prompts exceeded the active context. Restart Hermes after applying the runtime profile so its compression setting is current."
+        )
+    ttft_p95 = summary["ttft_p95_ms"]
+    if isinstance(ttft_p95, (int, float)) and ttft_p95 >= 20_000:
+        recommendations.append(
+            "Long prompt ingestion dominates latency. The balanced profile's 90K compression threshold is the faster default."
+        )
+    if not recommendations:
+        recommendations.append("No queue or context failure is visible in the sampled logs.")
+    print("Recommendations:")
+    for recommendation in recommendations:
+        print(f"  - {recommendation}")
 
 
 def passthrough(command: tuple[str, ...]):
@@ -1357,9 +1761,19 @@ def main() -> int:
         "select-model",
         help="prepare and safely switch between stock and uncensored models",
     )
-    select.add_argument("--model", choices=tuple(MODEL_PROFILES), help="profile to select")
+    select.add_argument(
+        "--model",
+        choices=tuple(MODEL_PROFILES),
+        help="model profile to select (runtime profiles use select-runtime --profile)",
+    )
     select.add_argument("--yes", action="store_true", help="skip the download confirmation")
     select.set_defaults(func=select_model)
+    runtime = sub.add_parser(
+        "select-runtime",
+        help="switch among reviewed RTX 5090 runtime profiles and update Hermes",
+    )
+    runtime.add_argument("--profile", choices=tuple(RUNTIME_PROFILES), help="runtime profile")
+    runtime.set_defaults(func=select_runtime)
     sub.add_parser("build", help="build the NInfer image").set_defaults(func=passthrough(("build", "ninfer")))
     sub.add_parser("up", help="start NInfer and wait until the model is ready").set_defaults(func=up)
     sub.add_parser("down", help="stop NInfer while preserving the model").set_defaults(
@@ -1378,6 +1792,14 @@ def main() -> int:
     benchmark_parser.add_argument("--runs", type=int, default=3)
     benchmark_parser.add_argument("--max-tokens", type=int, default=512)
     benchmark_parser.set_defaults(func=benchmark)
+    diagnose = sub.add_parser(
+        "diagnose-performance",
+        help="summarize private performance counters from recent NInfer logs",
+    )
+    diagnose.add_argument(
+        "--lines", type=int, default=2000, help="number of recent container log lines to inspect"
+    )
+    diagnose.set_defaults(func=diagnose_performance)
 
     args = parser.parse_args()
     args.func(args)

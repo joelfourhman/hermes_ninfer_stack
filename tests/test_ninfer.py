@@ -20,11 +20,18 @@ def sample_values() -> dict[str, str]:
         "NINFER_MODEL_PROFILE": "stock",
         "NINFER_MODEL_FILE": ninfer.STOCK_MODEL_FILE,
         "NINFER_MODEL_ID": "qwen-local",
+        "NINFER_RUNTIME_PROFILE": "balanced",
         "NINFER_CONTEXT_LENGTH": "131072",
-        "NINFER_KV_CAPACITY": "131072",
-        "NINFER_MAX_CONCURRENCY": "1",
+        "NINFER_KV_CAPACITY": "196608",
+        "NINFER_MAX_CONCURRENCY": "2",
+        "NINFER_PENDING_TIMEOUT_MS": "120000",
+        "NINFER_KV_DTYPE": "fp8",
+        "NINFER_DEVICE_STATE_SLOTS": "2",
+        "NINFER_HOST_STATE_SLOTS": "8",
+        "NINFER_HOST_KV_MIB": "8192",
+        "NINFER_PRESERVE_THINKING": "true",
         "HERMES_COMPRESSION_ENABLED": "true",
-        "HERMES_COMPRESSION_THRESHOLD_TOKENS": "100000",
+        "HERMES_COMPRESSION_THRESHOLD_TOKENS": "90000",
         "HERMES_MAX_TURNS": "40",
     }
 
@@ -236,7 +243,7 @@ class HermesDesktopConfigurationTests(unittest.TestCase):
                 "model.context_length": "131072",
                 "model.supports_vision": "false",
                 "compression.threshold": "0.9",
-                "compression.threshold_tokens": "100000",
+                "compression.threshold_tokens": "90000",
                 "terminal.backend": "local",
                 "approvals.mode": "manual",
             }
@@ -246,7 +253,8 @@ class HermesDesktopConfigurationTests(unittest.TestCase):
                 output = ""
                 if command[1:3] == ["config", "get"]:
                     output = expected[command[3]] + "\n"
-                return subprocess.CompletedProcess(command, 0, stdout=output, stderr="")
+                returncode = 1 if command[1:4] == ["config", "unset", "terminal.cwd"] else 0
+                return subprocess.CompletedProcess(command, returncode, stdout=output, stderr="")
 
             hermes_env = {"HERMES_HOME": str(profile_home)}
             with (
@@ -289,7 +297,7 @@ class HermesDesktopConfigurationTests(unittest.TestCase):
             [command for command, _ in calls],
         )
         self.assertIn(
-            ["hermes", "config", "set", "compression.threshold_tokens", "100000"],
+            ["hermes", "config", "set", "compression.threshold_tokens", "90000"],
             [command for command, _ in calls],
         )
 
@@ -324,22 +332,13 @@ class HermesDesktopConfigurationTests(unittest.TestCase):
 
 class EnvironmentValidationTests(unittest.TestCase):
     def test_model_file_cannot_escape_models_directory(self) -> None:
-        values = {
-            "NINFER_API_KEY": "c" * 64,
+        values = sample_values()
+        values.update({
             "MODEL_DOWNLOAD_UID": "1000",
             "MODEL_DOWNLOAD_GID": "1000",
-            "NINFER_HOST_PORT": "8080",
             "NINFER_GPU_DEVICE": "0",
-            "NINFER_MODEL_PROFILE": "stock",
             "NINFER_MODEL_FILE": "../outside.ninfer",
-            "NINFER_MODEL_ID": "qwen-local",
-            "NINFER_CONTEXT_LENGTH": "131072",
-            "NINFER_KV_CAPACITY": "131072",
-            "NINFER_MAX_CONCURRENCY": "1",
-            "HERMES_COMPRESSION_ENABLED": "true",
-            "HERMES_COMPRESSION_THRESHOLD_TOKENS": "100000",
-            "HERMES_MAX_TURNS": "40",
-        }
+        })
         with tempfile.TemporaryDirectory() as temporary:
             env_file = Path(temporary) / ".env"
             env_file.write_text(
@@ -369,6 +368,65 @@ class EnvironmentValidationTests(unittest.TestCase):
             with mock.patch.object(ninfer, "ENV_FILE", env_file):
                 with self.assertRaisesRegex(ninfer.StackError, "stock model profile"):
                     ninfer.validate_env()
+
+    def test_runtime_profile_drift_is_rejected(self) -> None:
+        values = sample_values()
+        values.update(
+            {
+                "MODEL_DOWNLOAD_UID": "1000",
+                "MODEL_DOWNLOAD_GID": "1000",
+                "NINFER_GPU_DEVICE": "0",
+                "NINFER_MAX_CONCURRENCY": "1",
+                "NINFER_KV_CAPACITY": "131072",
+            }
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            env_file = Path(temporary) / ".env"
+            env_file.write_text(
+                "".join(f"{key}={value}\n" for key, value in values.items()),
+                encoding="utf-8",
+            )
+            with mock.patch.object(ninfer, "ENV_FILE", env_file):
+                with self.assertRaisesRegex(ninfer.StackError, "inconsistent values"):
+                    ninfer.validate_env()
+
+    def test_legacy_environment_is_backed_up_cleaned_and_migrated(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            env_file = root / ".env"
+            example = root / ".env.example"
+            example_values = {
+                "NINFER_API_KEY": "",
+                "NINFER_MODEL_PROFILE": "stock",
+                "NINFER_MODEL_FILE": ninfer.STOCK_MODEL_FILE,
+                **ninfer.runtime_env_values(ninfer.runtime_profile("balanced")),
+            }
+            example.write_text(
+                "".join(f"{key}={value}\n" for key, value in example_values.items()),
+                encoding="utf-8",
+            )
+            env_file.write_text(
+                f"NINFER_API_KEY={'e' * 64}\n"
+                f"NINFER_MODEL_FILE={ninfer.STOCK_MODEL_FILE}\n"
+                "HERMES_DASHBOARD_PASSWORD=remove-me\n"
+                "UNRELATED_SETTING=keep-me\n",
+                encoding="utf-8",
+            )
+            with (
+                mock.patch.object(ninfer, "ENV_FILE", env_file),
+                mock.patch.object(ninfer, "ENV_EXAMPLE", example),
+                redirect_stdout(StringIO()),
+            ):
+                ninfer.merge_env()
+
+            configured = env_file.read_text(encoding="utf-8")
+            backups = list(root.glob(".env.backup-before-*"))
+
+        self.assertEqual(len(backups), 1)
+        self.assertNotIn("HERMES_DASHBOARD_PASSWORD", configured)
+        self.assertIn("UNRELATED_SETTING=keep-me", configured)
+        self.assertIn("NINFER_RUNTIME_PROFILE=balanced", configured)
+        self.assertIn("NINFER_MAX_CONCURRENCY=2", configured)
 
 
 class ModelDownloadLifecycleTests(unittest.TestCase):
@@ -416,9 +474,26 @@ class ModelDownloadLifecycleTests(unittest.TestCase):
             updated = env_file.read_text(encoding="utf-8")
             self.assertIn("NINFER_MODEL_PROFILE=uncensored", updated)
             self.assertIn("NINFER_MODEL_FILE=" + ninfer.UNCENSORED_MODEL_FILE, updated)
-            self.assertIn("NINFER_CONTEXT_LENGTH=131072", updated)
-            self.assertIn("HERMES_COMPRESSION_THRESHOLD_TOKENS=100000", updated)
+            self.assertIn("NINFER_CONTEXT_LENGTH=65536", updated)
             self.assertIn("NINFER_API_KEY=" + "d" * 64, updated)
+
+    def test_runtime_activation_changes_only_reviewed_runtime_values(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            env_file = Path(temporary) / ".env"
+            env_file.write_text(
+                f"NINFER_API_KEY={'f' * 64}\n"
+                "NINFER_MODEL_PROFILE=uncensored\n"
+                f"NINFER_MODEL_FILE={ninfer.UNCENSORED_MODEL_FILE}\n",
+                encoding="utf-8",
+            )
+            with mock.patch.object(ninfer, "ENV_FILE", env_file):
+                ninfer.activate_runtime_profile(ninfer.runtime_profile("max-context"))
+            configured = env_file.read_text(encoding="utf-8")
+
+        self.assertIn("NINFER_RUNTIME_PROFILE=max-context", configured)
+        self.assertIn("NINFER_CONTEXT_LENGTH=240000", configured)
+        self.assertIn("NINFER_MODEL_PROFILE=uncensored", configured)
+        self.assertIn(f"NINFER_MODEL_FILE={ninfer.UNCENSORED_MODEL_FILE}", configured)
 
     def test_prepare_model_uses_shared_downloader_without_stopping_ninfer(self) -> None:
         calls: list[tuple[str, ...]] = []
@@ -544,6 +619,37 @@ class SetupOrderingTests(unittest.TestCase):
             if isinstance(event, tuple) and event[0] == "compose" and "up" in event[1]
         )
         self.assertLess(up_event, events.index("ninfer-ready"))
+
+
+class PerformanceDiagnosisTests(unittest.TestCase):
+    def test_parses_current_pretty_counts_and_long_durations(self) -> None:
+        self.assertEqual(ninfer._pretty_number("6,163"), 6163)
+        self.assertEqual(ninfer._pretty_number("2.77k"), 2770)
+        self.assertEqual(ninfer._pretty_duration_ms("1m 14.2s"), 74_200)
+
+    def test_summarizes_old_and_current_operational_log_formats(self) -> None:
+        log_text = "\n".join(
+            [
+                "throughput interval=5.000s running=1 waiting=1",
+                "[req 1] done finish=stop prompt=100000 gen=500 cache=50000 reuse=restore_turn_checkpoint ttft=20000ms prefill=1500.0tok/s decode=110.0tok/s wall=25.0s speculative=mtp 2.5tok/round (50.0%)",
+                "req#2 done | openai chat | stop | prompt 120.0K | output 600 | cache 90.0K (75.0%, device) | TTFT 30.0 s | total 35.0 s | prefill 2.00K tok/s | decode 130.0 tok/s | mtp accepted 300/500 (60.0%)",
+                "request_queue_timeout inference request expired while waiting for admission",
+                "status=400 code=context_length_exceeded message=prepared prompt too large",
+            ]
+        )
+
+        summary = ninfer.summarize_performance_log(log_text)
+
+        self.assertEqual(summary["completed_requests"], 2)
+        self.assertEqual(summary["max_prompt_tokens"], 120_000)
+        self.assertEqual(summary["ttft_p50_ms"], 25_000)
+        self.assertEqual(summary["prefill_median"], 1_750)
+        self.assertEqual(summary["decode_median"], 120)
+        self.assertEqual(summary["cache_median_percent"], 62.5)
+        self.assertEqual(summary["mtp_median_percent"], 55)
+        self.assertEqual(summary["queue_timeouts"], 1)
+        self.assertEqual(summary["context_rejections"], 1)
+        self.assertEqual(summary["peak_waiting"], 1)
 
 
 class BeginnerRecoveryTests(unittest.TestCase):

@@ -27,11 +27,18 @@ supported configuration command.
 | `NINFER_MODEL_PROFILE` | `stock` | Fixed profile selected by `setup` or `select-model` |
 | `NINFER_MODEL_FILE` | `qwen3_8_27b_nvfp4.ninfer` | Profile-controlled filename beneath `models/`, mounted read-only |
 | `NINFER_MODEL_ID` | `qwen-local` | Public API alias selected in Hermes |
+| `NINFER_RUNTIME_PROFILE` | `balanced` | Reviewed resource allocation selected by `select-runtime` |
 | `NINFER_CONTEXT_LENGTH` | `131072` | Maximum sequence length for one request |
-| `NINFER_KV_CAPACITY` | `131072` | Total resident KV-token allocation |
-| `NINFER_MAX_CONCURRENCY` | `1` | Maximum simultaneous requests |
+| `NINFER_KV_CAPACITY` | `196608` | Shared device KV-token allocation |
+| `NINFER_MAX_CONCURRENCY` | `2` | Maximum simultaneous requests |
+| `NINFER_PENDING_TIMEOUT_MS` | `120000` | Absolute preparation-plus-admission wait |
+| `NINFER_KV_DTYPE` | `fp8` | Device KV storage format |
+| `NINFER_DEVICE_STATE_SLOTS` | `2` | Extra device-resident prefix checkpoints |
+| `NINFER_HOST_STATE_SLOTS` | `8` | Pinned host state checkpoints |
+| `NINFER_HOST_KV_MIB` | `8192` | Pinned host KV checkpoint budget |
+| `NINFER_PRESERVE_THINKING` | `true` | Profile contract for retaining closed-turn reasoning |
 | `HERMES_COMPRESSION_ENABLED` | `true` | Compression setting applied to native Hermes |
-| `HERMES_COMPRESSION_THRESHOLD_TOKENS` | `100000` | Absolute compression cap that preserves request headroom |
+| `HERMES_COMPRESSION_THRESHOLD_TOKENS` | `90000` | Balanced cap that limits long-prompt latency |
 | `HERMES_MAX_TURNS` | `40` | Agent turn cap applied to native Hermes |
 
 `.env.example` deliberately leaves `NINFER_API_KEY` empty. Setup generates a
@@ -44,7 +51,11 @@ The Python control command validates that:
 - the GPU selection is valid for the supported shape;
 - the model file is a filename rather than an arbitrary host path;
 - the model ID contains only supported alias characters;
-- context, KV capacity, and concurrency form a valid allocation.
+- all memory-sensitive values exactly match the named runtime profile.
+
+When upgrading an older checkout, setup backs up `.env`, removes only the
+reviewed allowlist of obsolete container-Hermes/model-builder variables, and
+preserves unrelated settings and the existing bearer key.
 
 ## Endpoint mapping
 
@@ -101,7 +112,7 @@ model:
 compression:
   enabled: true
   threshold: 0.9
-  threshold_tokens: 100000
+  threshold_tokens: 90000
 
 agent:
   max_turns: 40
@@ -141,9 +152,27 @@ The following values must agree across NInfer and Hermes:
 4. `NINFER_HOST_PORT` determines the base URL saved in the provider.
 5. Vision remains disabled because the tested NInfer profile is text-only.
 
-`NINFER_KV_CAPACITY` and `NINFER_MAX_CONCURRENCY` affect server memory but are
-not independent Hermes context settings. With concurrency one, the default KV
-capacity equals the full context ceiling.
+The KV, concurrency, timeout, cache-format, and checkpoint-tier values are one
+runtime profile. They are not independent Hermes context settings. Use the
+selector instead of hand-editing individual fields:
+
+```text
+python ninfer.py select-runtime
+```
+
+Explicit selectors use different option names because they control independent
+settings:
+
+```text
+python ninfer.py select-model --model stock
+python ninfer.py select-runtime --profile balanced
+```
+
+`select-model --profile stock` is not valid.
+
+The selector recreates NInfer, performs an authenticated generation test,
+restores the previous `.env` and service on failure, and updates Hermes's
+context/compression metadata when Hermes is installed.
 
 After changing a coupled value, recreate NInfer as needed and reapply Hermes:
 
@@ -154,22 +183,25 @@ python ninfer.py install-hermes
 python ninfer.py verify
 ```
 
-## Memory-sensitive NInfer settings
+## Runtime profiles
 
-The reviewed profile includes:
+| Profile | Context | Device KV | Lanes | Device/host state slots | Host KV | Compression |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `balanced` | 131,072 | 196,608 | 2 | 2 / 8 | 8,192 MiB | 90,000 |
+| `single-session` | 131,072 | 131,072 | 1 | 1 / 4 | 4,096 MiB | 100,000 |
+| `max-context` | 240,000 | 240,000 | 2 | 2 / 8 | 8,192 MiB | 200,000 |
 
-- INT8 KV cache;
-- a 1,024-token prefill chunk;
-- MTP speculation with three draft tokens;
-- the optimized draft head;
-- one active request;
-- explicit 131,072-token context and KV capacity;
-- Hermes compression capped at 100,000 tokens.
+All three use FP8 KV, a 1,024-token prefill chunk, CUDA Graphs, prefix reuse,
+MTP with three draft tokens and the optimized proposal head, and retained
+closed-turn reasoning. Host caches retain reusable prefixes; they do not swap
+active requests or model weights. The shared device KV budget still determines
+whether two particular requests can run together.
 
-These are a group, not isolated tuning switches. Increasing context,
-concurrency, or KV capacity can exhaust VRAM even when the model loads. Changing
-KV dtype or speculative settings changes both memory and performance. Record
-the complete resolved startup profile for any benchmark comparison.
+`balanced` is the default because one long AFK request can coexist with a
+smaller interactive request while Hermes compresses before prompt ingestion
+becomes extreme. `max-context` raises the ceiling, not the speed: a 200K prompt
+will still have substantially more first-token latency than a compressed 90K
+prompt.
 
 ## Model artifact setting
 
