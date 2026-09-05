@@ -18,8 +18,9 @@ def sample_values() -> dict[str, str]:
         "NINFER_API_KEY": "a" * 64,
         "NINFER_HOST_PORT": "18080",
         "NINFER_MODEL_ID": "qwen-local",
-        "NINFER_CONTEXT_LENGTH": "65536",
+        "NINFER_CONTEXT_LENGTH": "131072",
         "HERMES_COMPRESSION_ENABLED": "true",
+        "HERMES_COMPRESSION_THRESHOLD_TOKENS": "100000",
         "HERMES_MAX_TURNS": "40",
     }
 
@@ -224,8 +225,10 @@ class HermesDesktopConfigurationTests(unittest.TestCase):
                 "providers.ninfer.api": "http://127.0.0.1:18080/v1",
                 "model.provider": "custom:ninfer",
                 "model.default": "qwen-local",
-                "model.context_length": "65536",
+                "model.context_length": "131072",
                 "model.supports_vision": "false",
+                "compression.threshold": "0.9",
+                "compression.threshold_tokens": "100000",
                 "terminal.backend": "local",
                 "terminal.cwd": str(workspace),
                 "approvals.mode": "manual",
@@ -279,6 +282,10 @@ class HermesDesktopConfigurationTests(unittest.TestCase):
             ["hermes", "config", "set", "terminal.backend", "local"],
             [command for command, _ in calls],
         )
+        self.assertIn(
+            ["hermes", "config", "set", "compression.threshold_tokens", "100000"],
+            [command for command, _ in calls],
+        )
 
     def test_private_env_update_preserves_other_values_and_removes_duplicates(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -319,16 +326,17 @@ class EnvironmentValidationTests(unittest.TestCase):
     def test_model_file_cannot_escape_models_directory(self) -> None:
         values = {
             "NINFER_API_KEY": "c" * 64,
-            "MODEL_DOWNLOAD_UID": "1000",
-            "MODEL_DOWNLOAD_GID": "1000",
+            "MODEL_BUILD_UID": "1000",
+            "MODEL_BUILD_GID": "1000",
             "NINFER_HOST_PORT": "8080",
             "NINFER_GPU_DEVICE": "0",
             "NINFER_MODEL_FILE": "../outside.ninfer",
             "NINFER_MODEL_ID": "qwen-local",
-            "NINFER_CONTEXT_LENGTH": "65536",
-            "NINFER_KV_CAPACITY": "65536",
+            "NINFER_CONTEXT_LENGTH": "131072",
+            "NINFER_KV_CAPACITY": "131072",
             "NINFER_MAX_CONCURRENCY": "1",
             "HERMES_COMPRESSION_ENABLED": "true",
+            "HERMES_COMPRESSION_THRESHOLD_TOKENS": "100000",
             "HERMES_MAX_TURNS": "40",
         }
         with tempfile.TemporaryDirectory() as temporary:
@@ -342,6 +350,86 @@ class EnvironmentValidationTests(unittest.TestCase):
                     ninfer.validate_env()
 
 
+class ModelBuildLifecycleTests(unittest.TestCase):
+    def test_local_artifact_is_verified_against_its_own_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            models = root / "models"
+            models.mkdir()
+            artifact = models / ninfer.MODEL_FILE
+            artifact.write_bytes(b"test artifact")
+            checksum = ninfer.hashlib.sha256(artifact.read_bytes()).hexdigest()
+            (models / ninfer.MODEL_MANIFEST_FILE).write_text(
+                '{"sha256":"' + checksum + '"}\n',
+                encoding="utf-8",
+            )
+            with (
+                mock.patch.object(ninfer, "ROOT", root),
+                mock.patch.object(ninfer, "MODEL_EXPECTED_BYTES", artifact.stat().st_size),
+            ):
+                manifest = ninfer.require_local_model_artifact()
+                self.assertEqual(manifest["sha256"], checksum)
+                artifact.write_bytes(b"tampered data")
+                with self.assertRaisesRegex(ninfer.StackError, "checksum"):
+                    ninfer.require_local_model_artifact()
+
+    def test_activation_backs_up_and_preserves_private_settings(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            env_file = root / ".env"
+            env_file.write_text(
+                "NINFER_API_KEY=" + "d" * 64 + "\n"
+                "NINFER_MODEL_FILE=qwen3_8_27b_nvfp4.ninfer\n"
+                "NINFER_MODEL_ID=qwen-local\n"
+                "NINFER_CONTEXT_LENGTH=65536\n"
+                "NINFER_KV_CAPACITY=65536\n",
+                encoding="utf-8",
+            )
+            with (
+                mock.patch.object(ninfer, "ENV_FILE", env_file),
+                mock.patch.object(ninfer, "require_local_model_artifact"),
+            ):
+                backup = ninfer.activate_uncensored_model()
+
+            self.assertIsNotNone(backup)
+            assert backup is not None
+            self.assertIn("qwen3_8_27b_nvfp4.ninfer", backup.read_text(encoding="utf-8"))
+            updated = env_file.read_text(encoding="utf-8")
+            self.assertIn("NINFER_MODEL_FILE=" + ninfer.MODEL_FILE, updated)
+            self.assertIn("NINFER_CONTEXT_LENGTH=131072", updated)
+            self.assertIn("HERMES_COMPRESSION_THRESHOLD_TOKENS=100000", updated)
+            self.assertIn("NINFER_API_KEY=" + "d" * 64, updated)
+
+    def test_prepare_model_stops_and_restarts_existing_service(self) -> None:
+        calls: list[tuple[str, ...]] = []
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "models").mkdir()
+            env_file = root / ".env"
+            env_file.write_text("configured=true\n", encoding="utf-8")
+
+            def fake_compose(*args: str, **_: object) -> subprocess.CompletedProcess[str]:
+                calls.append(args)
+                output = "ninfer\n" if args[:4] == ("ps", "--status", "running", "--services") else ""
+                return subprocess.CompletedProcess(["docker"], 0, stdout=output, stderr="")
+
+            with (
+                mock.patch.object(ninfer, "ROOT", root),
+                mock.patch.object(ninfer, "ENV_FILE", env_file),
+                mock.patch.object(ninfer, "merge_env"),
+                mock.patch.object(ninfer, "validate_env"),
+                mock.patch.object(ninfer, "compose", side_effect=fake_compose),
+                mock.patch.object(ninfer, "require_local_model_artifact", return_value={"sha256": "abc"}),
+                redirect_stdout(StringIO()),
+            ):
+                ninfer.prepare_model(type("Args", (), {"yes": True, "leave_stopped": False})())
+
+        self.assertIn(("stop", "ninfer"), calls)
+        self.assertIn(("up", "-d", "ninfer"), calls)
+        self.assertTrue(any("model-fetcher" in call for call in calls))
+        self.assertTrue(any("model-converter" in call for call in calls))
+
+
 class SetupOrderingTests(unittest.TestCase):
     def test_enter_explicitly_accepts_required_model_download(self) -> None:
         input_mock = mock.Mock(return_value="")
@@ -350,7 +438,10 @@ class SetupOrderingTests(unittest.TestCase):
             redirect_stdout(StringIO()) as output,
         ):
             self.assertTrue(ninfer.confirm_model_download())
-        self.assertEqual(input_mock.call_args.args[0], "Download the model now? [Y/n]: ")
+        self.assertEqual(
+            input_mock.call_args.args[0],
+            "Download and build the uncensored model now? [Y/n]: ",
+        )
         self.assertIn("Hermes needs one local AI model", output.getvalue())
 
     def test_hermes_offer_happens_after_ninfer_api_is_ready(self) -> None:
@@ -377,7 +468,10 @@ class SetupOrderingTests(unittest.TestCase):
                     "initialize_local_state",
                     side_effect=lambda gpu: events.append(("initialize", gpu)),
                 ),
-                mock.patch.object(ninfer, "download_model", side_effect=lambda _: events.append("download")),
+                mock.patch.object(ninfer, "validate_env"),
+                mock.patch.object(ninfer, "confirm_model_download", return_value=True),
+                mock.patch.object(ninfer, "prepare_model", side_effect=lambda _: events.append("prepare")),
+                mock.patch.object(ninfer, "activate_uncensored_model", return_value=None),
                 mock.patch.object(ninfer, "compose", side_effect=fake_compose),
                 mock.patch.object(ninfer, "read_env", return_value=sample_values()),
                 mock.patch.object(

@@ -20,8 +20,9 @@ ROOT = Path(__file__).resolve().parent.parent
 ENV_FILE = ROOT / ".env"
 COMPOSE_FILE = ROOT / "docker-compose.yml"
 EXPECTED_COMMIT = "feaf4dd0983fdaeb2ba4c06eec6da350e644fb3a"
-EXPECTED_MODEL = "qwen3_8_27b_nvfp4.ninfer"
-EXPECTED_SHA = "bb3360522a06e136e0367f5703414d26272b7285c8a6ab6194135c17dbd81b32"
+EXPECTED_MODEL = "qwen3_8_27b_uncensored.ninfer"
+EXPECTED_REFERENCE_SHA = "714565ed29db4415322e9bc13a3464dc1fd8fcc911234740a79af67934e49969"
+EXPECTED_BYTES = 18_210_531_328
 EXPECTED_BASE = "docker.io/nvidia/cuda:13.1.2-runtime-ubuntu24.04"
 TOTAL = 11
 step = 0
@@ -201,6 +202,7 @@ def verify_optional_hermes(
     model_id: str,
     context: str,
     compression: str,
+    compression_threshold: str,
     max_turns: str,
 ) -> None:
     begin("Optional native Hermes config")
@@ -224,6 +226,8 @@ def verify_optional_hermes(
         "model.supports_vision": "false",
         "providers.ninfer.api": f"http://127.0.0.1:{host_port}/v1",
         "compression.enabled": compression,
+        "compression.threshold": "0.9",
+        "compression.threshold_tokens": compression_threshold,
         "agent.max_turns": max_turns,
         "terminal.backend": "local",
         "terminal.cwd": str((ROOT / "workspace").resolve()),
@@ -288,6 +292,7 @@ def main() -> int:
     kv_capacity = values.get("NINFER_KV_CAPACITY", "")
     concurrency = values.get("NINFER_MAX_CONCURRENCY", "")
     compression = values.get("HERMES_COMPRESSION_ENABLED", "")
+    compression_threshold = values.get("HERMES_COMPRESSION_THRESHOLD_TOKENS", "")
     max_turns = values.get("HERMES_MAX_TURNS", "")
 
     begin("Prerequisites and configuration")
@@ -303,7 +308,11 @@ def main() -> int:
         raise Failure("NInfer concurrency must be from 1 through 8", "compare .env with .env.example")
     if not kv_capacity.isdigit() or not int(context) <= int(kv_capacity) <= int(context) * int(concurrency):
         raise Failure("KV capacity must be between context and context times concurrency", "compare .env with .env.example")
-    if compression not in {"true", "false"} or not max_turns.isdigit():
+    if (
+        compression not in {"true", "false"}
+        or not compression_threshold.isdigit()
+        or not max_turns.isdigit()
+    ):
         raise Failure("Hermes compression or maximum turns is invalid", "compare .env with .env.example")
     passed(f"model={model_id} context={context} KV={kv_capacity} concurrency={concurrency} GPU={gpu}")
 
@@ -362,15 +371,24 @@ def main() -> int:
     if model != EXPECTED_MODEL:
         raise Failure(f"No checksum is registered for {model}")
     model_path = ROOT / "models" / model
-    if not model_path.is_file() or model_path.stat().st_size == 0:
-        raise Failure(f"Missing models/{model}", "python ninfer.py download-model")
+    manifest_path = ROOT / "models" / f"{model}.local-manifest.json"
+    if not model_path.is_file() or not manifest_path.is_file():
+        raise Failure(f"Missing models/{model} or its local manifest", "python ninfer.py prepare-model")
+    if model_path.stat().st_size != EXPECTED_BYTES:
+        raise Failure(f"Model size mismatch: expected {EXPECTED_BYTES:,} bytes")
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise Failure("Local model provenance manifest is invalid") from exc
     checksum = hashlib.sha256()
     with model_path.open("rb") as handle:
         for chunk in iter(lambda: handle.read(8 * 1024 * 1024), b""):
             checksum.update(chunk)
-    if checksum.hexdigest() != EXPECTED_SHA:
-        raise Failure("Model checksum mismatch", "python ninfer.py download-model")
-    passed("Qwen3.8-27B NVFP4 checksum matches")
+    actual_sha = checksum.hexdigest()
+    if actual_sha != manifest.get("sha256"):
+        raise Failure("Model checksum does not match its local manifest", "python ninfer.py prepare-model")
+    reference = "matches published reference" if actual_sha == EXPECTED_REFERENCE_SHA else "locally recorded GPU build"
+    passed(f"Qwen3.8-27B Uncensored checksum matches ({reference})")
 
     begin("NInfer container health")
     ninfer_id, health = container_health("ninfer")
@@ -420,6 +438,7 @@ def main() -> int:
         model_id=model_id,
         context=context,
         compression=compression,
+        compression_threshold=compression_threshold,
         max_turns=max_turns,
     )
 

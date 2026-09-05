@@ -1,134 +1,141 @@
 # Models
 
-This project is tested with one exact NInfer artifact. Model weights are
-external runtime data: they are never committed and are not baked into the
-NInfer image.
+This project is tested with one locally built NInfer artifact. Model weights,
+source checkpoints, conversion output, and local provenance manifests are
+runtime data: Git ignores them and they are never baked into the NInfer image.
 
-## Tested artifact
+## Selected model
 
 | Field | Value |
 | --- | --- |
-| Hugging Face repository | `neroued/Qwen3.8-27B-nvfp4-NInfer` |
-| Repository revision | `204e3d92c30d9d05f3300d2f52e443ad1edf6ddf` |
-| Filename | `qwen3_8_27b_nvfp4.ninfer` |
-| Size | 21,492,695,040 bytes (20.02 GiB) |
-| SHA-256 | `bb3360522a06e136e0367f5703414d26272b7285c8a6ab6194135c17dbd81b32` |
-| Artifact container | NInfer version 2 |
-| Native model ID | `qwen3.8-27b` |
-| Weights ID | `nvfp4` |
+| Source repository | `JonathanColetti/Qwen3.8-27B-Uncensored` |
+| Source revision | `5bb7aa90f0efef548e87005b1fb7658e522b6b7f` |
+| Base architecture | Qwen3.8-27B / Qwen3.5-family multimodal |
+| Source precision | BF16, approximately 55 GB |
+| Output filename | `qwen3_8_27b_uncensored.ninfer` |
+| Output size | 18,210,531,328 bytes (approximately 16.96 GiB) |
+| Conversion recipe | NInfer `qwen3_8_27b-v1` groupwise-int |
+| Converter commit | `b2b96bae4dd88f95b9ea8126d68fae3b88caa374` |
+| Reference SHA-256 | `714565ed29db4415322e9bc13a3464dc1fd8fcc911234740a79af67934e49969` |
 | NInfer target key | `qwen3_8_27b` |
 | Deployment alias | `qwen-local` |
 
-The artifact is a registered mixed NVFP4/FP8 Qwen3.8-27B profile. It is not a
-GGUF file, Safetensors distribution, or generic Transformers checkpoint. It
-contains the weights and frontend resources NInfer needs at runtime.
+The source is a Transformers/Safetensors checkpoint, not a GGUF or `.ninfer`
+file. NInfer cannot serve it directly. The project follows the public
+[`ninfer-qwen-uncensored` recipe](https://github.com/j842/ninfer-qwen-uncensored/blob/main/models/qwen3.8-27b-uncensored.md)
+to create the self-contained artifact locally. The converted file contains the
+text weights, tokenizer/chat-template frontend, MTP proposal head, and vision
+resources.
 
-The deployment is text-only. Although the artifact contains vision resources,
-NInfer does not start with vision enabled and the Hermes provider declares
-`supports_vision: false`. This avoids additional fixed allocations on a 32 GiB
-card.
+The first reviewed runtime profile is text-only. Compose does not pass
+`--vision`, and Hermes records `supports_vision: false`. This keeps the model
+swap separate from a vision and maximum-context experiment.
 
-## Download through setup
+## What “uncensored” means here
 
-The normal first run shows the exact artifact and approximately 20.02 GiB size,
-then asks before transferring data:
+The publisher used Heretic to reduce the model's refusal behavior. It was not
+fine-tuned on new data. The published checkpoint is the most aggressive point
+on the reported refusal/KL tradeoff: 12 refusals on 100 held-out harmful
+prompts, compared with 98 for the base model, and a first-token KL divergence
+of 0.1191.
+
+Those numbers do not measure benign over-refusal, agent reliability, or
+filesystem safety. The publisher's four 0-shot capability checks average about
+0.5 points below the base model, within or near their reported standard error,
+but no code, math, generative, multilingual, vision, or MTP evaluation was
+performed. Read the
+[source model card](https://huggingface.co/JonathanColetti/Qwen3.8-27B-Uncensored)
+before relying on it for sensitive work.
+
+The model may follow instructions the base model would refuse. Do not expose it
+to untrusted users or a public endpoint without an independently designed
+safety layer. Hermes command approvals, limited direct-write roots, OS account
+boundaries, and backups remain separate controls.
+
+## Reproducible local build
+
+The normal command is:
 
 ```text
 python ninfer.py setup
 ```
 
-Answering no exits cleanly before the model download and before NInfer or
-Hermes setup continues. Answering yes uses the isolated downloader workflow,
-supports resumption, and verifies the final SHA-256 before the artifact is
-accepted.
-
-The acquisition step is independently rerunnable:
+Setup states the transfer and disk requirements, then asks before beginning.
+To prepare only the model:
 
 ```text
-python ninfer.py download-model
+python ninfer.py prepare-model
 ```
 
-An existing complete file is verified rather than downloaded again. Explicitly
-approved automation can use:
+`download-model` remains a compatibility alias, but the operation now downloads
+source weights and builds an artifact rather than downloading a finished one.
 
-```text
-python ninfer.py download-model --yes
-```
+The build has two isolated stages:
 
-Do not use that bypass in ordinary CI. Public runners should not acquire the
-large artifact.
+1. `model-fetcher` has network access and no GPU. It downloads the exact source
+   and official frontend revisions, validates six frontend SHA-256 pins, and
+   checksum-verifies the pinned NInfer converter archive.
+2. `model-converter` has the selected GPU and no network. It uses a committed uv
+   lock, runs the groupwise-int converter, validates the conversion report and
+   exact output size, then atomically promotes the artifact.
 
-## Pinned acquisition identity
+No step invokes pip. The host runs Python and Docker Compose only; Bash inside a
+long-running host environment, PowerShell scripts, WSL commands, a host Hugging
+Face CLI, and a host virtual environment are not required.
 
-The downloader fetches `qwen3_8_27b_nvfp4.ninfer` from
-`neroued/Qwen3.8-27B-nvfp4-NInfer` at revision
-`204e3d92c30d9d05f3300d2f52e443ad1edf6ddf`, then requires the SHA-256 above.
-It runs `huggingface-hub` through a pinned `uv` tool inside the one-shot
-Compose utility. No host Hugging Face CLI, virtual environment, `pip`, Bash,
-or PowerShell setup is required.
+The checkpoint download is resumable. A failed conversion leaves its incomplete
+file under a known temporary name and never selects it for NInfer.
 
-The default project values are:
+## Checksums and provenance
+
+The conversion recipe publishes the reference SHA-256 shown above, but also
+warns that low-bit rounding can produce different bytes on another GPU or
+PyTorch/CUDA build. Consequently, setup:
+
+- records whether the build matches the reference;
+- always records the actual local SHA-256 in
+  `models/qwen3_8_27b_uncensored.ninfer.local-manifest.json`;
+- requires subsequent verification to match that local manifest;
+- validates the source revisions, recipe identity, conversion report, and exact
+  byte size independently.
+
+Do not replace the local manifest after a checksum failure. Rebuild the artifact
+from the pinned inputs or restore a known-good copy.
+
+## Runtime defaults
 
 ```dotenv
-NINFER_MODEL_FILE=qwen3_8_27b_nvfp4.ninfer
+NINFER_MODEL_FILE=qwen3_8_27b_uncensored.ninfer
 NINFER_MODEL_ID=qwen-local
-NINFER_CONTEXT_LENGTH=65536
-NINFER_KV_CAPACITY=65536
+NINFER_CONTEXT_LENGTH=131072
+NINFER_KV_CAPACITY=131072
 NINFER_MAX_CONCURRENCY=1
+HERMES_COMPRESSION_THRESHOLD_TOKENS=100000
 ```
 
-## Storage and Git safety
+The alias intentionally remains `qwen-local`, allowing existing Hermes sessions
+to continue after the underlying model changes. Their history is preserved, but
+future answers will of course be generated by different weights.
 
-Compose mounts `models/` read-only at `/models`. The artifact remains outside
-image layers, so rebuilding or removing the NInfer image does not duplicate or
-delete it.
+INT8 KV, a 1,024-token prefill chunk, and MTP with three draft tokens remain
+enabled. The public recipe describes 262K context, concurrency four, and vision,
+but does not publish performance results for this artifact. Those settings are
+not the default until separately tested on the target 5090.
 
-Repository ignore rules cover common model formats. Before a public push,
-still confirm no artifact is staged:
+## Safe cutover and rollback
 
-```text
-git status --short
-git ls-files *.ninfer *.safetensors *.gguf *.bin
-```
+The old `qwen3_8_27b_nvfp4.ninfer` file is not deleted. Setup builds and verifies
+the new model first, backs up `.env`, changes the selected filename, and requires
+a healthy server plus an authenticated generation. If the new model fails that
+test and the previous artifact is available, setup restores the previous `.env`
+and restarts the former model.
 
-Deleting the NInfer container or running `python ninfer.py down` is not model
-cleanup. Delete the known host artifact only when model removal is intentional.
+Build caches remain under ignored `model-build/` for resumption. Remove them or
+the former model only as a separate, explicit storage-cleanup decision.
 
-## Model IDs must match
+## License
 
-NInfer advertises `NINFER_MODEL_ID` through `/v1/models`. Stock Hermes must
-request the same alias. A mismatch can leave NInfer healthy while every Hermes
-request receives a model-not-found response.
-
-After changing the alias or context:
-
-```text
-python ninfer.py down
-python ninfer.py up
-python ninfer.py install-hermes
-python ninfer.py verify
-```
-
-The Hermes helper updates the named native provider at the host endpoint
-`http://127.0.0.1:${NINFER_HOST_PORT}/v1` and preserves unrelated Hermes state.
-
-## Replacing the artifact
-
-NInfer accepts registered `.ninfer` identities. Replacing the default is not a
-generic filename or format conversion.
-
-Before selecting another artifact:
-
-1. Confirm the pinned NInfer revision registers it.
-2. Read its model card and minimum-runtime requirement.
-3. Record the exact repository revision, byte size, and SHA-256.
-4. Confirm its VRAM profile supports the desired context and concurrency on
-   one RTX 5090.
-5. Update the downloader's reviewed metadata and project defaults together.
-6. Review startup flags; vision or another speculative backend is not enabled
-   by changing a filename.
-7. Recreate NInfer, reapply native Hermes configuration, and run full
-   verification.
-
-Treat a different artifact as a new compatibility profile. Do not call it
-tested until local GPU verification and a controlled benchmark have run.
+The source model identifies itself as Apache-2.0, inherited from Qwen. The base
+model's license, acceptable-use terms, and applicable law still govern use of
+the derivative. This repository distributes orchestration and build metadata,
+not the model weights or converted artifact.

@@ -1,11 +1,12 @@
 services:
-  model-downloader:
+  model-fetcher:
     profiles: [tools]
     build:
-      context: ./model-downloader
+      context: ./model-builder
+      dockerfile: fetcher/Dockerfile
     init: true
     restart: "no"
-    user: "${MODEL_DOWNLOAD_UID:-1000}:${MODEL_DOWNLOAD_GID:-1000}"
+    user: "${MODEL_BUILD_UID:-1000}:${MODEL_BUILD_GID:-1000}"
     read_only: true
     security_opt:
       - no-new-privileges:true
@@ -13,12 +14,42 @@ services:
       - ALL
     environment:
       HOME: /tmp
-      HF_HOME: /models/.cache/huggingface
+      HF_HOME: /work/.cache/huggingface
       HF_TOKEN: ${HF_TOKEN:-}
     volumes:
-      - ./models:/models
+      - ./model-build:/work
     tmpfs:
       - /tmp:size=512m,mode=1777
+
+  model-converter:
+    profiles: [tools]
+    build:
+      context: ./model-builder
+      dockerfile: converter/Dockerfile
+    init: true
+    restart: "no"
+    user: "${MODEL_BUILD_UID:-1000}:${MODEL_BUILD_GID:-1000}"
+    read_only: true
+    network_mode: none
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    environment:
+      HOME: /tmp
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["${NINFER_GPU_DEVICE:-0}"]
+              capabilities: [gpu]
+    volumes:
+      - ./model-build:/work:ro
+      - ./models:/models
+    tmpfs:
+      - /tmp:size=4g,mode=1777
+    shm_size: 2gb
 
   ninfer:
     build:
@@ -29,7 +60,7 @@ services:
         org.opencontainers.image.base.name: docker.io/nvidia/cuda:13.1.2-runtime-ubuntu24.04
     command:
       - ninfer-serve
-      - /models/${NINFER_MODEL_FILE:-qwen3_8_27b_nvfp4.ninfer}
+      - /models/${NINFER_MODEL_FILE:-qwen3_8_27b_uncensored.ninfer}
       - --host
       - 0.0.0.0
       - --port
@@ -39,9 +70,9 @@ services:
       - --model-id
       - ${NINFER_MODEL_ID:-qwen-local}
       - --max-context
-      - ${NINFER_CONTEXT_LENGTH:-65536}
+      - ${NINFER_CONTEXT_LENGTH:-131072}
       - --kv-capacity
-      - ${NINFER_KV_CAPACITY:-65536}
+      - ${NINFER_KV_CAPACITY:-131072}
       - --max-concurrency
       - ${NINFER_MAX_CONCURRENCY:-1}
       - --prefill-chunk

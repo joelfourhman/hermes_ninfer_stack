@@ -48,7 +48,8 @@ jobs:
           scripts/benchmark.py
           scripts/validate.py
           scripts/verify.py
-          model-downloader/download_model.py
+          model-builder/fetcher/fetch_sources.py
+          model-builder/converter/convert_model.py
           tests/test_ninfer.py
 
       - name: Run Python unit tests
@@ -59,6 +60,7 @@ jobs:
         shell: bash
         run: |
           python3 ninfer.py --help
+          python3 ninfer.py prepare-model --help
           python3 ninfer.py install-hermes --help
 
       - name: Validate repository invariants
@@ -71,11 +73,11 @@ jobs:
           docker compose --env-file .env.ci config --quiet
           docker compose --env-file .env.ci --profile tools config --quiet
 
-      - name: Build one-shot model downloader
+      - name: Build one-shot model fetcher
         shell: bash
         run: >-
           docker compose --env-file .env.ci
-          --profile tools build model-downloader
+          --profile tools build model-fetcher
 
   windows-host-helper:
     name: Test Python helper on Windows
@@ -102,4 +104,5 @@ jobs:
         shell: cmd
         run: |
           python ninfer.py --help
+          python ninfer.py prepare-model --help
           python ninfer.py install-hermes --help

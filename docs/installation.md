@@ -24,15 +24,16 @@ You need:
 - an NVIDIA GeForce RTX 5090;
 - a supported 64-bit Windows installation;
 - a working internet connection for the first setup;
-- at least 24 GiB free on the drive containing this repository for the 20.02
-  GiB model;
+- at least 90 GiB free on the drive containing this repository while the
+  approximately 55 GiB source checkpoint is converted;
 - additional free space in Docker Desktop's storage for the Linux image and
   temporary build files.
 
-The exact Docker storage use varies, so 24 GiB is not the total free-space
-requirement. The PC should also have enough normal system memory to run Docker
-Desktop, NInfer, and Hermes together. Close games and other GPU-heavy programs
-before setup so NInfer can use the 5090's memory.
+The final NInfer artifact is approximately 16.96 GiB, but the source checkpoint
+and resumable build cache remain until you explicitly remove them. Docker image
+storage is separate. Close games and other GPU-heavy programs before setup so
+the converter can obtain approximately 11 GiB of VRAM and NInfer can later load
+the complete model.
 
 ## 1. Install the four prerequisites
 
@@ -115,29 +116,33 @@ Linux-container mode. If Docker Desktop is installed but stopped, setup opens
 it and waits for its engine. If anything is missing, it gives a plain-English
 fix and stops before the large download.
 
-### Model download prompt
+### Model download and build prompt
 
 The first question is:
 
 ```text
-Download the model now? [Y/n]:
+Download and build the uncensored model now? [Y/n]:
 ```
 
-Press Enter to accept the default yes. Nothing is downloaded until you consent
-here. The download is approximately 20.02 GiB. Setup then verifies that every
-downloaded byte matches the expected model before using it.
+Press Enter to accept the default yes. Nothing is downloaded until you consent.
+The pinned BF16 source is approximately 55 GiB, and conversion needs at least
+90 GiB of free working space. The final `.ninfer` artifact is approximately
+16.96 GiB.
 
-The downloader uses uv inside a temporary Docker container. It does not use
-pip and does not install uv, Hugging Face tools, or Python packages on Windows.
-No Hugging Face account or token is required for this public model.
+The networked fetcher and network-disabled GPU converter use committed uv locks
+inside temporary Docker containers. They do not use pip and do not install uv,
+Hugging Face tools, or Python packages on Windows. No Hugging Face account or
+token is required for this public model.
 
-After the download, Docker builds NInfer and loads the model. The first build
-and first model load can take time and can produce a lot of technical-looking
-output. Leave Docker Desktop and Command Prompt open. Setup does not continue
-to Hermes until NInfer produces a short answer through the authenticated API.
+After downloading, setup temporarily stops a running NInfer service so the
+converter can use the GPU. It creates a groupwise-int artifact, validates its
+conversion report, records its local checksum, and only then selects it. The
+old model file remains available. Leave Docker Desktop and Command Prompt open.
+Setup does not continue to Hermes until the new model produces a short answer
+through the authenticated API.
 
 If you type `n` at this first prompt, setup stops cleanly. Run
-`python ninfer.py setup` again when you are ready for the download.
+`python ninfer.py setup` again when you are ready for the build.
 
 ### Hermes Desktop prompt
 
@@ -193,7 +198,7 @@ read
 
 ## If the Hermes window or setup window was closed
 
-The model does not need to be downloaded again. Open Command Prompt in the
+The completed model does not need to be built again. Open Command Prompt in the
 `hermes-ninfer-stack` directory and run:
 
 ```text
@@ -218,7 +223,7 @@ After Hermes is configured, close Hermes and run:
 python ninfer.py verify
 ```
 
-This checks the downloaded model, RTX 5090 access, NInfer authentication, a
+This checks the local model checksum and provenance, RTX 5090 access, NInfer authentication, a
 real generated answer, Hermes's selected provider, and the complete
 Hermes-to-NInfer route. Initial model loading can take several minutes. To see
 NInfer's current output while diagnosing a wait, run:
@@ -232,7 +237,7 @@ not the NInfer container.
 
 ## Using Hermes after restarting Windows
 
-The 20.02 GiB model remains downloaded. You do not repeat setup.
+The approximately 16.96 GiB model remains on disk. You do not repeat setup.
 
 1. Open Command Prompt in the `hermes-ninfer-stack` directory.
 2. Start NInfer:
@@ -260,6 +265,11 @@ Hermes Desktop runs as your signed-in Windows user. That means it can read or
 change the same files that you can, without needing an Administrator prompt.
 UAC does not protect your normal user files from another program running as
 you.
+
+The selected model has substantially reduced refusal behavior. That is a model
+behavior change, not a permission or safety feature. It can attempt commands or
+requests the base model might decline, so keep manual approvals enabled and do
+not treat a confident answer as evidence that an action is safe.
 
 For a safer beginning:
 
@@ -315,6 +325,6 @@ installation.
   separately whether to keep its user data.
 - Run `python ninfer.py down` to stop NInfer.
 - Docker image cleanup and deletion of `models/` are separate, explicit
-  actions. Setup never deletes the downloaded model.
+  actions. Setup never deletes the built model, old rollback model, or source cache.
 
 For other failures, continue with [Troubleshooting](troubleshooting.md).

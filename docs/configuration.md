@@ -20,16 +20,17 @@ supported configuration command.
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `NINFER_API_KEY` | generated | Bearer secret required by NInfer and stored in the native Hermes secret file |
-| `HF_TOKEN` | empty | Optional Hugging Face token used only by the explicit downloader |
-| `MODEL_DOWNLOAD_UID` / `MODEL_DOWNLOAD_GID` | `1000` | Utility-container identity; setup uses the creating user's IDs on POSIX hosts |
+| `HF_TOKEN` | empty | Optional Hugging Face token used only by the explicit model fetcher |
+| `MODEL_BUILD_UID` / `MODEL_BUILD_GID` | `1000` | Build-container identity; setup uses the creating user's IDs on POSIX hosts |
 | `NINFER_HOST_PORT` | `8080` | Host-loopback port mapped to NInfer's container port 8080 |
 | `NINFER_GPU_DEVICE` | detected (`0` normally) | NVIDIA device reserved for NInfer; fresh setup saves the detected 5090 index |
-| `NINFER_MODEL_FILE` | `qwen3_8_27b_nvfp4.ninfer` | Filename beneath `models/` mounted read-only |
+| `NINFER_MODEL_FILE` | `qwen3_8_27b_uncensored.ninfer` | Locally built filename beneath `models/` mounted read-only |
 | `NINFER_MODEL_ID` | `qwen-local` | Public API alias selected in Hermes |
-| `NINFER_CONTEXT_LENGTH` | `65536` | Maximum sequence length for one request |
-| `NINFER_KV_CAPACITY` | `65536` | Total resident KV-token allocation |
+| `NINFER_CONTEXT_LENGTH` | `131072` | Maximum sequence length for one request |
+| `NINFER_KV_CAPACITY` | `131072` | Total resident KV-token allocation |
 | `NINFER_MAX_CONCURRENCY` | `1` | Maximum simultaneous requests |
 | `HERMES_COMPRESSION_ENABLED` | `true` | Compression setting applied to native Hermes |
+| `HERMES_COMPRESSION_THRESHOLD_TOKENS` | `100000` | Absolute compression cap that preserves request headroom |
 | `HERMES_MAX_TURNS` | `40` | Agent turn cap applied to native Hermes |
 
 `.env.example` deliberately leaves `NINFER_API_KEY` empty. Setup generates a
@@ -87,17 +88,19 @@ providers:
     default_model: qwen-local
     models:
       qwen-local:
-        context_length: 65536
+        context_length: 131072
         supports_vision: false
 
 model:
   provider: custom:ninfer
   default: qwen-local
-  context_length: 65536
+  context_length: 131072
   supports_vision: false
 
 compression:
   enabled: true
+  threshold: 0.9
+  threshold_tokens: 100000
 
 agent:
   max_turns: 40
@@ -161,7 +164,8 @@ The reviewed profile includes:
 - MTP speculation with three draft tokens;
 - the optimized draft head;
 - one active request;
-- explicit 65,536-token context and KV capacity.
+- explicit 131,072-token context and KV capacity;
+- Hermes compression capped at 100,000 tokens.
 
 These are a group, not isolated tuning switches. Increasing context,
 concurrency, or KV capacity can exhaust VRAM even when the model loads. Changing
@@ -170,10 +174,11 @@ the complete resolved startup profile for any benchmark comparison.
 
 ## Model artifact setting
 
-`NINFER_MODEL_FILE` must name the registered artifact provided by this
-repository's downloader. Compose mounts `./models` read-only at `/models`.
-Using an arbitrary absolute path would make the setup machine-specific and
-bypass the reviewed checksum mapping.
+`NINFER_MODEL_FILE` must name the artifact produced by the pinned local build.
+Compose mounts `./models` read-only at `/models` for the long-running server.
+The short-lived, network-disabled converter alone receives a read/write model
+mount. Using an arbitrary absolute path would make the setup machine-specific
+and bypass the reviewed local provenance manifest.
 
 Model bytes remain outside image layers. Building or removing the NInfer image
 does not remove them.

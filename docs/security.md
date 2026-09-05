@@ -17,7 +17,8 @@ modifying or deleting files the current user can modify or delete.
 | --- | --- | --- | --- | --- |
 | Native Hermes Desktop/runtime | Everything allowed to the current user | NInfer loopback endpoint and any egress allowed to the user | Standard Hermes config, secrets, sessions, memory, skills, logs | Prompt injection, unsafe tools, plugins, or compromised runtime acting with user authority |
 | NInfer container | Read-only model directory and GPU device | Authenticated loopback-published API; ordinary outbound bridge access | No application state in Compose | Native parser/runtime, outbound access, or GPU-driver compromise |
-| Model downloader | Read/write `models/` during explicit acquisition | Temporary outbound Hugging Face access | Partial download/cache beneath `models/` | Supply-chain input or corrupted partial file; final artifact is checksum-verified |
+| Model fetcher | Read/write ignored `model-build/`; no GPU | Temporary outbound Hugging Face and pinned GitHub access | Resumable checkpoint and converter cache | Supply-chain input, disk exhaustion, or corrupted partial download |
+| Model converter | Read-only `model-build/`, read/write `models/`, selected GPU | None at runtime | Partial artifact, conversion report, local checksum manifest | Malicious input or converter exploiting native/PyTorch/GPU code |
 | Docker daemon | Container, image, network, volume, and GPU control | Host-dependent | Docker-managed state | Docker access is effectively administrative for this deployment |
 
 NInfer is the only long-running container. No Docker socket, broad host path,
@@ -28,6 +29,19 @@ loopback interface; therefore the container is not an egress sandbox.
 
 There is no active SSH sandbox. Historical documentation describing one is
 retained only in the superseded ADR.
+
+## Reduced-refusal model behavior
+
+The selected source model was modified to reduce refusals. Its publisher
+measured 12 refusals on 100 held-out harmful prompts versus 98 for the base
+model, not zero refusals, and explicitly did not evaluate code, math,
+generative, vision, or MTP behavior. This is neither a guarantee of usefulness
+nor a security control.
+
+Assume it may attempt actions a safety-trained model would decline. Keep manual
+approvals, use the smallest practical toolset, and independently review commands
+that delete, overwrite, install, transmit, or establish persistence. The NInfer
+API boundary limits network exposure; it does not make model output safe.
 
 ## NInfer endpoint
 

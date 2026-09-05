@@ -10,8 +10,9 @@ The desired first-run experience is one command:
 python ninfer.py setup
 ```
 
-That command asks before the large model download, brings NInfer to a healthy
-state, then offers the official Desktop installation and configures it.
+That command asks before the large source-model download and local conversion,
+brings NInfer to a healthy state, then offers the official Desktop installation
+and configures it.
 
 ## Non-goals
 
@@ -36,9 +37,18 @@ build and avoids maintaining a downstream Desktop package.
 
 ### Consent before expensive acquisition
 
-The model is roughly 20.02 GiB. Setup prints the transfer and space requirement
-before the downloader runs. Normal builds, CI, `up`, and Hermes installation do
-not implicitly acquire the model.
+The source checkpoint is approximately 55 GiB, requires approximately 90 GiB of
+temporary working space, and produces a roughly 16.96 GiB artifact. Setup prints
+those requirements before the uv-managed fetcher runs. Normal runtime builds,
+CI, `up`, and Hermes installation do not implicitly acquire the model.
+
+### Separate network and GPU build authority
+
+The one-shot fetcher has network access but no GPU or model-output mount. The
+one-shot converter has the selected GPU and model-output mount but no runtime
+network. Pinned input revisions and frontend hashes cross between them through
+ignored `model-build/` data. The long-running NInfer server sees only the final
+model directory read-only.
 
 ### Healthy inference before client configuration
 
@@ -74,11 +84,13 @@ other boundary outside this project's default design.
 flowchart TD
     Start[python ninfer.py setup] --> Init[Initialize pins and .env]
     Init --> Present{Model present and valid?}
-    Present -->|No| Consent{Owner approves download?}
+    Present -->|No| Consent{Owner approves download and build?}
     Consent -->|No| Pause[Exit cleanly; rerun later]
-    Consent -->|Yes| Download[Download and checksum]
+    Consent -->|Yes| Download[Fetch and verify pinned inputs]
+    Download --> Convert[Offline GPU conversion]
+    Convert --> Promote[Verify and atomically promote]
     Present -->|Yes| Build
-    Download --> Build[Build NInfer]
+    Promote --> Build[Build NInfer]
     Build --> Healthy[Start and wait for health]
     Healthy --> Hermes{Stock Hermes installed?}
     Hermes -->|No| Official[Open official Desktop installer]
@@ -89,8 +101,9 @@ flowchart TD
 ```
 
 Every expensive or externally owned step is either explicit or resumable.
-Setup never replaces an existing model, bearer key, or unrelated Hermes
-configuration merely because it was rerun.
+Setup never overwrites an unverified model, deletes the rollback artifact,
+rotates the bearer key, or replaces unrelated Hermes configuration merely
+because it was rerun.
 
 ## Runtime boundaries
 
@@ -111,7 +124,7 @@ The verifier checks boundaries in order:
 
 1. configuration and pins;
 2. Docker and GPU visibility;
-3. model bytes and checksum;
+3. model size, conversion provenance, and local checksum;
 4. NInfer image and health;
 5. authentication and model discovery;
 6. direct generation;
@@ -122,8 +135,8 @@ is a missing model or unhealthy server.
 
 ## Persistence
 
-The downloaded model and project `.env` remain on the host across container
-recreation. Native Hermes state remains in the standard upstream-managed user
+The built model, resumable source cache, and project `.env` remain on the host
+across container recreation. Native Hermes state remains in the standard upstream-managed user
 directory across NInfer rebuilds. The helper can reconstruct their connection
 from the current project values without owning the rest of Hermes state.
 

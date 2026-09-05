@@ -28,9 +28,14 @@ branch are expected to receive security fixes.
   and a read-only model mount, but no Docker socket or broad host-filesystem
   access. Its normal Docker bridge permits outbound traffic; it is not an
   egress sandbox.
-- **The model downloader is a one-shot utility container.** It writes only to the
-  local model directory. Model revisions and checksums are pinned, but operators
-  should still treat downloaded artifacts as third-party code or data.
+- **Model preparation uses two one-shot utility containers.** The networked
+  fetcher writes only ignored build data and receives no GPU. The converter
+  receives the selected GPU and model output directory but has no runtime
+  network. Inputs, uv dependencies, frontend files, and converter source are
+  pinned; operators should still treat them as third-party code or data.
+- **Reduced refusal behavior is not a safety boundary.** The selected model may
+  attempt requests the base model declines. Manual approvals, OS permissions,
+  narrow tools, and protected backups remain the relevant controls.
 - **Docker remains a privileged trust dependency.** Anyone who controls the
   Docker daemon or can change this repository's Compose files can change the
   container boundary.

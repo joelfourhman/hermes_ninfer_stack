@@ -19,8 +19,12 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Windows, setup starts an installed Docker Desktop application when needed.
 - Automatic RTX 5090 device selection for fresh multi-GPU installations, with
   an early error when an existing `.env` points at another GPU.
-- Pinned Qwen3.8-27B NVFP4 model acquisition with revision and checksum
-  verification through a uv-managed one-shot Compose utility.
+- Pinned, resumable acquisition of Qwen3.8-27B Uncensored BF16 source weights,
+  official frontend resources, and the NInfer converter through a uv-locked,
+  networked one-shot fetcher.
+- Network-disabled GPU conversion into a locally checksummed
+  `qwen3_8_27b_uncensored.ninfer` groupwise-int artifact with atomic promotion
+  and preservation of the previous model for rollback.
 - Layered validation, direct-NInfer verification, and RTX 5090 benchmark helpers.
 
 ### Changed
@@ -33,9 +37,9 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Removed the contradictory internal-network flag so Docker Desktop can
   actually publish that loopback port, and added one automatic network
   recreation when a healthy container has no reachable localhost endpoint.
-- Tuned the single-user interactive profile to 65,536 context tokens, a
-  65,536-token INT8 KV pool, concurrency 1, MTP speculative decoding, and three
-  draft tokens.
+- Tuned the single-user interactive profile to 131,072 context tokens, a
+  131,072-token INT8 KV pool, concurrency 1, MTP speculative decoding, three
+  draft tokens, and Hermes compression at 100,000 tokens.
 - Made `python ninfer.py` the single supported control surface for setup,
   lifecycle, Hermes integration, validation, verification, and benchmarking.
 - Made Enter accept both normal first-run choices, added numbered progress and
@@ -51,7 +55,14 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   compatibility, performance, troubleshooting, and design documentation for the
   native-Hermes boundary.
 - Simplified non-GPU continuous integration around Python validation, Compose
-  rendering, and the one-shot model-downloader image.
+  rendering, and the one-shot model-fetcher image. The large GPU conversion is
+  deliberately excluded from public CI.
+
+### Fixed
+
+- Corrected the converter image's uv executable paths for the pinned
+  `python3.13-trixie-slim` source image and added validation for that build
+  contract.
 
 ### Security
 

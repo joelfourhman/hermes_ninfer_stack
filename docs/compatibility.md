@@ -7,7 +7,8 @@ official installer.
 
 ## Audited host
 
-Audit date: 2026-08-23.
+Original runtime audit: 2026-08-23. Model-swap implementation review:
+2026-09-05.
 
 | Component | Audited value | Evidence scope |
 | --- | --- | --- |
@@ -20,15 +21,20 @@ Audit date: 2026-08-23.
 | Docker Compose | 5.3.0 | Compose query |
 | NInfer CUDA base | CUDA 13.1.2 on Ubuntu 24.04 | Pinned upstream Dockerfile |
 | NInfer source | `feaf4dd0983fdaeb2ba4c06eec6da350e644fb3a` | Clean submodule, image build, and OCI revision-label check |
-| Model | Qwen3.8-27B NVFP4 NInfer v2 artifact | Pinned repository revision and checksum |
-| Model SHA-256 | `bb3360522a06e136e0367f5703414d26272b7285c8a6ab6194135c17dbd81b32` | Registered project metadata and local verification |
+| Model source | `JonathanColetti/Qwen3.8-27B-Uncensored` at `5bb7aa90f0efef548e87005b1fb7658e522b6b7f` | Pinned public BF16 checkpoint |
+| Converter | NInfer `b2b96bae4dd88f95b9ea8126d68fae3b88caa374`, recipe `qwen3_8_27b-v1` | Pinned local conversion input |
+| Model artifact | Qwen3.8-27B Uncensored groupwise-int | Pipeline and invariants reviewed; live conversion pending because Docker Desktop failed before engine startup on 2026-09-05 |
 | Native client target | Official Hermes Desktop for Windows | Upstream installer/config documentation; native route not rerun during this refactor |
 
-The NInfer image built successfully and saw the RTX 5090. A later live run with
-the pinned artifact completed the then-current layered inference verifier. The
-new native Hermes route still requires a live rerun after Desktop installation;
-formal throughput evidence is documented separately in
-[Performance](performance.md).
+The NInfer image built successfully and saw the RTX 5090 during the original
+audit. A later live run with the former NVFP4 artifact completed the
+then-current layered inference verifier. Do not transfer that result to the new
+uncensored artifact: its fetcher, converter, Compose configuration, unit tests,
+and static validation were checked on 2026-09-05, but Docker Desktop 4.82.0
+crashed while initializing its own `dockerInference` endpoint before a live
+conversion could begin. The new artifact and native Hermes route therefore
+still require `python ninfer.py verify` after Docker is repaired. Formal
+throughput evidence is documented separately in [Performance](performance.md).
 
 ## Required NInfer envelope
 
@@ -88,7 +94,7 @@ read it and the large model file.
 ## Blackwell-specific pieces
 
 - NInfer's CUDA kernels and build target are `sm_120a`.
-- The mixed NVFP4/FP8 artifact and execution profiles are NInfer-specific.
+- The groupwise-int artifact, MTP proposal head, and execution profile are NInfer-specific.
 - CUDA 13.1.2 build/runtime images follow the NInfer target.
 - Only the NInfer container receives GPU access.
 
@@ -109,17 +115,8 @@ Keep the provider configuration narrow and rerun verification after updates.
 
 ## Reproduce the checks
 
-Collect platform evidence without exposing secrets:
-
-```text
-nvidia-smi
-docker version
-docker compose version
-docker info
-git -C ninfer rev-parse HEAD
-```
-
-Then run:
+Use the project-level Python commands so the user does not have to operate the
+Docker, Git, NVIDIA, or Linux tools directly:
 
 ```text
 python ninfer.py validate

@@ -4,14 +4,14 @@
 
 If `python ninfer.py setup` stops, read its final message first. The setup is
 designed to be rerun safely: it keeps the generated connection key, resumes or
-rechecks the model download, and preserves an existing Hermes installation.
+rechecks the pinned source download, and preserves existing models and Hermes.
 You normally do **not** need to delete anything or start over.
 
 - If Docker is not running, open Docker Desktop, wait until it reports that the
   engine is running, and rerun `python ninfer.py setup`.
-- If the model download was declined or interrupted, rerun
-  `python ninfer.py setup` and approve the download. Partial download data is
-  retained for the downloader to resume.
+- If model preparation was declined or interrupted, rerun
+  `python ninfer.py setup` and approve it. Completed checkpoint shards remain
+  under ignored `model-build/` for the fetcher to reuse.
 - If Windows restarted or the Command Prompt window was closed after NInfer
   finished, run `python ninfer.py setup` again. Completed work is reused.
 - If NInfer works but Hermes installation or onboarding was not completed, run
@@ -22,6 +22,30 @@ You normally do **not** need to delete anything or start over.
 
 Do not post `.env`, the generated NInfer key, or the contents of Hermes's
 secret file when asking for help.
+
+### Docker Desktop crashes before its engine starts
+
+If Docker Desktop itself shows **An unexpected error occurred**, the project
+cannot build or run containers yet. When the error mentions an inaccessible or
+stuck endpoint under `AppData/Local/Docker/run`, including `dockerInference`,
+update Docker Desktop to version 4.89.0 or newer using Docker's official
+Windows installer. Docker documents a Windows fix in 4.89.0 for startup failure
+after an ungraceful shutdown left a stuck socket file.
+
+Quit the error dialog before running the official update. Restart Windows if
+the installer requests it, open Docker Desktop once, and wait for its engine to
+report ready. Then rerun:
+
+```text
+python ninfer.py setup
+```
+
+Do not try to delete the malformed `dockerInference` object directly, and do
+not choose **Reset to factory defaults** merely to fix it. Reports for this bug
+show that ordinary exact-file removal can fail; a factory reset removes
+Docker-managed state. The supported update is less destructive. The model
+source cache and completed model artifact are host files, so setup leaves them
+untouched while Docker is unavailable.
 
 For a more detailed diagnosis, run the layered verifier:
 
@@ -68,10 +92,10 @@ python ninfer.py setup
 Preserve an existing `.env` before replacing it because it can contain the key
 already configured in Hermes. Never post the key in an issue.
 
-## Setup pauses before the model download
+## Setup pauses before the model build
 
-This is expected after declining the explicit transfer prompt. No model is
-downloaded and later stages do not run. Ensure at least 24 GiB is available,
+This is expected after declining the explicit transfer prompt. No source weights
+are downloaded and later stages do not run. Ensure at least 90 GiB is free,
 then rerun:
 
 ```text
@@ -121,19 +145,48 @@ Restore Docker network access or free safe Docker storage, then retry the pinned
 build. Installing global host CUDA packages does not repair dependencies owned
 by the image.
 
+## Source download or conversion was interrupted
+
+Rerun the dedicated operation:
+
+```text
+python ninfer.py prepare-model
+```
+
+Hugging Face downloads resume from `model-build/checkpoint`. A conversion does
+not resume midway; the converter replaces only its known `.partial` output and
+starts that stage again. The previously selected model is not removed.
+
+If setup says the checkpoint or converter cache belongs to another revision,
+move the named directory aside rather than merging different source revisions.
+
 ## Model file is missing or has the wrong checksum
 
 Run the isolated acquisition check again:
 
 ```text
-python ninfer.py download-model
+python ninfer.py prepare-model
 ```
 
-The expected file is `models/qwen3_8_27b_nvfp4.ninfer`; the expected SHA-256 is
-`bb3360522a06e136e0367f5703414d26272b7285c8a6ab6194135c17dbd81b32`.
+The expected file is `models/qwen3_8_27b_uncensored.ninfer`, accompanied by
+`qwen3_8_27b_uncensored.ninfer.local-manifest.json`. The published reference
+SHA-256 is `714565ed29db4415322e9bc13a3464dc1fd8fcc911234740a79af67934e49969`,
+but GPU rounding may produce a functionally equivalent local checksum. The
+manifest must match the actual local file.
 
-Delete only a known incomplete or incorrect artifact. Do not rename a GGUF or
-Safetensors file to `.ninfer`.
+Do not edit the manifest to silence a failure and do not rename a GGUF or
+Safetensors file to `.ninfer`. Rebuild from pinned inputs or restore a known-good
+artifact and its matching manifest.
+
+## Conversion runs out of GPU memory
+
+The converter needs approximately 11 GiB free. Setup stops the current NInfer
+service before conversion, but games, renderers, and other AI software may still
+hold the GPU. Close them and rerun `python ninfer.py prepare-model`. Downloaded
+weights are reused.
+
+If a failed conversion stopped a previously running model, rerunning
+`python ninfer.py up` restores the selected runtime without touching build data.
 
 ## Model load fails despite a correct checksum
 

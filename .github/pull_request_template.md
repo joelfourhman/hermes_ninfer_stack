@@ -13,7 +13,7 @@
 - [ ] `python ninfer.py validate`
 - [ ] `docker compose config --quiet`
 - [ ] Python syntax checks
-- [ ] `docker compose --profile tools build model-downloader`
+- [ ] `docker compose --profile tools build model-fetcher`
 - [ ] Local `python ninfer.py verify` (required only for runtime/GPU changes)
 - [ ] Other focused checks described below
 

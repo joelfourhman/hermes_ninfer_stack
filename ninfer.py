@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -25,15 +26,20 @@ ENV_EXAMPLE = ROOT / ".env.example"
 COMPOSE_FILE = ROOT / "docker-compose.yml"
 NINFER_COMMIT = "feaf4dd0983fdaeb2ba4c06eec6da350e644fb3a"
 NINFER_URL = "https://github.com/Neroued/ninfer.git"
-MODEL_FILE = "qwen3_8_27b_nvfp4.ninfer"
-MODEL_SIZE_GIB = "20.02"
+MODEL_FILE = "qwen3_8_27b_uncensored.ninfer"
+LEGACY_MODEL_FILE = "qwen3_8_27b_nvfp4.ninfer"
+MODEL_SIZE_GIB = "16.96"
+MODEL_SOURCE_GIB = "55"
+MODEL_BUILD_GIB = "90"
+MODEL_EXPECTED_BYTES = 18_210_531_328
+MODEL_MANIFEST_FILE = f"{MODEL_FILE}.local-manifest.json"
 HERMES_DESKTOP_URL = "https://hermes-agent.nousresearch.com/desktop"
 DOCKER_DESKTOP_URL = "https://www.docker.com/products/docker-desktop/"
 DOCKER_ENGINE_URL = "https://docs.docker.com/engine/install/"
 PYTHON_DOWNLOAD_URL = "https://www.python.org/downloads/"
 GIT_DOWNLOAD_URL = "https://git-scm.com/downloads"
 NVIDIA_DRIVER_URL = "https://www.nvidia.com/Download/index.aspx"
-REQUIRED_FREE_BYTES = 24 * 1024**3
+REQUIRED_FREE_BYTES = 90 * 1024**3
 SETUP_COMMAND = "python ninfer.py setup"
 
 
@@ -180,17 +186,26 @@ def check_setup_prerequisites() -> str:
     print(f"Python {sys.version_info.major}.{sys.version_info.minor} is ready.")
 
     model_path = ROOT / "models" / MODEL_FILE
-    if model_path.is_file() and model_path.stat().st_size > 0:
-        print("The local AI model is already present; its checksum will be verified.")
+    manifest_path = ROOT / "models" / MODEL_MANIFEST_FILE
+    if (
+        model_path.is_file()
+        and model_path.stat().st_size == MODEL_EXPECTED_BYTES
+        and manifest_path.is_file()
+    ):
+        print("The locally built AI model is already present; its checksum will be verified.")
     else:
         free = shutil.disk_usage(ROOT).free
         free_gib = free / 1024**3
         if free < REQUIRED_FREE_BYTES:
             raise StackError(
                 f"The drive containing this project has {free_gib:.1f} GiB free; setup needs at "
-                f"least 24 GiB. Free some space, then rerun '{SETUP_COMMAND}'."
+                f"least {MODEL_BUILD_GIB} GiB for the source weights and conversion workspace. "
+                f"Free some space, then rerun '{SETUP_COMMAND}'."
             )
-        print(f"Disk space is ready ({free_gib:.1f} GiB free; 24 GiB required).")
+        print(
+            f"Disk space is ready ({free_gib:.1f} GiB free; "
+            f"{MODEL_BUILD_GIB} GiB required during the model build)."
+        )
 
     if shutil.which("git.exe" if os.name == "nt" else "git") is None:
         raise StackError(
@@ -389,10 +404,10 @@ def merge_env(detected_gpu_device: str | None = None) -> None:
     if detected_gpu_device is not None and not original_values.get("NINFER_GPU_DEVICE"):
         forced["NINFER_GPU_DEVICE"] = detected_gpu_device
     if os.name != "nt" and hasattr(os, "getuid") and hasattr(os, "getgid"):
-        if not original_values.get("MODEL_DOWNLOAD_UID"):
-            forced["MODEL_DOWNLOAD_UID"] = str(os.getuid())
-        if not original_values.get("MODEL_DOWNLOAD_GID"):
-            forced["MODEL_DOWNLOAD_GID"] = str(os.getgid())
+        if not original_values.get("MODEL_BUILD_UID"):
+            forced["MODEL_BUILD_UID"] = str(os.getuid())
+        if not original_values.get("MODEL_BUILD_GID"):
+            forced["MODEL_BUILD_GID"] = str(os.getgid())
     values = {}
     for line in merged:
         if re.match(r"^[A-Z][A-Z0-9_]*=", line):
@@ -418,8 +433,8 @@ def validate_env() -> None:
     values = read_env()
     required = [
         "NINFER_API_KEY",
-        "MODEL_DOWNLOAD_UID",
-        "MODEL_DOWNLOAD_GID",
+        "MODEL_BUILD_UID",
+        "MODEL_BUILD_GID",
         "NINFER_HOST_PORT",
         "NINFER_GPU_DEVICE",
         "NINFER_MODEL_FILE",
@@ -428,6 +443,7 @@ def validate_env() -> None:
         "NINFER_KV_CAPACITY",
         "NINFER_MAX_CONCURRENCY",
         "HERMES_COMPRESSION_ENABLED",
+        "HERMES_COMPRESSION_THRESHOLD_TOKENS",
         "HERMES_MAX_TURNS",
     ]
     missing = [key for key in required if not values.get(key)]
@@ -440,7 +456,7 @@ def validate_env() -> None:
         raise StackError("NINFER_HOST_PORT must be from 1 through 65535")
     if not values["NINFER_GPU_DEVICE"].isdigit():
         raise StackError("NINFER_GPU_DEVICE must be a non-negative integer")
-    for key in ("MODEL_DOWNLOAD_UID", "MODEL_DOWNLOAD_GID"):
+    for key in ("MODEL_BUILD_UID", "MODEL_BUILD_GID"):
         if not values[key].isdigit() or int(values[key]) < 0:
             raise StackError(f"{key} must be a non-negative integer")
     if not re.fullmatch(r"[A-Za-z0-9._-]+\.ninfer", values["NINFER_MODEL_FILE"]):
@@ -459,6 +475,14 @@ def validate_env() -> None:
         raise StackError("NINFER_KV_CAPACITY must be between context and context times concurrency")
     if values["HERMES_COMPRESSION_ENABLED"] not in {"true", "false"}:
         raise StackError("HERMES_COMPRESSION_ENABLED must be true or false")
+    compression_threshold = values["HERMES_COMPRESSION_THRESHOLD_TOKENS"]
+    if (
+        not compression_threshold.isdigit()
+        or not 1024 <= int(compression_threshold) < int(context)
+    ):
+        raise StackError(
+            "HERMES_COMPRESSION_THRESHOLD_TOKENS must be at least 1024 and below context"
+        )
     if not max_turns.isdigit() or not 1 <= int(max_turns) <= 1000:
         raise StackError("HERMES_MAX_TURNS must be from 1 through 1000")
 
@@ -590,10 +614,14 @@ def initialize_local_state(detected_gpu_device: str | None = None) -> None:
 def confirm_model_download() -> bool:
     print()
     print("Hermes needs one local AI model before it can answer you.")
-    print(f"Download: {MODEL_SIZE_GIB} GiB to models/{MODEL_FILE}")
-    print("The file is downloaded and checksum-verified in an isolated utility container.")
-    print("You can interrupt the download and rerun setup later; resumable data is preserved.")
-    answer = input("Download the model now? [Y/n]: ").strip().lower()
+    print(
+        f"Source download: approximately {MODEL_SOURCE_GIB} GiB; "
+        f"temporary workspace: approximately {MODEL_BUILD_GIB} GiB"
+    )
+    print(f"Final local artifact: {MODEL_SIZE_GIB} GiB at models/{MODEL_FILE}")
+    print("Pinned inputs are downloaded with uv in an isolated container, then converted locally.")
+    print("You can interrupt and rerun setup later; completed downloads are preserved.")
+    answer = input("Download and build the uncensored model now? [Y/n]: ").strip().lower()
     return answer in {"", "y", "yes"}
 
 
@@ -603,6 +631,119 @@ def confirm(prompt: str, *, default: bool) -> bool:
     if not answer:
         return default
     return answer in {"y", "yes"}
+
+
+def file_sha256(path: Path) -> str:
+    checksum = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(8 * 1024 * 1024), b""):
+            checksum.update(chunk)
+    return checksum.hexdigest()
+
+
+def require_local_model_artifact() -> dict[str, object]:
+    model_path = ROOT / "models" / MODEL_FILE
+    manifest_path = ROOT / "models" / MODEL_MANIFEST_FILE
+    if not model_path.is_file() or not manifest_path.is_file():
+        raise StackError(
+            f"The locally built {MODEL_FILE} or its provenance manifest is missing. "
+            "Run 'python ninfer.py prepare-model'."
+        )
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise StackError("The local model provenance manifest is invalid") from exc
+    if model_path.stat().st_size != MODEL_EXPECTED_BYTES:
+        raise StackError(
+            f"The local model has {model_path.stat().st_size:,} bytes; "
+            f"expected {MODEL_EXPECTED_BYTES:,}"
+        )
+    actual = file_sha256(model_path)
+    if manifest.get("sha256") != actual:
+        raise StackError(
+            f"The local model checksum is {actual}, but its manifest records "
+            f"{manifest.get('sha256')}"
+        )
+    return manifest
+
+
+def ninfer_is_running() -> bool:
+    result = compose("ps", "--status", "running", "--services", check=False, capture=True)
+    return "ninfer" in {line.strip() for line in result.stdout.splitlines()}
+
+
+def prepare_model(args: argparse.Namespace) -> None:
+    merge_env()
+    validate_env()
+    # Create bind-mount sources as the host user. Letting Docker create them can
+    # leave root-owned directories that the non-root utility containers cannot use.
+    (ROOT / "model-build").mkdir(parents=True, exist_ok=True)
+    (ROOT / "models").mkdir(parents=True, exist_ok=True)
+    model_path = ROOT / "models" / MODEL_FILE
+    if model_path.is_file() and (ROOT / "models" / MODEL_MANIFEST_FILE).is_file():
+        print("The uncensored model artifact already exists; verifying its local checksum...")
+        manifest = require_local_model_artifact()
+        print(f"Verified {MODEL_FILE}: {manifest['sha256']}")
+        return
+    if not args.yes and not confirm_model_download():
+        print("Model preparation cancelled. Existing models and build downloads were preserved.")
+        return
+
+    print("Downloading and verifying the pinned model-build inputs...")
+    compose("--profile", "tools", "run", "--rm", "--build", "model-fetcher")
+    was_running = ninfer_is_running()
+    if was_running:
+        print("Stopping NInfer temporarily so the converter can use the GPU...")
+        compose("stop", "ninfer")
+    try:
+        print("Building the local NInfer artifact. Existing model files will not be overwritten.")
+        compose("--profile", "tools", "run", "--rm", "--build", "model-converter")
+        manifest = require_local_model_artifact()
+        print(f"Model build verified: {manifest['sha256']}")
+    finally:
+        if was_running and not getattr(args, "leave_stopped", False):
+            print("Restarting the previously selected model...")
+            compose("up", "-d", "ninfer")
+
+
+def replace_env_values(replacements: dict[str, str]) -> Path | None:
+    lines = ENV_FILE.read_text(encoding="utf-8").splitlines()
+    current = read_env()
+    if all(current.get(key) == value for key, value in replacements.items()):
+        return None
+    backup = ENV_FILE.with_name(f".env.backup-before-{int(time.time())}")
+    shutil.copy2(ENV_FILE, backup)
+    output: list[str] = []
+    seen: set[str] = set()
+    for line in lines:
+        match = re.match(r"^([A-Z][A-Z0-9_]*)=", line)
+        if match and match.group(1) in replacements:
+            key = match.group(1)
+            if key not in seen:
+                output.append(f"{key}={replacements[key]}")
+                seen.add(key)
+            continue
+        output.append(line)
+    for key, value in replacements.items():
+        if key not in seen:
+            output.append(f"{key}={value}")
+    atomic_write(ENV_FILE, "\n".join(output).rstrip() + "\n")
+    return backup
+
+
+def activate_uncensored_model() -> Path | None:
+    require_local_model_artifact()
+    return replace_env_values(
+        {
+            "NINFER_MODEL_FILE": MODEL_FILE,
+            "NINFER_MODEL_ID": "qwen-local",
+            "NINFER_CONTEXT_LENGTH": "131072",
+            "NINFER_KV_CAPACITY": "131072",
+            "NINFER_MAX_CONCURRENCY": "1",
+            "HERMES_COMPRESSION_ENABLED": "true",
+            "HERMES_COMPRESSION_THRESHOLD_TOKENS": "100000",
+        }
+    )
 
 
 def ninfer_endpoint(values: dict[str, str]) -> str:
@@ -785,6 +926,11 @@ def configure_native_hermes(command: list[str], process_env: dict[str, str], val
         ("model.context_length", context),
         ("model.supports_vision", "false"),
         ("compression.enabled", values["HERMES_COMPRESSION_ENABLED"]),
+        ("compression.threshold", "0.9"),
+        (
+            "compression.threshold_tokens",
+            values["HERMES_COMPRESSION_THRESHOLD_TOKENS"],
+        ),
         ("agent.max_turns", values["HERMES_MAX_TURNS"]),
         ("terminal.backend", "local"),
         ("terminal.cwd", str(workspace)),
@@ -811,6 +957,8 @@ def configure_native_hermes(command: list[str], process_env: dict[str, str], val
         "model.default": model_id,
         "model.context_length": context,
         "model.supports_vision": "false",
+        "compression.threshold": "0.9",
+        "compression.threshold_tokens": values["HERMES_COMPRESSION_THRESHOLD_TOKENS"],
         "terminal.backend": "local",
         "terminal.cwd": str(workspace),
         "approvals.mode": "manual",
@@ -890,6 +1038,7 @@ def install_hermes(args: argparse.Namespace) -> None:
     print(f"  Endpoint: {ninfer_endpoint(values)}")
     print(f"  Model: {values['NINFER_MODEL_ID']}")
     print(f"  Context: {values['NINFER_CONTEXT_LENGTH']} tokens")
+    print(f"  Automatic compression: {values['HERMES_COMPRESSION_THRESHOLD_TOKENS']} tokens")
     print("  Vision: disabled")
     print(f"  Tool starting folder: {ROOT / 'workspace'}")
     print("  File-write guard: workspace and the Hermes profile")
@@ -925,23 +1074,28 @@ def setup(args: argparse.Namespace) -> None:
     stage(2, 5, "Prepare the private local configuration")
     initialize_local_state(detected_gpu_device)
 
-    stage(3, 5, "Download and verify the AI model")
+    stage(3, 5, "Download, build, and verify the AI model")
     model_path = ROOT / "models" / MODEL_FILE
-    if not model_path.is_file() or model_path.stat().st_size == 0:
+    manifest_path = ROOT / "models" / MODEL_MANIFEST_FILE
+    if not (
+        model_path.is_file()
+        and model_path.stat().st_size == MODEL_EXPECTED_BYTES
+        and manifest_path.is_file()
+    ):
         if not confirm_model_download():
-            print(f"Setup paused before downloading. Run '{SETUP_COMMAND}' when ready.")
+            print(f"Setup paused before the model build. Run '{SETUP_COMMAND}' when ready.")
             return
-    # This downloads only after the explicit prompt above. If the artifact is
-    # already present, the utility verifies its checksum instead.
     try:
-        download_model(argparse.Namespace(yes=True))
+        prepare_model(argparse.Namespace(yes=True, leave_stopped=True))
     except StackError as exc:
         raise StackError(
-            "The model step did not finish. Read the downloader message above. If it reported "
-            f"a checksum mismatch, delete only 'models/{MODEL_FILE}' and rerun "
-            f"'{SETUP_COMMAND}'. Otherwise check the internet connection and free disk space, "
-            "then rerun it; resumable download data was kept."
+            "The model build did not finish. Read the message above, check Docker, the internet "
+            "connection, GPU availability, and free disk space, then rerun setup. Downloaded "
+            "source data was preserved for resumption; the previous model was not deleted."
         ) from exc
+
+    env_backup = activate_uncensored_model()
+    validate_env()
 
     stage(4, 5, "Build and start the local AI service")
     print("Building the local AI service. The first build can take several minutes...")
@@ -952,7 +1106,27 @@ def setup(args: argparse.Namespace) -> None:
             f"The local AI service could not be built. Check the internet connection and Docker "
             f"Desktop, then rerun '{SETUP_COMMAND}'."
         ) from exc
-    start_ninfer(read_env())
+    try:
+        start_ninfer(read_env())
+    except StackError as new_model_error:
+        legacy_path = ROOT / "models" / LEGACY_MODEL_FILE
+        if env_backup is not None and legacy_path.is_file():
+            print("The new model did not pass startup. Restoring the previous local profile...")
+            failed_env = ENV_FILE.with_name(f".env.failed-uncensored-{int(time.time())}")
+            shutil.copy2(ENV_FILE, failed_env)
+            atomic_write(ENV_FILE, env_backup.read_text(encoding="utf-8"))
+            try:
+                start_ninfer(read_env())
+            except StackError as rollback_error:
+                raise StackError(
+                    "The new model failed and the previous configuration was restored, but the "
+                    "old service also needs attention. Run 'python ninfer.py logs'."
+                ) from rollback_error
+            raise StackError(
+                "The new model failed its live test. The old model and configuration were "
+                "restored successfully."
+            ) from new_model_error
+        raise
     print("The local AI service is ready.")
 
     stage(5, 5, "Install and connect Hermes Desktop")
@@ -1024,16 +1198,8 @@ def up(_: argparse.Namespace) -> None:
 
 
 def download_model(args: argparse.Namespace) -> None:
-    validate_env()
-    configured_model = read_env().get("NINFER_MODEL_FILE")
-    if configured_model != MODEL_FILE:
-        raise StackError(
-            f"The downloader provides only the tested {MODEL_FILE}; .env selects {configured_model!r}."
-        )
-    command = ["--profile", "tools", "run", "--rm", "--build", "model-downloader"]
-    if args.yes:
-        command.append("--yes")
-    compose(*command)
+    print("'download-model' is retained as an alias for 'prepare-model'.")
+    prepare_model(args)
 
 
 def shell(_: argparse.Namespace) -> None:
@@ -1073,8 +1239,18 @@ def main() -> int:
         help="set up only NInfer without offering Hermes Desktop",
     )
     setup_parser.set_defaults(func=setup)
-    download = sub.add_parser("download-model", help="download with uv inside a Compose utility container")
-    download.add_argument("--yes", action="store_true", help="skip the 20 GiB confirmation")
+    prepare = sub.add_parser(
+        "prepare-model",
+        help="download pinned inputs with uv and build the local NInfer artifact",
+    )
+    prepare.add_argument("--yes", action="store_true", help="skip the model-build confirmation")
+    prepare.set_defaults(func=prepare_model, leave_stopped=False)
+    download = sub.add_parser(
+        "download-model",
+        help="compatibility alias for prepare-model",
+    )
+    download.add_argument("--yes", action="store_true", help="skip the model-build confirmation")
+    download.set_defaults(leave_stopped=False)
     download.set_defaults(func=download_model)
     install = sub.add_parser(
         "install-hermes",
