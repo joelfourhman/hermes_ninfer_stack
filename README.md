@@ -1,45 +1,18 @@
 # NInfer for stock Hermes Desktop on RTX 5090
 
-This project is the shortest supported path from a Windows PC with an RTX 5090
-to a working local Hermes Desktop chat. You do not need to know how AI models,
-CUDA, Docker Compose, or API keys work. Install the four normal prerequisites,
-clone the repository, and run one Python command.
+## Quick start
 
-The setup order is intentional: it gets the local AI model running first and
-then installs and connects Hermes Desktop. When Hermes opens at the end, it has
-a working local model to talk to.
+Install these once with their normal Windows installers:
 
-## Windows quick start for first-time users
+- The latest [NVIDIA driver](https://www.nvidia.com/en-us/drivers/) for your RTX
+  5090. The CUDA Toolkit is not required.
+- [Docker Desktop](https://docs.docker.com/desktop/setup/install/windows-install/)
+  using its recommended Linux-container backend.
+- [Git for Windows](https://git-scm.com/download/win).
+- 64-bit [Python 3.10 or newer](https://www.python.org/downloads/windows/), with
+  Python added to `PATH`.
 
-### 1. Install these once
-
-Use the normal graphical installers. Restart Windows if an installer asks you
-to.
-
-1. Install the latest driver for the RTX 5090 from the
-   [official NVIDIA driver page](https://www.nvidia.com/en-us/drivers/). You do
-   **not** need to install the CUDA Toolkit.
-2. Install [Docker Desktop for Windows](https://docs.docker.com/desktop/setup/install/windows-install/).
-   Keep its recommended Linux-container backend. Open Docker Desktop, accept
-   its terms if appropriate for your use, and then close it if you want. Setup
-   starts it when needed. Docker may manage WSL 2 internally; you never need to
-   open WSL.
-3. Install [Git for Windows](https://git-scm.com/download/win) with its normal
-   defaults.
-4. Install 64-bit [Python for Windows](https://www.python.org/downloads/windows/),
-   version 3.10 or newer. Enable the installer's option to add Python to
-   `PATH` if it offers one.
-
-Setup offers two pinned model profiles. The recommended **stock** profile
-downloads a verified, ready-to-run 20.02 GiB NInfer artifact and needs about
-24 GiB free. The optional **uncensored** profile downloads a verified,
-ready-to-run 16.96 GiB artifact and needs about 21 GiB free. Docker also needs
-separate image space.
-
-### 2. Clone and run the one-command setup
-
-Do not run Command Prompt as Administrator. Press the Windows key, type
-**Command Prompt**, open it, and paste these three lines:
+Open a normal, non-administrator Command Prompt and run:
 
 ```text
 git clone https://github.com/joelfourhman/hermes_ninfer_stack.git hermes-ninfer-stack
@@ -47,31 +20,16 @@ cd hermes-ninfer-stack
 python ninfer.py setup
 ```
 
-Then follow these exact prompts:
+At the prompts:
 
-1. At the model menu, press Enter for **Stock Qwen3.8-27B (recommended)**, or
-   enter `2` for **Qwen3.8-27B Uncensored**. Setup explains the storage and
-   behavior tradeoff before anything large is downloaded.
-2. Setup checks Python, Git, disk space, the RTX 5090, and Docker. If Docker
-   Desktop is installed but stopped, setup opens it and waits for it.
-3. At the model download prompt, press Enter. Leave Command Prompt open while
-   the selected artifact is downloaded, verified, and loaded.
-   Interrupted downloads are reusable, so rerunning setup does not start over.
-   Setup requires a short authenticated test answer before continuing.
-4. At **Install and configure stock Hermes Desktop now? [Y/n]**, just press
-   Enter. The default answer is yes.
-5. The official Hermes Desktop page opens. Download the Windows installer from
-   that page and complete its normal per-user installation.
-6. Launch Hermes once if the installer does not launch it. If Hermes asks you
-   to choose an AI provider, select **Choose provider later**. You do not need
-   a Nous Portal account or a cloud-provider API key for this local setup.
-7. Finish the first-launch screens, return to the still-open Command Prompt,
-   and press Enter when the helper asks.
-8. After it configures Hermes, the helper asks you to close Hermes and press
-   Enter once more. It then reopens Hermes automatically when possible.
-9. Wait for **SETUP COMPLETE**, then begin a new chat in Hermes. Before
-   allowing file or command actions, read the security warning below: native
-   Hermes has your normal user access.
+1. Press Enter to choose the recommended stock model.
+2. Press Enter to approve its model download.
+3. Press Enter to install and configure stock Hermes Desktop.
+4. Complete the official Hermes installer when its page opens. If Hermes asks
+   for a provider, choose **Choose provider later**, finish first launch, and
+   return to Command Prompt.
+5. Follow the remaining prompts until **SETUP COMPLETE**, then start a new
+   Hermes chat.
 
 There is no project username or password, and you do not need a Hugging Face
 account. The helper creates the private local connection key and gives it to
@@ -86,8 +44,21 @@ python ninfer.py install-hermes
 
 The helper starts Docker Desktop and the configured model service if needed.
 
-For a click-by-click walkthrough and common first-run problems, see the
-[beginner installation guide](docs/installation.md).
+Setup is safe to rerun after an interruption. Downloads resume when possible,
+and existing model files are preserved. For alternate models, storage needs,
+the complete prompt walkthrough, and common first-run problems, see the
+[installation guide](docs/installation.md).
+
+## Overview
+
+This project is the shortest supported path from a Windows PC with an RTX 5090
+to a working local Hermes Desktop chat. You do not need to know how AI models,
+CUDA, Docker Compose, or API keys work. Install the four normal prerequisites,
+clone the repository, and run one Python command.
+
+The setup order is intentional: it gets the local AI model running first and
+then installs and connects Hermes Desktop. When Hermes opens at the end, it has
+a working local model to talk to.
 
 ## What is installed
 
@@ -286,7 +257,8 @@ checkpoint caches. Vision remains disabled. Switch safely with
 answer test, rolls back on failure, and updates stock Hermes when installed.
 See [Models](docs/models.md) and [Performance](docs/performance.md).
 
-For the recommended Frogue Gallery configuration, use these exact commands:
+For the recommended general-purpose coding configuration, use these exact
+commands:
 
 ```text
 python ninfer.py select-model --model stock
