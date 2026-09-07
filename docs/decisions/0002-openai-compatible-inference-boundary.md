@@ -1,11 +1,12 @@
 # ADR 0002: Use an OpenAI-compatible inference boundary
 
-- Status: Accepted, amended for native Hermes
+- Status: Accepted, amended for native Hermes and by ADR 0011
 - Date: 2026-08-23
 
 The protocol decision remains active. The original internal Compose network is
-historical; native Hermes now reaches authenticated NInfer at
-`http://127.0.0.1:${NINFER_HOST_PORT}/v1`.
+historical; native Hermes now reaches authenticated NInfer at its selected
+host address. Loopback remains the default, while ADR 0011 defines opt-in LAN
+publication.
 
 ## Context
 
@@ -21,7 +22,7 @@ instead needs a stable provider-facing name that can remain simple and local to 
 
 Connect native Hermes to NInfer through NInfer's authenticated
 OpenAI-compatible chat-completions API at
-`http://127.0.0.1:${NINFER_HOST_PORT}/v1`. Use `NINFER_MODEL_ID` as a shared
+`http://${NINFER_BIND_ADDRESS}:${NINFER_HOST_PORT}/v1`. Use `NINFER_MODEL_ID` as a shared
 HTTP alias, `qwen-local` by default, while leaving the artifact's embedded
 model identity unchanged.
 

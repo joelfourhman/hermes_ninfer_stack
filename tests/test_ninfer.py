@@ -16,6 +16,8 @@ import ninfer
 def sample_values() -> dict[str, str]:
     return {
         "NINFER_API_KEY": "a" * 64,
+        "NINFER_ACCESS_MODE": "local",
+        "NINFER_BIND_ADDRESS": "127.0.0.1",
         "NINFER_HOST_PORT": "18080",
         "NINFER_MODEL_PROFILE": "stock",
         "NINFER_MODEL_FILE": ninfer.STOCK_MODEL_FILE,
@@ -331,6 +333,86 @@ class HermesDesktopConfigurationTests(unittest.TestCase):
 
 
 class EnvironmentValidationTests(unittest.TestCase):
+    def test_lan_selection_prefers_default_route_over_virtual_adapters(self) -> None:
+        with (
+            mock.patch.object(ninfer, "default_route_lan_ipv4", return_value="192.168.50.115"),
+            mock.patch.object(ninfer, "address_is_assigned_locally", return_value=True),
+            mock.patch.object(
+                ninfer,
+                "discover_lan_ipv4_addresses",
+                return_value=["192.168.50.115", "172.17.32.1"],
+            ),
+        ):
+            self.assertEqual(ninfer.choose_lan_address(), "192.168.50.115")
+
+    def test_lan_endpoint_uses_selected_private_address(self) -> None:
+        values = sample_values()
+        values.update({"NINFER_ACCESS_MODE": "lan", "NINFER_BIND_ADDRESS": "192.168.50.9"})
+        self.assertEqual(ninfer.ninfer_endpoint(values), "http://192.168.50.9:18080/v1")
+
+    def test_lan_mode_rejects_public_bind_address(self) -> None:
+        values = sample_values()
+        values.update(
+            {
+                "MODEL_DOWNLOAD_UID": "1000",
+                "MODEL_DOWNLOAD_GID": "1000",
+                "NINFER_GPU_DEVICE": "0",
+                "NINFER_ACCESS_MODE": "lan",
+                "NINFER_BIND_ADDRESS": "8.8.8.8",
+            }
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            env_file = Path(temporary) / ".env"
+            env_file.write_text(
+                "".join(f"{key}={value}\n" for key, value in values.items()),
+                encoding="utf-8",
+            )
+            with mock.patch.object(ninfer, "ENV_FILE", env_file):
+                with self.assertRaisesRegex(ninfer.StackError, "RFC1918"):
+                    ninfer.validate_env()
+
+    def test_network_info_hides_key_unless_explicitly_requested(self) -> None:
+        values = sample_values()
+        values.update({"NINFER_ACCESS_MODE": "lan", "NINFER_BIND_ADDRESS": "192.168.50.9"})
+        with redirect_stdout(StringIO()) as hidden_output:
+            ninfer.print_network_info(values)
+        with redirect_stdout(StringIO()) as revealed_output:
+            ninfer.print_network_info(values, show_key=True)
+        self.assertNotIn("a" * 64, hidden_output.getvalue())
+        self.assertIn("a" * 64, revealed_output.getvalue())
+
+    def test_failed_lan_activation_restores_previous_network_mode(self) -> None:
+        values = sample_values()
+        values.update(
+            {
+                "MODEL_DOWNLOAD_UID": "1000",
+                "MODEL_DOWNLOAD_GID": "1000",
+                "NINFER_GPU_DEVICE": "0",
+            }
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            env_file = Path(temporary) / ".env"
+            env_file.write_text(
+                "".join(f"{key}={value}\n" for key, value in values.items()),
+                encoding="utf-8",
+            )
+            with (
+                mock.patch.object(ninfer, "ENV_FILE", env_file),
+                mock.patch.object(
+                    ninfer,
+                    "start_ninfer",
+                    side_effect=[ninfer.StackError("LAN bind failed"), None],
+                ) as start,
+                redirect_stdout(StringIO()),
+            ):
+                with self.assertRaisesRegex(ninfer.StackError, "previous network"):
+                    ninfer.activate_and_start_network("lan", "192.168.50.9")
+            restored = ninfer.read_env(env_file)
+
+        self.assertEqual(restored["NINFER_ACCESS_MODE"], "local")
+        self.assertEqual(restored["NINFER_BIND_ADDRESS"], "127.0.0.1")
+        self.assertEqual(start.call_count, 2)
+
     def test_model_file_cannot_escape_models_directory(self) -> None:
         values = sample_values()
         values.update({
@@ -397,6 +479,8 @@ class EnvironmentValidationTests(unittest.TestCase):
             example = root / ".env.example"
             example_values = {
                 "NINFER_API_KEY": "",
+                "NINFER_ACCESS_MODE": "local",
+                "NINFER_BIND_ADDRESS": "127.0.0.1",
                 "NINFER_MODEL_PROFILE": "stock",
                 "NINFER_MODEL_FILE": ninfer.STOCK_MODEL_FILE,
                 **ninfer.runtime_env_values(ninfer.runtime_profile("balanced")),

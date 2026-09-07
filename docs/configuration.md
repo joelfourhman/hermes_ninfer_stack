@@ -22,7 +22,9 @@ supported configuration command.
 | `NINFER_API_KEY` | generated | Bearer secret required by NInfer and stored in the native Hermes secret file |
 | `HF_TOKEN` | empty | Optional Hugging Face token used only by the explicit model downloader |
 | `MODEL_DOWNLOAD_UID` / `MODEL_DOWNLOAD_GID` | `1000` | Downloader identity; setup uses the creating user's IDs on POSIX hosts |
-| `NINFER_HOST_PORT` | `8080` | Host-loopback port mapped to NInfer's container port 8080 |
+| `NINFER_ACCESS_MODE` | `local` | Network policy selected by `python ninfer.py network`: `local` or `lan` |
+| `NINFER_BIND_ADDRESS` | `127.0.0.1` | Exact host IPv4 address mapped to NInfer's container port 8080 |
+| `NINFER_HOST_PORT` | `8080` | Host port mapped to NInfer's container port 8080 |
 | `NINFER_GPU_DEVICE` | detected (`0` normally) | NVIDIA device reserved for NInfer; fresh setup saves the detected 5090 index |
 | `NINFER_MODEL_PROFILE` | `stock` | Fixed profile selected by `setup` or `select-model` |
 | `NINFER_MODEL_FILE` | `qwen3_8_27b_nvfp4.ninfer` | Profile-controlled filename beneath `models/`, mounted read-only |
@@ -47,6 +49,7 @@ random value so Compose fails closed when local initialization has not run.
 The Python control command validates that:
 
 - the key has the expected secret format;
+- local mode uses loopback and LAN mode uses an RFC1918 IPv4 address;
 - the port is from 1 through 65535;
 - the GPU selection is valid for the supported shape;
 - the model file is a filename rather than an arbitrary host path;
@@ -59,21 +62,27 @@ preserves unrelated settings and the existing bearer key.
 
 ## Endpoint mapping
 
-NInfer's internal address is fixed at port 8080. Compose publishes only host
-loopback:
+NInfer's internal address is fixed at port 8080. Compose publishes the exact
+host address selected by the network command. Fresh setup uses:
 
 ```text
 http://127.0.0.1:${NINFER_HOST_PORT}/v1
 ```
 
-Native Hermes must use this host address. `http://ninfer:8080/v1` was valid
+LAN mode replaces `127.0.0.1` with one address in `10/8`, `172.16/12`, or
+`192.168/16`. Native Hermes must use the selected host address.
+`http://ninfer:8080/v1` was valid
 only when Hermes shared a Compose network and is not valid in the current
 architecture. Do not replace `127.0.0.1` with `0.0.0.0`; the latter is a listen
 address, not an appropriate client destination, and broad host publication
 would change the exposure boundary.
 
-The loopback bind and bearer key serve different purposes. Loopback limits
-network reachability; authentication rejects unauthorized local requests.
+The exact-interface bind and bearer key serve different purposes. The bind
+limits which host interface accepts connections; authentication rejects clients
+without the secret. Use `python ninfer.py network --mode lan` or
+`python ninfer.py network --mode local` rather than editing the coupled values.
+The selector backs up `.env`, tests the new endpoint, rolls back on failure,
+and updates local Hermes.
 
 ## Hermes provider lifecycle
 

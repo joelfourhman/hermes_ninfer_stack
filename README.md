@@ -65,7 +65,8 @@ a working local model to talk to.
 This project runs one Docker container: NInfer, the program that loads the AI
 model on the RTX 5090. A normal, native installation of
 [Hermes Desktop](https://hermes-agent.nousresearch.com/desktop) connects to it
-only through this PC's private loopback address.
+through the selected host address. Fresh setup is local-only; trusted-LAN
+access is an explicit opt-in.
 
 Hermes is not packaged, forked, or run in Docker by this repository. It runs as
 the signed-in desktop user and keeps its configuration, sessions, skills, and
@@ -85,8 +86,8 @@ updates in the standard Hermes locations.
   both artifacts and restore the previous profile if the new one cannot start.
 - Three reviewed RTX 5090 runtime profiles, with a balanced two-request agent
   profile selected automatically for first-time users.
-- An authenticated OpenAI-compatible endpoint published only at
-  `127.0.0.1:${NINFER_HOST_PORT}`.
+- An authenticated OpenAI-compatible endpoint published on loopback by default,
+  with reversible single-interface LAN access.
 - A single Python control command, `ninfer.py`, for setup, operation,
   verification, performance diagnosis, and benchmarking.
 - A helper that finds or directs the user to the official Hermes Desktop
@@ -101,7 +102,7 @@ desktop application and its runtime dependencies.
 ```mermaid
 flowchart LR
     User[Current desktop user] --> Hermes[Stock Hermes Desktop]
-    Hermes -->|Bearer-authenticated OpenAI API| Port[127.0.0.1:NINFER_HOST_PORT]
+    Hermes -->|Bearer-authenticated OpenAI API| Port[Selected host address:NINFER_HOST_PORT]
 
     subgraph Docker[Docker Compose]
         NInfer[NInfer server]
@@ -224,9 +225,11 @@ compression:
   threshold_tokens: 90000
 ```
 
-The actual port comes from `NINFER_HOST_PORT`; it is not assumed to be 8080.
-The API key is not written inline in `config.yaml` and is never printed by the
-helper. The helper removes its older `terminal.cwd` and
+The example shows the local-only default. The actual address and port come from
+`NINFER_BIND_ADDRESS` and `NINFER_HOST_PORT`.
+The API key is not written inline in `config.yaml`, and the Hermes installation
+helper never prints it. Only the explicit `network --show-key` command reveals
+it for transfer to a remote client. The helper removes its older `terminal.cwd` and
 `HERMES_WRITE_SAFE_ROOT` overrides. Desktop follows stock Hermes behavior:
 Desktop/gateway tools begin in the user's home directory, while CLI sessions
 use the directory where Hermes was launched. Hermes's built-in credential and
@@ -284,7 +287,7 @@ python ninfer.py verify
 ```
 
 The verifier checks the pinned source and image provenance, GPU visibility,
-model checksum, NInfer health, loopback authentication, model discovery, and a
+model checksum, NInfer health, endpoint authentication, model discovery, and a
 real generation. When stock Hermes is installed, it also checks the native
 provider configuration and the Hermes-to-NInfer route.
 
@@ -300,6 +303,7 @@ python ninfer.py validate
 python ninfer.py prepare-model
 python ninfer.py select-model
 python ninfer.py select-runtime
+python ninfer.py network
 python ninfer.py build
 python ninfer.py up
 python ninfer.py status
@@ -319,6 +323,8 @@ changing or redownloading the model. For non-interactive selection, use
 `select-model --model stock|uncensored` and
 `select-runtime --profile balanced|single-session|max-context`; the option
 names are intentionally different.
+`network` shows the current endpoint; its explicit modes safely switch between
+local-only and trusted-LAN publication.
 `down` stops NInfer without removing the downloaded model. The model is a host
 file mounted read-only into the container.
 `shell` opens Bash inside the NInfer container; it does not install or invoke a
@@ -334,6 +340,40 @@ python ninfer.py benchmark --runs 5 --max-tokens 1024
 To summarize recent private NInfer counters without printing prompts or model
 responses, run `python ninfer.py diagnose-performance`.
 
+## Optional LAN access
+
+Fresh setup binds NInfer only to `127.0.0.1`. To use it from another computer
+on a trusted LAN, run:
+
+```text
+python ninfer.py network --mode lan
+```
+
+The command prefers the private IPv4 address used by the default route, asks
+which interface to use when that cannot be determined,
+warns before exposure, restarts and live-tests NInfer, rolls back on failure,
+and updates local Hermes. It binds one RFC1918 address rather than `0.0.0.0`.
+
+Show the connection details, then deliberately reveal the bearer key needed by
+the remote client:
+
+```text
+python ninfer.py network
+python ninfer.py network --show-key
+```
+
+Configure the remote OpenAI-compatible client with the displayed endpoint,
+bearer key, model `qwen-local`, and the context length shown by the command.
+Treat the key like a password. Do not forward the port on the router. If the
+host firewall blocks the client, allow the selected TCP port only on Private
+networks and only from the local subnet.
+
+Return to the secure default at any time:
+
+```text
+python ninfer.py network --mode local
+```
+
 ## Configuration
 
 `python ninfer.py setup` creates the ignored `.env` file from `.env.example`
@@ -341,7 +381,9 @@ and generates a random NInfer bearer key. The main settings are:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `NINFER_HOST_PORT` | `8080` | Host-loopback endpoint port |
+| `NINFER_ACCESS_MODE` | `local` | `local` or explicit trusted-`lan` publication |
+| `NINFER_BIND_ADDRESS` | `127.0.0.1` | Exact host interface used by Docker publication |
+| `NINFER_HOST_PORT` | `8080` | Host endpoint port |
 | `NINFER_GPU_DEVICE` | detected (`0` normally) | NVIDIA device reserved for NInfer |
 | `NINFER_MODEL_PROFILE` | `stock` | Fixed profile: `stock` or `uncensored` |
 | `NINFER_MODEL_FILE` | `qwen3_8_27b_nvfp4.ninfer` | Profile-controlled artifact mounted read-only |
@@ -372,8 +414,11 @@ See [Configuration](docs/configuration.md) for validation rules and coupling.
 
 ## Security notes
 
-- NInfer is bound to `127.0.0.1`, not all host interfaces.
+- NInfer is bound to `127.0.0.1` by default; LAN mode binds one selected private
+  IPv4 address and never uses `0.0.0.0`.
 - The API requires the generated bearer key.
+- LAN mode is not an internet security boundary: never forward the port, use a
+  trusted LAN, and scope the host firewall to Private/local-subnet traffic.
 - Only NInfer receives the GPU reservation and read-only model mount; both
   container root filesystems are read-only with bounded temporary storage.
 - No Docker socket is mounted into the container or exposed to Hermes.

@@ -1,6 +1,6 @@
 # ADR 0005: Run stock Hermes Desktop natively
 
-- Status: Accepted; workspace policy amended by ADR 0008
+- Status: Accepted; workspace policy amended by ADR 0008 and network policy by ADR 0011
 - Date: 2026-08-30
 
 ## Context
@@ -20,8 +20,9 @@ the official Hermes distribution and run it natively as the signed-in user.
 
 After NInfer is healthy, `python ninfer.py install-hermes` finds or directs the
 user to the stock installer and uses the supported Hermes CLI to create a named
-`ninfer` provider. Native Hermes connects to the authenticated host-loopback
-endpoint at `http://127.0.0.1:${NINFER_HOST_PORT}/v1`.
+`ninfer` provider. Native Hermes connects to the authenticated endpoint at
+`http://${NINFER_BIND_ADDRESS}:${NINFER_HOST_PORT}/v1`. Loopback is the default;
+ADR 0011 defines the explicit trusted-LAN option.
 
 Because native Hermes has the user's filesystem authority, the helper also
 sets `approvals.mode: manual` rather than accepting the stock smart-approval

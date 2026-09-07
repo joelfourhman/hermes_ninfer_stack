@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import json
 import os
 import re
@@ -247,7 +248,7 @@ def native_hermes_command() -> tuple[list[str], dict[str, str]] | None:
 
 def verify_optional_hermes(
     *,
-    host_port: str,
+    endpoint: str,
     model_id: str,
     context: str,
     compression: str,
@@ -273,7 +274,7 @@ def verify_optional_hermes(
         "model.default": model_id,
         "model.context_length": context,
         "model.supports_vision": "false",
-        "providers.ninfer.api": f"http://127.0.0.1:{host_port}/v1",
+        "providers.ninfer.api": endpoint,
         "compression.enabled": compression,
         "compression.threshold": "0.9",
         "compression.threshold_tokens": compression_threshold,
@@ -329,6 +330,8 @@ def verify_optional_hermes(
 def main() -> int:
     values = env_values()
     api_key = values.get("NINFER_API_KEY", "")
+    access_mode = values.get("NINFER_ACCESS_MODE", "")
+    bind_address = values.get("NINFER_BIND_ADDRESS", "")
     host_port = values.get("NINFER_HOST_PORT", "")
     gpu = values.get("NINFER_GPU_DEVICE", "")
     profile_key = values.get("NINFER_MODEL_PROFILE", "")
@@ -345,6 +348,22 @@ def main() -> int:
     begin("Prerequisites and configuration")
     if not re.fullmatch(r"[0-9a-fA-F]{64}", api_key):
         raise Failure("NINFER_API_KEY must be a 64-character hexadecimal secret", "python ninfer.py setup")
+    try:
+        parsed_bind = ipaddress.ip_address(bind_address)
+    except ValueError as exc:
+        raise Failure("NINFER_BIND_ADDRESS must be a valid IPv4 address", "python ninfer.py network") from exc
+    private_lan = parsed_bind.version == 4 and any(
+        parsed_bind in ipaddress.ip_network(cidr)
+        for cidr in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16")
+    )
+    if not (
+        (access_mode == "local" and bind_address == "127.0.0.1")
+        or (access_mode == "lan" and private_lan)
+    ):
+        raise Failure(
+            "NInfer network mode and bind address are inconsistent",
+            "python ninfer.py network",
+        )
     if not host_port.isdigit() or not 1 <= int(host_port) <= 65535:
         raise Failure("NINFER_HOST_PORT must be from 1 through 65535", "edit .env")
     if profile_key not in MODEL_PROFILES:
@@ -375,18 +394,22 @@ def main() -> int:
         or not max_turns.isdigit()
     ):
         raise Failure("Hermes compression or maximum turns is invalid", "compare .env with .env.example")
-    passed(f"model={model_id} runtime={runtime_key} context={context} KV={kv_capacity} concurrency={concurrency} GPU={gpu}")
+    endpoint = f"http://{bind_address}:{host_port}/v1"
+    passed(
+        f"model={model_id} runtime={runtime_key} access={access_mode} "
+        f"context={context} KV={kv_capacity} concurrency={concurrency} GPU={gpu}"
+    )
 
     begin("Compose and source pin")
     rendered_compose = compose("config").stdout
-    if "host_ip: 127.0.0.1" not in rendered_compose:
-        raise Failure("NInfer must be published only on host loopback")
+    if f"host_ip: {bind_address}" not in rendered_compose:
+        raise Failure("NInfer is not published on its configured host address")
     commit = run(["git", "-C", str(ROOT / "ninfer"), "rev-parse", "HEAD"]).stdout.strip()
     if commit != EXPECTED_COMMIT:
         raise Failure(f"NInfer is at {commit}, expected {EXPECTED_COMMIT}")
     if run(["git", "-C", str(ROOT / "ninfer"), "status", "--porcelain", "--untracked-files=all"]).stdout.strip():
         raise Failure("The NInfer worktree has local or untracked changes")
-    passed(f"NInfer {commit[:12]}; authenticated loopback Compose config resolves")
+    passed(f"NInfer {commit[:12]}; authenticated {access_mode} Compose config resolves")
 
     begin("Docker daemon")
     run(["docker", "info"])
@@ -466,17 +489,17 @@ def main() -> int:
     passed("NInfer /health reports ready; container root is read-only")
 
     begin("NInfer authentication boundary")
-    models_url = f"http://127.0.0.1:{host_port}/v1/models"
+    models_url = f"{endpoint}/models"
     try:
         urllib.request.urlopen(models_url, timeout=30).close()
     except urllib.error.HTTPError as exc:
         if exc.code not in {401, 403}:
             raise Failure(f"Unauthenticated NInfer request returned HTTP {exc.code}, expected 401 or 403") from exc
     except urllib.error.URLError as exc:
-        raise Failure(f"Could not reach NInfer on host loopback: {exc}") from exc
+        raise Failure(f"Could not reach NInfer at {endpoint}: {exc}") from exc
     else:
         raise Failure("NInfer accepted an unauthenticated request")
-    passed("Host-loopback API rejects requests without the bearer key")
+    passed("Host API rejects requests without the bearer key")
 
     begin("NInfer authenticated API")
     models = request_json(models_url, token=api_key, timeout=30)
@@ -486,7 +509,7 @@ def main() -> int:
 
     begin("Direct NInfer generation")
     direct = request_json(
-        f"http://127.0.0.1:{host_port}/v1/chat/completions",
+        f"{endpoint}/chat/completions",
         token=api_key,
         payload={
             "model": model_id,
@@ -502,7 +525,7 @@ def main() -> int:
     passed("OpenAI-compatible chat completion succeeded")
 
     verify_optional_hermes(
-        host_port=host_port,
+        endpoint=endpoint,
         model_id=model_id,
         context=context,
         compression=compression,

@@ -218,8 +218,8 @@ python ninfer.py up
 python ninfer.py install-hermes
 ```
 
-The native provider must use the new
-`http://127.0.0.1:${NINFER_HOST_PORT}/v1` address.
+The native provider must use the configured address shown by
+`python ninfer.py network`.
 
 ## NInfer is healthy but API checks fail
 
@@ -227,7 +227,7 @@ A 401 normally means the request omitted or used the wrong project key. A model
 list that lacks `NINFER_MODEL_ID` normally means the running container was not
 recreated after an alias change.
 
-If Docker reports the container as healthy but `127.0.0.1` refuses the
+If Docker reports the container as healthy but the configured address refuses the
 connection, rerun `python ninfer.py up`. The helper recreates the project
 network once to repair missing Docker Desktop port forwarding. Releases before
 this recovery existed incorrectly used an internal Docker network, which could
@@ -298,6 +298,24 @@ base URL: http://127.0.0.1:${NINFER_HOST_PORT}/v1
 model: NINFER_MODEL_ID
 key environment name: NINFER_API_KEY
 ```
+
+The shown base URL is the local-only default. In LAN mode, use the exact URL
+reported by `python ninfer.py network`.
+
+## A remote LAN client cannot connect
+
+1. Run `python ninfer.py network` on the NInfer host and confirm mode is `lan`.
+2. Confirm the remote computer is on the same trusted LAN and can reach the
+   displayed private IPv4 address.
+3. Run `python ninfer.py verify` on the host to test publication and bearer
+   authentication.
+4. If Windows Firewall blocks the connection, allow the configured TCP port
+   only for Private networks and only from the local subnet.
+5. Do not add a router port forward or bind Docker to `0.0.0.0`.
+
+An address can change after DHCP renewal or switching between Ethernet and
+Wi-Fi. Rerun `python ninfer.py network --mode lan` to select the new address;
+the command updates local Hermes and recreates the service safely.
 
 Rerun:
 

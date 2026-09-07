@@ -5,11 +5,13 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import ipaddress
 import json
 import os
 import re
 import secrets
 import shutil
+import socket
 import statistics
 import subprocess
 import sys
@@ -134,6 +136,10 @@ RUNTIME_PROFILES = {
     ),
 }
 DEFAULT_RUNTIME_PROFILE = "balanced"
+PRIVATE_LAN_NETWORKS = tuple(
+    ipaddress.ip_network(cidr)
+    for cidr in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16")
+)
 
 # These variables belonged to the removed all-container Hermes and local model-build paths.
 # Setup removes only this reviewed allowlist and preserves every unrelated user setting.
@@ -564,6 +570,59 @@ def runtime_env_values(profile: RuntimeProfile) -> dict[str, str]:
     }
 
 
+def is_private_lan_ipv4(value: str) -> bool:
+    try:
+        address = ipaddress.ip_address(value)
+    except ValueError:
+        return False
+    return address.version == 4 and any(address in network for network in PRIVATE_LAN_NETWORKS)
+
+
+def default_route_lan_ipv4() -> str | None:
+    """Return the source address selected for the host's default IPv4 route."""
+    probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        probe.connect(("192.0.2.1", 9))
+        address = probe.getsockname()[0]
+    except OSError:
+        return None
+    finally:
+        probe.close()
+    return address if is_private_lan_ipv4(address) else None
+
+
+def discover_lan_ipv4_addresses() -> list[str]:
+    """Return usable RFC1918 addresses without platform-specific host commands."""
+    candidates: set[str] = set()
+    try:
+        for result in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            candidates.add(result[4][0])
+    except OSError:
+        pass
+    preferred = default_route_lan_ipv4()
+    if preferred:
+        candidates.add(preferred)
+    ordered = sorted(address for address in candidates if is_private_lan_ipv4(address))
+    if preferred in ordered:
+        ordered.remove(preferred)
+        ordered.insert(0, preferred)
+    return ordered
+
+
+def network_env_values(mode: str, address: str | None = None) -> dict[str, str]:
+    if mode == "local":
+        return {"NINFER_ACCESS_MODE": "local", "NINFER_BIND_ADDRESS": "127.0.0.1"}
+    if mode != "lan":
+        raise StackError("Network mode must be local or lan")
+    if not address or not is_private_lan_ipv4(address):
+        raise StackError("LAN mode requires an RFC1918 IPv4 address on this computer")
+    return {"NINFER_ACCESS_MODE": "lan", "NINFER_BIND_ADDRESS": address}
+
+
+def endpoint_host(values: dict[str, str]) -> str:
+    return values.get("NINFER_BIND_ADDRESS", "127.0.0.1")
+
+
 def remove_private_env_value(path: Path, key: str) -> None:
     """Atomically remove one dotenv value while preserving unrelated settings."""
     if not re.fullmatch(r"[A-Z][A-Z0-9_]*", key):
@@ -637,6 +696,12 @@ def merge_env(detected_gpu_device: str | None = None) -> None:
         else DEFAULT_RUNTIME_PROFILE
     )
     forced.update(runtime_env_values(runtime_profile(selected_runtime)))
+    configured_access = original_values.get("NINFER_ACCESS_MODE", "")
+    configured_bind = original_values.get("NINFER_BIND_ADDRESS", "")
+    if configured_access == "lan" and is_private_lan_ipv4(configured_bind):
+        forced.update(network_env_values("lan", configured_bind))
+    elif configured_access not in {"local", "lan"} or configured_bind != "127.0.0.1":
+        forced.update(network_env_values("local"))
     if detected_gpu_device is not None and not original_values.get("NINFER_GPU_DEVICE"):
         forced["NINFER_GPU_DEVICE"] = detected_gpu_device
     if os.name != "nt" and hasattr(os, "getuid") and hasattr(os, "getgid"):
@@ -676,6 +741,8 @@ def validate_env() -> None:
         "NINFER_API_KEY",
         "MODEL_DOWNLOAD_UID",
         "MODEL_DOWNLOAD_GID",
+        "NINFER_ACCESS_MODE",
+        "NINFER_BIND_ADDRESS",
         "NINFER_HOST_PORT",
         "NINFER_GPU_DEVICE",
         "NINFER_MODEL_PROFILE",
@@ -700,6 +767,14 @@ def validate_env() -> None:
         raise StackError("Missing required .env values: " + ", ".join(missing))
     if not re.fullmatch(r"[0-9a-fA-F]{64}", values["NINFER_API_KEY"]):
         raise StackError("NINFER_API_KEY must be a 64-character hexadecimal secret")
+    access_mode = values["NINFER_ACCESS_MODE"]
+    bind_address = values["NINFER_BIND_ADDRESS"]
+    if access_mode == "local" and bind_address != "127.0.0.1":
+        raise StackError("Local network mode must bind NInfer to 127.0.0.1")
+    if access_mode == "lan" and not is_private_lan_ipv4(bind_address):
+        raise StackError("LAN network mode must bind NInfer to an RFC1918 IPv4 address")
+    if access_mode not in {"local", "lan"}:
+        raise StackError("NINFER_ACCESS_MODE must be local or lan")
     host_port = values["NINFER_HOST_PORT"]
     if not host_port.isdigit() or not 1 <= int(host_port) <= 65535:
         raise StackError("NINFER_HOST_PORT must be from 1 through 65535")
@@ -1001,6 +1076,101 @@ def activate_runtime_profile(profile: RuntimeProfile) -> Path | None:
     return replace_env_values(runtime_env_values(profile))
 
 
+def address_is_assigned_locally(address: str) -> bool:
+    probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        probe.bind((address, 0))
+    except OSError:
+        return False
+    finally:
+        probe.close()
+    return True
+
+
+def choose_lan_address(requested: str | None = None) -> str:
+    if requested:
+        if not is_private_lan_ipv4(requested):
+            raise StackError("--address must be an RFC1918 IPv4 address")
+        if not address_is_assigned_locally(requested):
+            raise StackError(
+                f"{requested} is not assigned to a network interface on this computer"
+            )
+        return requested
+
+    preferred = default_route_lan_ipv4()
+    if preferred and address_is_assigned_locally(preferred):
+        return preferred
+    candidates = [
+        address
+        for address in discover_lan_ipv4_addresses()
+        if address_is_assigned_locally(address)
+    ]
+    if not candidates:
+        raise StackError(
+            "No private LAN IPv4 address was detected. Connect this computer to the LAN, "
+            "then use --address with its 10.x, 172.16-31.x, or 192.168.x address."
+        )
+    if len(candidates) == 1:
+        return candidates[0]
+    if not sys.stdin.isatty():
+        raise StackError(
+            "Multiple LAN addresses were detected. Rerun with --address and one of: "
+            + ", ".join(candidates)
+        )
+    print("Choose the private network interface to publish on:")
+    for index, address in enumerate(candidates, start=1):
+        print(f"  {index}. {address}")
+    while True:
+        answer = input("LAN address number: ").strip()
+        if answer.isdigit() and 1 <= int(answer) <= len(candidates):
+            return candidates[int(answer) - 1]
+        print(f"Enter a number from 1 through {len(candidates)}.")
+
+
+def print_network_info(values: dict[str, str], *, show_key: bool = False) -> None:
+    mode = values["NINFER_ACCESS_MODE"]
+    print("NInfer network access")
+    print(f"  Mode: {mode}")
+    print(f"  Endpoint: {ninfer_endpoint(values)}")
+    print(f"  Model: {values['NINFER_MODEL_ID']}")
+    print(f"  Context: {values['NINFER_CONTEXT_LENGTH']} tokens")
+    if show_key:
+        print(f"  Bearer key: {values['NINFER_API_KEY']}")
+        print("Treat this key like a password and send it only through a trusted channel.")
+    elif mode == "lan":
+        print("  Bearer key: hidden (rerun with --show-key to reveal it deliberately)")
+
+
+def activate_and_start_network(mode: str, address: str | None) -> None:
+    replacements = network_env_values(mode, address)
+    previous_values = read_env()
+    env_backup = replace_env_values(replacements)
+    validate_env()
+    try:
+        start_ninfer(read_env())
+    except StackError as selected_error:
+        if env_backup is not None:
+            print(
+                "The selected network mode did not pass its live test. "
+                "Restoring the previous mode..."
+            )
+            failed_env = ENV_FILE.with_name(f".env.failed-network-{mode}-{int(time.time())}")
+            shutil.copy2(ENV_FILE, failed_env)
+            atomic_write(ENV_FILE, env_backup.read_text(encoding="utf-8"))
+            try:
+                start_ninfer(previous_values)
+            except StackError as rollback_error:
+                raise StackError(
+                    "The selected network mode failed and the previous configuration was restored, "
+                    "but the former service also needs attention. Run 'python ninfer.py logs'."
+                ) from rollback_error
+            raise StackError(
+                "The selected network mode failed its live test. The previous network "
+                "configuration was restored successfully."
+            ) from selected_error
+        raise
+
+
 def activate_and_start_profile(profile: ModelProfile, *, build_runtime: bool) -> None:
     previous_profile = model_profile(configured_model_profile_key())
     env_backup = activate_model_profile(profile)
@@ -1061,7 +1231,7 @@ def activate_and_start_runtime(profile: RuntimeProfile) -> None:
 
 
 def ninfer_endpoint(values: dict[str, str]) -> str:
-    return f"http://127.0.0.1:{values['NINFER_HOST_PORT']}/v1"
+    return f"http://{endpoint_host(values)}:{values['NINFER_HOST_PORT']}/v1"
 
 
 def require_ninfer_api(values: dict[str, str]) -> None:
@@ -1462,7 +1632,7 @@ def start_ninfer(values: dict[str, str]) -> None:
         # Docker Desktop can occasionally create a healthy container without
         # activating its requested host-port forwarding. A former internal
         # network configuration can also remain until its network is removed.
-        print("The model is healthy but its private localhost connection is missing.")
+        print("The model is healthy but its configured host connection is missing.")
         print("Recreating the Docker network once to repair port forwarding...")
         try:
             compose("down", "--remove-orphans")
@@ -1531,6 +1701,49 @@ def select_runtime(args: argparse.Namespace) -> None:
     else:
         print("Hermes was not found. Run 'python ninfer.py install-hermes' after installing it.")
     print(f"ACTIVE: {profile.label} is serving {values['NINFER_MODEL_ID']}.")
+
+
+def network(args: argparse.Namespace) -> None:
+    if not ENV_FILE.is_file():
+        raise StackError(f"Setup has not been completed. Start with '{SETUP_COMMAND}'.")
+    merge_env()
+    validate_env()
+    if args.mode is None:
+        if args.address:
+            raise StackError("--address requires --mode lan")
+        print_network_info(read_env(), show_key=args.show_key)
+        return
+
+    address = None
+    if args.mode == "lan":
+        address = choose_lan_address(args.address)
+        print(f"Selected LAN address: {address}")
+        print("This makes the authenticated NInfer API reachable by devices on that LAN.")
+        print(
+            "Do not forward this port on your router and do not use this mode "
+            "on an untrusted LAN."
+        )
+        if not args.yes and not confirm("Enable LAN access now?", default=False):
+            print("Network access was not changed.")
+            return
+    elif args.address:
+        raise StackError("--address can be used only with --mode lan")
+
+    check_setup_prerequisites()
+    activate_and_start_network(args.mode, address)
+    values = read_env()
+    resolved = native_hermes_command()
+    if resolved is not None:
+        command, process_env = resolved
+        configure_native_hermes(command, process_env, values)
+        print("Local Hermes was updated. Restart Hermes Desktop to reload the endpoint.")
+    print_network_info(values, show_key=args.show_key)
+    if args.mode == "lan":
+        print("If a remote connection is blocked, allow this TCP port only on Private networks")
+        print(
+            "and only from the local subnet in the host firewall. Never create "
+            "a router port forward."
+        )
 
 
 def shell(_: argparse.Namespace) -> None:
@@ -1774,6 +1987,21 @@ def main() -> int:
     )
     runtime.add_argument("--profile", choices=tuple(RUNTIME_PROFILES), help="runtime profile")
     runtime.set_defaults(func=select_runtime)
+    network_parser = sub.add_parser(
+        "network",
+        help="show or change local-only/LAN access to the authenticated NInfer API",
+    )
+    network_parser.add_argument("--mode", choices=("local", "lan"), help="network exposure mode")
+    network_parser.add_argument("--address", help="specific RFC1918 IPv4 address for LAN mode")
+    network_parser.add_argument(
+        "--show-key",
+        action="store_true",
+        help="deliberately reveal the bearer key needed by a remote client",
+    )
+    network_parser.add_argument(
+        "--yes", action="store_true", help="skip the LAN exposure confirmation"
+    )
+    network_parser.set_defaults(func=network)
     sub.add_parser("build", help="build the NInfer image").set_defaults(func=passthrough(("build", "ninfer")))
     sub.add_parser("up", help="start NInfer and wait until the model is ready").set_defaults(func=up)
     sub.add_parser("down", help="stop NInfer while preserving the model").set_defaults(

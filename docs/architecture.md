@@ -21,7 +21,7 @@ installer in the active architecture.
 flowchart LR
     User[Current OS user] <--> Desktop[Stock Hermes Desktop]
     Desktop <--> Runtime[Native Hermes runtime]
-    Runtime -->|OpenAI-compatible HTTP over loopback| HostPort[127.0.0.1:NINFER_HOST_PORT]
+    Runtime -->|OpenAI-compatible HTTP| HostPort[Selected host address:NINFER_HOST_PORT]
 
     subgraph Docker[Docker Compose project]
         Downloader[One-shot model downloader]
@@ -58,9 +58,9 @@ user running Hermes.
 3. Hermes selects `custom:ninfer` and reads `NINFER_API_KEY` from its standard
    secret file.
 4. Hermes calls
-   `http://127.0.0.1:${NINFER_HOST_PORT}/v1/chat/completions` with the configured
+   `http://${NINFER_BIND_ADDRESS}:${NINFER_HOST_PORT}/v1/chat/completions` with the configured
    model alias.
-5. Docker forwards the loopback-bound host port to NInfer's fixed container
+5. Docker forwards the selected host address and port to NInfer's fixed container
    port 8080.
 6. NInfer authenticates the request, generates on the RTX 5090, and returns the
    OpenAI-compatible response.
@@ -75,19 +75,25 @@ so inference problems can be separated from provider or agent problems.
 NInfer listens on port 8080 inside its container. Compose publishes it as:
 
 ```text
-127.0.0.1:${NINFER_HOST_PORT} -> ninfer:8080
+${NINFER_BIND_ADDRESS}:${NINFER_HOST_PORT} -> ninfer:8080
 ```
 
-Binding to `127.0.0.1` prevents ordinary LAN access, but local processes owned
-by any account permitted to connect to loopback can reach the socket. Bearer
-authentication remains required. The helper configures Hermes with the host
-address, never the former container-only hostname `ninfer`.
+Fresh setup binds `127.0.0.1`, preventing ordinary LAN access. The explicit LAN
+mode binds one RFC1918 address assigned to the host; it does not bind every
+interface. Bearer authentication remains required in both modes. The helper
+configures Hermes with the selected host address, never the former
+container-only hostname `ninfer`.
+
+LAN mode trusts the local network path. It does not add TLS, and an RFC1918 bind
+cannot prevent a separately configured router port forward. Operators must not
+forward the port and should scope the host firewall to Private/local-subnet
+traffic. Return to loopback with `python ninfer.py network --mode local`.
 
 NInfer does not need a Docker network shared with Hermes because Hermes is not
 in Docker. No relay container is required, and no Docker socket is exposed to
 Hermes. The bridge is intentionally not marked `internal`: Docker Desktop does
 not connect internal networks to host interfaces, so doing so silently defeats
-the required loopback publication on Windows. This means NInfer can initiate
+the required host publication on Windows. This means NInfer can initiate
 ordinary outbound connections through Docker's bridge. Its host access remains
 limited to the read-only model bind mount and selected GPU.
 
@@ -206,7 +212,9 @@ See [Security](security.md) for the operational consequences.
   is retained as historical context and superseded in its Compose-specific
   details by the native-Hermes deployment.
 - [ADR 0002: OpenAI-compatible inference boundary](decisions/0002-openai-compatible-inference-boundary.md)
-  remains active, with host loopback replacing the old internal network.
+  remains active, with host publication replacing the old internal network.
+- [ADR 0011: Opt-in authenticated LAN access](decisions/0011-opt-in-lan-access.md)
+  amends the loopback-only publication policy.
 - [ADR 0003: External model artifacts](decisions/0003-external-model-artifacts.md)
   remains active.
 - [ADR 0004: SSH sandbox boundary](decisions/0004-ssh-sandbox-security-boundary.md)

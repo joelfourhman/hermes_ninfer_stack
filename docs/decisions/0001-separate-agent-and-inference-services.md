@@ -24,7 +24,8 @@ environment access to the GPU and model weights even though it does not use them
 Run Hermes and NInfer as separate processes with independent lifecycles. NInfer
 is the only long-running Compose service and exclusively owns the GPU and
 read-only model mount. Stock Hermes runs natively and reaches it through an
-authenticated host-loopback HTTP endpoint after NInfer is healthy.
+authenticated host HTTP endpoint after NInfer is healthy. ADR 0011 retains
+loopback as the default and defines the opt-in LAN mode.
 
 Treat the OpenAI-compatible process boundary as part of the architecture.
 Updates to either component are managed independently, and direct NInfer API

@@ -15,8 +15,8 @@ modifying or deleting files the current user can modify or delete.
 
 | Component | Host access | Network access | Persistent data | Principal risk |
 | --- | --- | --- | --- | --- |
-| Native Hermes Desktop/runtime | Everything allowed to the current user | NInfer loopback endpoint and any egress allowed to the user | Standard Hermes config, secrets, sessions, memory, skills, logs | Prompt injection, unsafe tools, plugins, or compromised runtime acting with user authority |
-| NInfer container | Read-only model directory and GPU device | Authenticated loopback-published API; ordinary outbound bridge access | No application state in Compose | Native parser/runtime, outbound access, or GPU-driver compromise |
+| Native Hermes Desktop/runtime | Everything allowed to the current user | Selected NInfer endpoint and any egress allowed to the user | Standard Hermes config, secrets, sessions, memory, skills, logs | Prompt injection, unsafe tools, plugins, or compromised runtime acting with user authority |
+| NInfer container | Read-only model directory and GPU device | Authenticated host-published API; ordinary outbound bridge access | No application state in Compose | Native parser/runtime, LAN exposure, outbound access, or GPU-driver compromise |
 | Model downloader | Read/write ignored `models/`; no GPU | Temporary outbound Hugging Face access | Resumable artifact cache | Supply-chain input, disk exhaustion, or corrupted partial download; mitigated by immutable revisions and SHA-256 |
 | Docker daemon | Container, image, network, volume, and GPU control | Host-dependent | Docker-managed state | Docker access is effectively administrative for this deployment |
 
@@ -24,8 +24,8 @@ NInfer is the only long-running container. No Docker socket, broad host path,
 host network, host PID namespace, or privileged mode is exposed to it. The
 root filesystem and model mount are read-only; a bounded in-memory `/tmp` is
 the only writable container filesystem. Its bridge is not an `internal` Docker network
-because Docker Desktop cannot publish an internal-network service to the host
-loopback interface; therefore the container is not an egress sandbox.
+because Docker Desktop cannot publish an internal-network service to a host
+interface; therefore the container is not an egress sandbox.
 
 There is no active SSH sandbox. Historical documentation describing one is
 retained only in the superseded ADR.
@@ -48,17 +48,20 @@ API boundary limits network exposure; it does not make model output safe.
 Compose publishes NInfer as:
 
 ```text
-127.0.0.1:${NINFER_HOST_PORT} -> ninfer:8080
+${NINFER_BIND_ADDRESS}:${NINFER_HOST_PORT} -> ninfer:8080
 ```
 
-Loopback prevents ordinary remote clients from reaching the service. NInfer
-also requires the generated bearer key, which protects against unauthorized
-local requests. These controls do not defend against an attacker already able
-to inspect the user's files, Hermes state, Docker metadata, or processes.
+The default `127.0.0.1` bind prevents ordinary remote clients from reaching the
+service. Opt-in LAN mode binds one RFC1918 address, never `0.0.0.0`. NInfer
+requires the generated bearer key in both modes. LAN traffic is HTTP without
+TLS, so the endpoint and key should be used only on a trusted private network.
 
-Do not change the host bind to `0.0.0.0` without designing a separate remote
-access boundary with TLS, authentication, firewall policy, rate limits, and
-request-size limits.
+Do not configure router port forwarding. Scope the host firewall rule to its
+Private profile and local subnet. These controls do not defend against another
+LAN device that knows the key, a hostile device able to observe unencrypted
+traffic, or an attacker already able to inspect the user's files, Hermes state,
+Docker metadata, or processes. Return to local-only mode when remote access is
+not needed.
 
 ## Native Hermes authority
 

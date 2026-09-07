@@ -107,6 +107,8 @@ for secret_name in ("NINFER_API_KEY", "HF_TOKEN"):
 expected_env = {
     "NINFER_API_KEY": "",
     "HF_TOKEN": "",
+    "NINFER_ACCESS_MODE": "local",
+    "NINFER_BIND_ADDRESS": "127.0.0.1",
     "NINFER_HOST_PORT": "8080",
     "NINFER_GPU_DEVICE": "0",
     "NINFER_MODEL_PROFILE": "stock",
@@ -183,8 +185,8 @@ if re.search(r"(?m)^volumes:\s*$", compose_text):
     error("Compose must not declare container-era named volumes")
 if "HERMES_" in compose_text or re.search(r"(?im)^\s*(?:hermes|sandbox|sandbox-[a-z0-9-]*|ninfer-loopback):\s*$", compose_text):
     error("Compose still contains a Hermes, relay, or SSH-sandbox runtime dependency")
-if "127.0.0.1:${NINFER_HOST_PORT:-8080}:8080" not in compose_text:
-    error("NInfer must publish its authenticated API on host loopback only")
+if "${NINFER_BIND_ADDRESS:-127.0.0.1}:${NINFER_HOST_PORT:-8080}:8080" not in compose_text:
+    error("NInfer must publish its authenticated API on the selected host address")
 if "profiles: [tools]" not in compose_text:
     error("the model downloader must remain isolated behind the tools profile")
 if "profiles:" in ninfer_service:
@@ -225,7 +227,7 @@ if (
 ):
     error("NInfer logs must be bounded to avoid silently filling the Docker disk")
 if "internal: true" in compose_text:
-    error("NInfer's host-loopback port cannot use an internal Docker network")
+    error("NInfer's published host port cannot use an internal Docker network")
 
 unsafe_compose_patterns = {
     r"(?m)^\s*privileged:\s*true\s*$": "privileged containers",
@@ -247,6 +249,8 @@ consistency_requirements = {
         "Choose a model:",
         "select-model",
         "select-runtime",
+        "network",
+        "NINFER_BIND_ADDRESS",
         "diagnose-performance",
         "install-hermes",
         "https://hermes-agent.nousresearch.com/desktop",
@@ -266,7 +270,7 @@ consistency_requirements = {
         EXPECTED_CONTEXT,
         EXPECTED_KV_CAPACITY,
         "13.1.2-runtime-ubuntu24.04",
-        "127.0.0.1:${NINFER_HOST_PORT:-8080}:8080",
+        "${NINFER_BIND_ADDRESS:-127.0.0.1}:${NINFER_HOST_PORT:-8080}:8080",
         "profiles: [tools]",
     ],
     "model-downloader/download_model.py": [

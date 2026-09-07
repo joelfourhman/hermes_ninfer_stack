@@ -77,7 +77,7 @@ services:
               device_ids: ["${NINFER_GPU_DEVICE:-0}"]
               capabilities: [gpu]
     ports:
-      - "127.0.0.1:${NINFER_HOST_PORT:-8080}:8080"
+      - "${NINFER_BIND_ADDRESS:-127.0.0.1}:${NINFER_HOST_PORT:-8080}:8080"
     volumes:
       - ./models:/models:ro
     environment:

@@ -8,6 +8,9 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Opt-in `python ninfer.py network --mode lan` access that binds one private
+  IPv4 interface, preserves bearer authentication, live-tests and rolls back
+  changes, updates local Hermes, and keeps loopback as the default.
 - Interactive `stock` or `uncensored` model profiles in first-run setup, with
   the verified stock Qwen3.8-27B NVFP4 artifact as the recommended default.
 - `python ninfer.py select-model` for preparing and switching profiles while

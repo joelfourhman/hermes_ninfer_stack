@@ -10,6 +10,11 @@ official installer.
 Original runtime audit: 2026-08-23. Model-swap and resource-aware runtime
 implementation review: 2026-09-05.
 
+Opt-in LAN publication uses Docker Compose's host-IP port binding and Python
+standard-library IPv4 discovery. The supported remote path is one RFC1918 IPv4
+interface with bearer authentication; IPv6, `0.0.0.0`, TLS termination,
+internet publication, and router automation are outside the reviewed envelope.
+
 | Component | Audited value | Evidence scope |
 | --- | --- | --- |
 | GPU | NVIDIA GeForce RTX 5090, 32,607 MiB reported | Host and NInfer-container queries |

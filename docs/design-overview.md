@@ -64,11 +64,13 @@ selects `custom:ninfer`. This preserves a durable provider identity in Desktop
 sessions and avoids overwriting unrelated provider settings or a user's general
 `OPENAI_API_KEY`.
 
-### Loopback plus authentication
+### Exact-interface binding plus authentication
 
-Compose binds NInfer to `127.0.0.1:${NINFER_HOST_PORT}` and the server requires
-a random bearer key. Loopback prevents ordinary remote access; the key protects
-against unauthorized local clients. Neither control is presented as protection
+Compose binds NInfer to `127.0.0.1:${NINFER_HOST_PORT}` by default and the
+server requires a random bearer key. An explicit selector can instead bind one
+RFC1918 host interface for trusted-LAN clients; it never selects `0.0.0.0`.
+The key protects against clients that do not possess it. Neither control is
+presented as protection
 from a fully compromised user account.
 
 ### Honest native authority
@@ -109,7 +111,7 @@ because it was rerun.
 The active runtime has two long-lived processes with separate lifecycles:
 
 1. NInfer inside Docker, with the GPU, a read-only model mount, and one
-   authenticated loopback port.
+   authenticated host-interface port.
 2. Stock Hermes Desktop and its local runtime outside Docker, with normal
    per-user state and tool authority.
 

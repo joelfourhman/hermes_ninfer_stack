@@ -136,6 +136,7 @@ def main() -> int:
     values = read_env()
     required = [
         "NINFER_API_KEY",
+        "NINFER_BIND_ADDRESS",
         "NINFER_HOST_PORT",
         "NINFER_MODEL_PROFILE",
         "NINFER_MODEL_ID",
@@ -163,7 +164,10 @@ def main() -> int:
 
     api_key = values["NINFER_API_KEY"]
     model_id = values["NINFER_MODEL_ID"]
-    endpoint = f"http://127.0.0.1:{values['NINFER_HOST_PORT']}/v1/chat/completions"
+    endpoint = (
+        f"http://{values['NINFER_BIND_ADDRESS']}:"
+        f"{values['NINFER_HOST_PORT']}/v1/chat/completions"
+    )
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     started_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     result_dir = ROOT / "benchmarks" / timestamp

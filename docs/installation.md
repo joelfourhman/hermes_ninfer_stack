@@ -340,8 +340,27 @@ access.
 Setup creates an ignored `.env` file containing the private NInfer key and
 saves the model under `models/`. Only NInfer receives GPU access, and the model
 and container root filesystem are read-only; only bounded temporary memory is
-writable. NInfer listens only at the private
-`127.0.0.1` loopback address, not on the local network.
+writable. Fresh setup listens only at the private `127.0.0.1` loopback
+address. Trusted-LAN access remains off until explicitly enabled with
+`python ninfer.py network --mode lan`.
+
+## Optional access from another LAN computer
+
+After setup is healthy, run:
+
+```text
+python ninfer.py network --mode lan
+```
+
+Choose the host's private IPv4 interface and confirm the warning. Then run
+`python ninfer.py network` to show the endpoint and
+`python ninfer.py network --show-key` to reveal the bearer key deliberately.
+On the remote client, use that endpoint and key with model `qwen-local`.
+
+LAN mode is intended only for a trusted private network. Do not configure a
+router port forward. If required, create a host firewall allowance limited to
+the Private profile, the selected TCP port, and the local subnet. Restore the
+default with `python ninfer.py network --mode local`.
 
 The official Windows Hermes installation normally keeps its runtime under
 `%LOCALAPPDATA%\hermes`. Its current stock installer internally invokes its own
