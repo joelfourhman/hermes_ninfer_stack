@@ -11,7 +11,7 @@ from unittest.mock import Mock, patch
 
 from stack.api import Client, Completion
 from stack.bench_agent import run_workload
-from stack.config import MODEL_PROFILES, RUNTIME_PROFILES
+from stack.config import DEPLOYMENT_PRESETS, MODEL_PROFILES, RUNTIME_PROFILES
 from stack.commands import configure_client, use_preset
 from stack.metrics import parse_native_logs
 from stack.testing import fake_client
@@ -157,6 +157,40 @@ class BenchmarkTests(unittest.TestCase):
         self.assertEqual(call.kwargs["endpoint"], "http://192.168.1.20:8080/v1")
         self.assertEqual(call.kwargs["api_key"], "secret-key")
         self.assertTrue(call.kwargs["activate"])
+
+    def test_lan_client_configures_all_profiles_and_activates_selected_one(self):
+        helper = Mock()
+        helper.normalize_ninfer_client_endpoint.return_value = "http://192.168.1.20:8080/v1"
+        helper.native_hermes_command.return_value = (
+            ["hermes"],
+            {"HERMES_HOME": "hermes-home"},
+        )
+        helper.model_profile.side_effect = lambda key: MODEL_PROFILES[key]
+        helper.runtime_profile.side_effect = lambda key: RUNTIME_PROFILES[key]
+        helper.configure_hermes_preset_profile.side_effect = (
+            lambda _command, _environment, preset, _values, **_kwargs: f"ninfer-{preset}"
+        )
+        args = argparse.Namespace(
+            preset="all",
+            endpoint="http://192.168.1.20:8080/v1",
+            key_env="TEST_NINFER_KEY",
+            no_activate=False,
+            activate="autonomous",
+        )
+
+        with (
+            patch("stack.commands._helper", return_value=helper),
+            patch.dict("os.environ", {"TEST_NINFER_KEY": "secret-key"}),
+        ):
+            configure_client(args)
+
+        calls = helper.configure_hermes_preset_profile.call_args_list
+        self.assertEqual(len(calls), 7)
+        self.assertEqual([call.args[2] for call in calls], list(DEPLOYMENT_PRESETS))
+        self.assertEqual(
+            [call.args[2] for call in calls if call.kwargs["activate"]],
+            ["autonomous"],
+        )
 
     def test_compression_failure_retains_completed_request_evidence(self):
         class FailingSummary:

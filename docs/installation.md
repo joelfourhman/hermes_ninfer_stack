@@ -362,15 +362,15 @@ python ninfer.py network --mode lan
 python ninfer.py network --show-key
 
 # LAN client; use the endpoint printed by `network`
-python ninfer.py configure-client autonomous --endpoint http://192.168.1.20:8080/v1
+python ninfer.py configure-client all --endpoint http://192.168.1.20:8080/v1 --activate autonomous
 ```
 
 The client command prompts for the bearer key without placing it in shell
-history, verifies the authenticated `qwen-local` endpoint, creates or updates
-the native `ninfer-autonomous` Hermes profile and makes it active. Restart Hermes
-Desktop afterward. Pass `--no-activate` to prepare the profile without switching.
-Repeat with `default`, `coding`, `coding-fast`, `research`, `low-vram` or
-`uncensored` as needed.
+history, verifies the authenticated `qwen-local` endpoint once, creates or updates
+all seven native `ninfer-*` Hermes profiles and makes `ninfer-autonomous` active.
+Omit `--activate` to preserve the currently active profile. A specific preset name
+configures and activates only that profile; pass `--no-activate` to prepare it
+without switching. Restart Hermes Desktop afterward.
 
 One NInfer host serves one backend preset at a time. The preset selected with
 `use` on the host and the active `ninfer-*` profile on every client must match.

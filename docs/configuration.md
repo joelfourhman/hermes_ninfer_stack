@@ -39,6 +39,8 @@ back up local config and restore both sides when startup or synchronization fail
 `configure-client PRESET --endpoint URL` applies the same profile mapping to a
 Hermes Desktop on another trusted LAN computer. It securely prompts for the key,
 tests the endpoint before writing the profile and supports `--no-activate`.
+Use `configure-client all --endpoint URL` to create or update every profile in one
+run, with optional `--activate PRESET` to select the profile Desktop should load.
 Restart Desktop after profile changes. The initial `install-hermes` setup retains
 the existing project behavior: native local tools and manual approvals, removing
 obsolete project-imposed working-directory overrides.

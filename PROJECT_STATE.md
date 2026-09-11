@@ -9,8 +9,9 @@ and benchmarks/measured-summary.json contain the measured evidence.
   model/runtime/decoder together with one restart and transactional rollback.
   Each preset now creates and activates a separate native `ninfer-*` Hermes
   profile. `configure-client` securely provisions the same profile mapping on a
-  trusted LAN computer and verifies its authenticated endpoint before writing.
-  The full suite contains 66 tests: 62 pass and 4 GPU-only tests skip. Repository,
+  trusted LAN computer and verifies its authenticated endpoint before writing;
+  `configure-client all` provisions every native profile with one command.
+  The full suite contains 67 tests: 63 pass and 4 GPU-only tests skip. Repository,
   generated-documentation, lint and whitespace checks pass.
 
 - Source authority: stack/manifest.json. NInfer upgraded ad0f3d3 -> d492968.

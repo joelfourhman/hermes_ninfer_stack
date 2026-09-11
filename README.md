@@ -239,14 +239,15 @@ python ninfer.py network --show-key
 Then run this on each client, substituting the endpoint printed by the host:
 
 ```text
-python ninfer.py configure-client autonomous --endpoint http://192.168.1.20:8080/v1
+python ninfer.py configure-client all --endpoint http://192.168.1.20:8080/v1 --activate autonomous
 ```
 
-The command securely prompts for the key, verifies the authenticated endpoint,
-and creates and activates `ninfer-autonomous` in that client's Hermes Desktop.
-Restart Desktop afterward. The host loads one backend preset at a time, so use
-the same preset name on the host and every active client profile. Use
-`--no-activate` to prepare a client profile without switching to it.
+The command securely prompts for the key once, verifies the authenticated
+endpoint, creates or updates every `ninfer-*` profile and activates
+`ninfer-autonomous` in that client's Hermes Desktop. Omit `--activate` to keep
+the client's current profile active. A specific preset name still configures and
+activates only that profile. Restart Desktop afterward. The host loads one backend
+preset at a time, so use the same preset on the host and every active client.
 
 ## Maintain and troubleshoot
 

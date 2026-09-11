@@ -116,6 +116,9 @@ def use_preset(args: argparse.Namespace) -> None:
 def configure_client(args: argparse.Namespace) -> None:
     """Configure a native Hermes profile on a LAN client without a local NInfer checkout."""
     helper = _helper()
+    selected_activation = getattr(args, "activate", None)
+    if args.preset != "all" and selected_activation is not None:
+        raise ValueError("--activate is only needed with 'all'; a named preset activates itself")
     endpoint = helper.normalize_ninfer_client_endpoint(args.endpoint)
     key = os.environ.get(args.key_env, "").strip()
     if not key:
@@ -126,28 +129,45 @@ def configure_client(args: argparse.Namespace) -> None:
     if resolved is None:
         raise ValueError("Hermes Desktop is not installed on this computer")
 
-    preset = DEPLOYMENT_PRESETS[args.preset]
-    model = helper.model_profile(preset.model)
-    runtime = helper.runtime_profile(preset.runtime)
-    values = {
-        "NINFER_API_KEY": key,
-        "NINFER_MODEL_ID": "qwen-local",
-        "NINFER_MODEL_PROFILE": model.key,
-        "NINFER_MODEL_FILE": model.filename,
-        **runtime_env_values(runtime),
-        **spec_values(preset.spec),
-    }
-    helper.require_ninfer_endpoint(endpoint, key, values["NINFER_MODEL_ID"])
-    profile_name = helper.configure_hermes_preset_profile(
-        *resolved,
-        preset.key,
-        values,
-        endpoint=endpoint,
-        api_key=key,
-        activate=not args.no_activate,
-    )
-    state = "configured and activated" if not args.no_activate else "configured"
-    print(f"Hermes profile {profile_name} is {state} for {endpoint}.")
+    helper.require_ninfer_endpoint(endpoint, key, "qwen-local")
+    preset_keys = tuple(DEPLOYMENT_PRESETS) if args.preset == "all" else (args.preset,)
+    configured_profiles = []
+    for preset_key in preset_keys:
+        preset = DEPLOYMENT_PRESETS[preset_key]
+        model = helper.model_profile(preset.model)
+        runtime = helper.runtime_profile(preset.runtime)
+        values = {
+            "NINFER_API_KEY": key,
+            "NINFER_MODEL_ID": "qwen-local",
+            "NINFER_MODEL_PROFILE": model.key,
+            "NINFER_MODEL_FILE": model.filename,
+            **runtime_env_values(runtime),
+            **spec_values(preset.spec),
+        }
+        activate = (
+            selected_activation == preset_key
+            if args.preset == "all"
+            else not args.no_activate
+        )
+        profile_name = helper.configure_hermes_preset_profile(
+            *resolved,
+            preset.key,
+            values,
+            endpoint=endpoint,
+            api_key=key,
+            activate=activate,
+        )
+        configured_profiles.append(profile_name)
+
+    if args.preset == "all":
+        print(f"Configured {len(configured_profiles)} Hermes profiles for {endpoint}.")
+        if selected_activation is not None:
+            print(f"Hermes profile ninfer-{selected_activation} is active.")
+        else:
+            print("The previously active Hermes profile remains active.")
+    else:
+        state = "configured and activated" if not args.no_activate else "configured"
+        print(f"Hermes profile {configured_profiles[0]} is {state} for {endpoint}.")
     print("Restart Hermes Desktop to load it.")
 
 
@@ -171,7 +191,7 @@ def register_commands(sub) -> None:
         "configure-client",
         help="create a native Hermes profile for this NInfer host or a trusted LAN host",
     )
-    client.add_argument("preset", choices=tuple(DEPLOYMENT_PRESETS))
+    client.add_argument("preset", choices=(*DEPLOYMENT_PRESETS, "all"))
     client.add_argument(
         "--endpoint",
         required=True,
@@ -182,10 +202,16 @@ def register_commands(sub) -> None:
         default="NINFER_API_KEY",
         help="environment variable containing the API key; securely prompts when unset",
     )
-    client.add_argument(
+    activation = client.add_mutually_exclusive_group()
+    activation.add_argument(
         "--no-activate",
         action="store_true",
         help="create/update without changing the active profile",
+    )
+    activation.add_argument(
+        "--activate",
+        choices=tuple(DEPLOYMENT_PRESETS),
+        help="with 'all', activate this profile after configuring every profile",
     )
     client.set_defaults(func=configure_client)
     sub.add_parser("presets", help="show one-command deployment presets").set_defaults(
