@@ -33,6 +33,7 @@ workspace/
 # Benchmark output can contain prompts and model responses
 benchmarks/*
 !benchmarks/README.md
+!benchmarks/measured-summary.json
 
 # Local build, test, and runtime output
 build/
@@ -49,6 +50,7 @@ PROJECT_STATE.json
 PROJECT_STATE.json.*
 PROJECT_STATE.lock
 EPOCH_REPORT.json
+supervisor.local.json
 
 # Private keys, certificates, and local SSH material
 .ssh/

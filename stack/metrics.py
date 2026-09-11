@@ -212,6 +212,18 @@ def observe(args) -> None:
         from stack.jobs import load_state
 
         result["job"] = load_state(Path(args.state))
+        events = Path(result["job"]["job_dir"]) / "events/events.jsonl"
+        if events.exists():
+            # Seek only the log tail; observations must remain cheap on long jobs.
+            with events.open("rb") as stream:
+                stream.seek(max(0, events.stat().st_size - 65536))
+                lines = stream.read().decode("utf-8", errors="replace").splitlines()
+            for line in reversed(lines):
+                try:
+                    result["latest_job_event"] = json.loads(line)
+                    break
+                except json.JSONDecodeError:
+                    continue
     output = json.dumps(result, indent=2)
     if args.output:
         Path(args.output).write_text(output + "\n", encoding="utf-8")

@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def profile_table() -> str:
     rows = [
-        "| Profile | Context tokens | Shared KV tokens | Lanes | Device / host slots | Host KV MiB | Compression tokens | Turns |",
+        "| Profile | Context tokens | Shared KV tokens | Lanes | Device / host cache slots | Host KV MiB | Compression tokens | Turns |",
         "|---|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for p in RUNTIME_PROFILES.values():
@@ -55,6 +55,18 @@ def generated_reference() -> str:
 
 
 def generate(check: bool = False) -> None:
+    readme = ROOT / "README.md"
+    content = readme.read_text(encoding="utf-8")
+    begin, end = "<!-- BEGIN GENERATED PROFILES -->", "<!-- END GENERATED PROFILES -->"
+    if content.count(begin) != 1 or content.count(end) != 1:
+        raise ValueError("README must contain exactly one generated profile block")
+    before, block = content.split(begin)
+    _, after = block.split(end)
+    expected_readme = before + begin + "\n\n" + profile_table() + "\n\n" + end + after
+    if check and content != expected_readme:
+        raise ValueError("README profiles are stale; run python ninfer.py docs")
+    if not check:
+        readme.write_text(expected_readme, encoding="utf-8", newline="\n")
     target = ROOT / "docs/generated-config.md"
     expected = generated_reference()
     if check:

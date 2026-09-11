@@ -7,7 +7,7 @@ import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from stack.api import Client
+from stack.api import Client, Completion
 from stack.bench_agent import run_workload
 from stack.metrics import parse_native_logs
 from stack.testing import fake_client
@@ -15,17 +15,35 @@ from stack.workloads import Workspace, validate_fixture_code
 
 
 class BenchmarkTests(unittest.TestCase):
+    def test_compression_failure_retains_completed_request_evidence(self):
+        class FailingSummary:
+            calls = 0
+
+            def complete(self, *args, **kwargs):
+                self.calls += 1
+                if self.calls > 1:
+                    raise ValueError("Summary rejected")
+                return Completion(
+                    {"role": "assistant", "content": "A finding"},
+                    {"input_tokens": 100, "request_seconds_client": 0.1},
+                    "stop",
+                )
+
+        with tempfile.TemporaryDirectory() as d:
+            result = run_workload(
+                FailingSummary(), Workspace(Path(d)), "long-session", compression_tokens=50
+            )
+        self.assertFalse(result["success"])
+        self.assertEqual(len(result["requests"]), 1)
+        self.assertEqual(result["failures"][0]["phase"], "compression")
+
     def test_coding_fixture_requires_two_real_edit_test_cycles(self):
         with tempfile.TemporaryDirectory() as directory:
             workspace = Workspace(Path(directory))
             result = run_workload(fake_client(), workspace, "coding")
             self.assertTrue(result["success"])
             self.assertEqual(
-                [
-                    event["failed"]
-                    for event in result["tools"]
-                    if event["tool"] == "run_tests"
-                ],
+                [event["failed"] for event in result["tools"] if event["tool"] == "run_tests"],
                 [True, False],
             )
             self.assertEqual(len(result["requests"]), 8)
@@ -33,14 +51,10 @@ class BenchmarkTests(unittest.TestCase):
     def test_tool_boundaries(self):
         with tempfile.TemporaryDirectory() as directory:
             workspace = Workspace(Path(directory))
-            self.assertIn(
-                "error", workspace.execute("read_file", {"path": "../secret"})
-            )
+            self.assertIn("error", workspace.execute("read_file", {"path": "../secret"}))
             self.assertIn(
                 "error",
-                workspace.execute(
-                    "write_file", {"path": "test_ledger.py", "content": "pass"}
-                ),
+                workspace.execute("write_file", {"path": "test_ledger.py", "content": "pass"}),
             )
         with self.assertRaises(ValueError):
             validate_fixture_code('import os\nos.remove("file")')
@@ -57,20 +71,14 @@ class BenchmarkTests(unittest.TestCase):
                 pass
 
             def do_POST(self):
-                payload = json.loads(
-                    self.rfile.read(int(self.headers["Content-Length"]))
-                )
+                payload = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
                 received.append(payload)
                 self.send_response(200)
                 self.send_header("Content-Type", "text/event-stream")
                 self.end_headers()
                 events = [
                     {"choices": [{"delta": {"role": "assistant"}}]},
-                    {
-                        "choices": [
-                            {"delta": {"reasoning_content": "Preserved reasoning"}}
-                        ]
-                    },
+                    {"choices": [{"delta": {"reasoning_content": "Preserved reasoning"}}]},
                     {
                         "choices": [
                             {
@@ -96,9 +104,7 @@ class BenchmarkTests(unittest.TestCase):
                                     "tool_calls": [
                                         {
                                             "index": 0,
-                                            "function": {
-                                                "arguments": 'th":"README.md"}'
-                                            },
+                                            "function": {"arguments": 'th":"README.md"}'},
                                         }
                                     ]
                                 }

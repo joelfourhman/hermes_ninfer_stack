@@ -1,106 +1,88 @@
-# Performance
+# Cache semantics and measurements
 
-## Current runtime design
+The pinned source was inspected directly; see [AUDIT.md](../AUDIT.md). NInfer uses
+a shared KV pool across lanes, FP8 KV in these profiles, and retained recurrent,
+hidden and speculative continuation state. Device state slots avoid transfer;
+host state and pinned host KV extend retained histories with transfer costs.
+Eviction, admission and capacity planning affect whether a prefix can be reused.
+There is no enabled durable disk KV store, active swap or arbitrary preemption.
 
-No comparable throughput campaign has yet been collected for both selectable
-profiles. Published measurements must identify the exact profile and cannot be
-generalized between stock NVFP4 and the uncensored groupwise-int artifact.
-The source model's capability checks do not establish serving speed or agent quality.
+The profile's device slots are retained cache slots in addition to active lane
+state. Native total device-state capacity is `max_concurrency + device_state_slots`;
+the two-lane/two-cache-slot profiles therefore allocate four device state slots.
+The benchmark retains native startup/interval definitions rather than treating
+configured cache slots as the engine's entire state-memory footprint.
 
-| Measurement scope | Status |
-| --- | --- |
-| Source-model refusal and four 0-shot capability checks | Published by the source-model author |
-| Conversion recipe and RTX 5090 serving example | Published; no throughput figures |
-| Direct NInfer on this repository's current runtime profiles | Required before a local comparison |
-| Native Hermes orchestration overhead | Not collected |
+`max-context` is the per-request total token ceiling; `kv-capacity` is shared pool
+capacity. Two lanes do not each reserve half the pool, and they do not guarantee
+two simultaneous maximum-context requests. Host KV is backing/retention capacity,
+not extra active GPU token capacity. Research/max-context have 240,000 tokens,
+not 240 Ki tokens. Leave room for outputs, tools and compression before the ceiling.
 
-The default `balanced` profile uses 131,072 context, 196,608 shared device KV,
-two active lanes, FP8 KV, device/host prefix checkpoints, a 120-second admission
-deadline, and Hermes compression at 90,000 tokens. It keeps NInfer's measured
-1,024-token prefill chunk and MTP3 proposal profile. The `max-context` profile
-matches NInfer's published 240K long-agent allocation. See the
-[upstream runtime and performance tables](https://github.com/Neroued/ninfer#performance).
+The initial coding/autonomous candidate used a 240,000-token KV pool. Actual
+DFlash2-7 startup on the RTX 5090 could not reserve that runtime footprint.
+These two profiles now use 196,608 shared tokens while retaining their 196,608
+per-request ceiling. Research/max-context stay at 240,000 and should use the
+qualified MTP path; larger DFlash2 reservations are not claimed to fit.
 
-NInfer's published Qwen3.8 results show why model format and workload must be
-reported separately. On its RTX 5090 corpus, stock NVFP4 has much faster short
-prefill than groupwise-int, while their structured MTP3 decode rates are close.
-Those upstream measurements do not establish the speed of this project's
-custom uncensored weights.
+Stock Hermes sorts/caches stable skills and tools and preserves conversation
+order. This integration does not rebuild/reorder its system prefix. Durable
+handoffs are appended in user turns; changing timestamps never enters the stable
+system prefix. Native Hermes compression changes history and therefore has a
+cache cost. Keep reasoning messages and tool-call/result order intact. The
+observer hashes the system prompt at real API hooks; it does not claim to hash
+tool schemas that the hook does not expose.
 
-## Historical baseline—not a same-model comparison
+## Metric definitions
 
-The previous `qwen3_8_27b_nvfp4.ninfer` artifact was observed at 65,536 context
-and KV capacity on this host:
+| Output | Source and scope |
+|---|---|
+| Input/output tokens | Native Chat usage |
+| Cached prefix tokens | Native usage details or terminal timings.cache_n |
+| Fresh prefill tokens | Derived input minus cached; native request_done computed_prefill_tokens also retained |
+| Client TTFT | Send to first content/reasoning/tool delta; includes queue/transport |
+| Hermes TTFB | Hook start to first stream chunk; not necessarily first token |
+| Prefill/decode seconds and tok/s | Terminal native timings; prompt time includes restoration and first token |
+| Model request seconds | Client elapsed or actual Hermes API-hook durations, not whole-agent turn duration |
+| Tool seconds | Bounded tool events or Hermes pre/post-tool hooks |
+| Context/compression | Per-request input tokens; bounded-driver compression events; Hermes compression unknown unless exposed |
+| KV/state/host cache | Native throughput interval context_cache gauges/counters |
+| Restore path/time, speculation | Native request_done result/timings/speculative/materialization records when present |
+| VRAM/RAM | One-second whole-device/whole-host samples, not process-private allocations |
 
-| Observation | Previous NVFP4 artifact |
-| --- | ---: |
-| NInfer-reported KV runtime allocation | 2.75 GiB |
-| Free VRAM after startup | 7.24 GiB |
-| Model load time | 85.5181 s |
-| `nvidia-smi` after verification | 24,914 MiB used / 7,274 MiB free |
+Unavailable values stay null. Raw events preserve upstream fields rather than
+inventing hit ratios. Interval records include other clients and are never joined
+to a request by guess. The opaque HTTP x-request-id differs from the numeric
+native request ID; no false join is made. Native speculative accepted/drafted
+counts are retained, not conflated with tokens/sec. Docker log retention is bounded.
 
-These figures are retained only as rollback-era evidence. The new artifact is
-groupwise-int, includes different weights, is smaller on disk, and runs with a
-larger 131K KV allocation. Do not infer throughput or memory use from the old
-numbers.
+`observe` combines hardware, active verified configuration and recent native
+events. `observe --state PATH` adds job epoch, milestone, session and checkpoint
+plus the latest private hook event. No Prometheus/Grafana services are required.
 
-## Collect a local result
+## Benchmark protocol
 
-Require full integration verification first:
+Use [BENCHMARK_PLAN.md](../BENCHMARK_PLAN.md) and
+[BENCHMARK_RESULTS.md](../BENCHMARK_RESULTS.md). The primary metric is accepted
+workload completion time with failures in the denominator. Report TTFT, cache,
+context, quality and stability alongside throughput. A small fixture does not
+establish multi-hour agent performance or justify maximizing context by default.
 
-```text
-python ninfer.py verify
-```
+The bounded coding driver requires two edits and two test invocations plus final
+independent fixture acceptance. It restricts edits/tests to fixture operations.
+The actual Hermes driver uses native terminal/file tools and manual approvals;
+it measures real orchestration and validates the final fixture, but does not
+require an identical number of tool calls. Private-home preparation and CLI
+capability checks are outside epoch wall time; CLI process startup is included.
+Compare only matching drivers.
+The Hermes driver uses installed Hermes defaults for output cap, thinking and
+sampling; `--max-tokens`/`--thinking` control the bounded driver. Native request
+records retain the actual resolved settings for reviewing Hermes comparisons.
 
-Then run:
-
-```text
-python ninfer.py benchmark
-python ninfer.py benchmark --runs 5 --max-tokens 1024
-```
-
-For operational evidence from real Hermes work, run:
-
-```text
-python ninfer.py diagnose-performance
-python ninfer.py diagnose-performance --lines 5000
-```
-
-The diagnostic reads recent container logs and reports prompt size, p50/p95
-time to first token, median prefill/decode speed, prefix reuse, MTP acceptance,
-queue timeouts, and context-limit rejections. It does not print prompts or
-responses. Docker's bounded log retention means it describes only the sampled
-window.
-
-The benchmark verifies the active artifact's pinned SHA-256 before measuring.
-It uses a warm persistent server, changes each prompt to avoid counting an
-identical full-prompt cache hit as an independent run, records raw streaming
-timing, and samples the GPU. Results remain ignored because prompts and model
-responses may be private.
-
-Before calling the model a successful replacement, collect at least:
-
-- a short-prompt decode sample;
-- a 64K-class prefill sample;
-- a near-120K prefill sample;
-- model load time and idle VRAM;
-- MTP acceptance and committed decode speed where available;
-- a native Hermes task representative of the intended AFK workload.
-
-## Required result metadata
-
-A reproducible result must include:
-
-- date and direct-NInfer or Hermes-routed scope;
-- GPU, VRAM, driver, CUDA image, Docker, and Compose versions;
-- NInfer runtime commit and local model SHA-256;
-- model artifact revision and SHA-256;
-- context, KV dtype/capacity, concurrency, prefill chunk, and speculation;
-- prompt and committed output token counts;
-- cold or warm state and sample count;
-- time to first token and committed generation tokens per second;
-- GPU utilization, observed VRAM, failures, and output-limit behavior.
-
-Do not compare results with different prompt lengths, context allocations,
-sampling, speculation, or warm-up policies as if they measured the same thing.
-Hermes-routed measurements also include prompt construction and agent overhead.
+The server is warmed by startup validation. Repetitions reuse one running server
+and can share prefixes. Report first and subsequent samples; these are neither
+pure cold-cache nor random-order experiments. For cold-cache comparisons restart
+before every sample, keeping the same startup probe, and record that protocol.
+For long-context tests `--context-kib` means approximate fixture bytes, not input
+tokens. Measure actual usage. Long-session compression in the bounded harness is
+an explicit summary/reset simulation, not a claim about native Hermes compression.

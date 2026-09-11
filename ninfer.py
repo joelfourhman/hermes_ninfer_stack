@@ -1530,6 +1530,20 @@ def start_ninfer(values: dict[str, str]) -> None:
     try:
         compose(*up_command)
     except StackError as exc:
+        # Save evidence before a selection transaction replaces the failed container.
+        evidence = ROOT / "benchmarks" / f"startup-failure-{time.time_ns()}"
+        try:
+            logs = compose("logs", "--no-color", "--tail", "300", "ninfer", capture=True, check=False)
+            evidence.mkdir(parents=True)
+            key = values.get("NINFER_API_KEY", "")
+            text = logs.stdout + logs.stderr
+            if key:
+                text = text.replace(key, "<redacted>")
+            (evidence / "runtime.log").write_text(text, encoding="utf-8")
+            (evidence / "config.json").write_text(json.dumps({k: v for k, v in values.items() if k.startswith("NINFER_") and k != "NINFER_API_KEY"}, indent=2), encoding="utf-8")
+            print(f"Startup failure evidence saved: {evidence}")
+        except (OSError, StackError):
+            pass
         raise StackError(
             "The local AI service did not become ready. Docker Desktop shows the container "
             "details, or run 'python ninfer.py logs' to see the cause. After fixing it, rerun "

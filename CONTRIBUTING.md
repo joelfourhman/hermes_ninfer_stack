@@ -36,8 +36,8 @@ Engine must already be running:
 python ninfer.py setup
 ```
 
-Setup explicitly asks before either profile's large transfer: about 20 GiB for
-stock or 17 GiB for uncensored. It starts the verified NInfer artifact first,
+Setup asks before a large model transfer; exact supported artifacts/sizes are in
+the generated configuration reference. It starts the verified NInfer artifact first,
 then offers to install and configure the official stock Hermes
 Desktop/native package for the current host user. The Hermes-only step can be
 rerun without rebuilding NInfer:
@@ -57,7 +57,12 @@ Run the checks relevant to the change. The normal non-GPU validation set is:
 ```text
 python ninfer.py validate
 docker compose config --quiet
-python -m py_compile ninfer.py scripts/benchmark.py scripts/validate.py scripts/verify.py
+python -m compileall -q ninfer.py stack scripts tests model-downloader/download_model.py
+python -m unittest discover -s tests -v
+python -m pip install -r requirements-dev.txt
+python -m ruff check ninfer.py stack scripts tests model-downloader/download_model.py
+python ninfer.py docs --check
+python ninfer.py bench-agent coding --smoke
 docker compose --profile tools build model-downloader
 ```
 
@@ -77,6 +82,11 @@ Report the exact checks run and any checks that could not run. Never fabricate
 GPU, latency, throughput, or compatibility results.
 
 ## Change guidelines
+
+Change source/model/profile pins in `stack/manifest.json`, update the gitlink and
+run `python ninfer.py docs`. Generated tables must not be edited independently.
+Qualify candidate decoders on identical artifacts and record accepted work,
+failures, TTFT, cache/context and memory rather than just raw tokens/sec.
 
 - Preserve the boundary between native Hermes and containerized NInfer.
 - Keep machine-specific paths and tunable values out of tracked runtime state.

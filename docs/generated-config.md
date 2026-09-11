@@ -5,15 +5,15 @@ Generated from `stack/manifest.json`; edit the manifest, then run `python ninfer
 NInfer source/image revision: `d49296868dcc17bd478ec185f0d3a801bcc0bf56`.
 CUDA image base: `docker.io/nvidia/cuda:13.1.2-runtime-ubuntu24.04`.
 
-| Profile | Context tokens | Shared KV tokens | Lanes | Device / host slots | Host KV MiB | Compression tokens | Turns |
+| Profile | Context tokens | Shared KV tokens | Lanes | Device / host cache slots | Host KV MiB | Compression tokens | Turns |
 |---|---:|---:|---:|---:|---:|---:|---:|
 | `balanced` | 131,072 | 196,608 | 2 | 2 / 8 | 8,192 | 90,000 | 40 |
 | `single-session` | 131,072 | 131,072 | 1 | 1 / 4 | 4,096 | 100,000 | 40 |
 | `max-context` | 240,000 | 240,000 | 2 | 2 / 8 | 8,192 | 200,000 | 40 |
 | `interactive` | 131,072 | 196,608 | 2 | 2 / 8 | 8,192 | 90,000 | 40 |
-| `coding` | 196,608 | 240,000 | 2 | 2 / 8 | 8,192 | 150,000 | 40 |
+| `coding` | 196,608 | 196,608 | 2 | 2 / 8 | 8,192 | 150,000 | 40 |
 | `research` | 240,000 | 240,000 | 2 | 2 / 8 | 8,192 | 200,000 | 40 |
-| `autonomous` | 196,608 | 240,000 | 2 | 2 / 8 | 8,192 | 150,000 | 24 |
+| `autonomous` | 196,608 | 196,608 | 2 | 2 / 8 | 8,192 | 150,000 | 24 |
 | `low-vram` | 65,536 | 65,536 | 1 | 1 / 2 | 2,048 | 48,000 | 40 |
 
 All profiles use FP8 KV, prefill chunk 1024, preserved thinking and optimized draft heads.

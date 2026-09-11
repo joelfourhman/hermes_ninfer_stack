@@ -47,16 +47,20 @@ def run_workload(
             and (requests[-1].get("input_tokens") or 0) > compression_tokens
             and workload == "long-session"
         ):
-            summary = client.complete(
-                messages
-                + [
-                    {
-                        "role": "user",
-                        "content": "Summarize the essential findings for continuation. No tools.",
-                    }
-                ],
-                max_tokens=512,
-            )
+            try:
+                summary = client.complete(
+                    messages
+                    + [
+                        {
+                            "role": "user",
+                            "content": "Summarize the essential findings for continuation. No tools.",
+                        }
+                    ],
+                    max_tokens=512,
+                )
+            except Exception as exc:
+                failures.append({"turn": turn, "type": type(exc).__name__, "phase": "compression"})
+                break
             requests.append(dict(summary.metrics, kind="compression"))
             compressions.append({"turn": turn, "input_tokens": summary.metrics["input_tokens"]})
             messages = [

@@ -27,7 +27,7 @@ the only writable container filesystem. Its bridge is not an `internal` Docker n
 because Docker Desktop cannot publish an internal-network service to a host
 interface; therefore the container is not an egress sandbox.
 
-There is no active SSH sandbox. Historical documentation describing one is
+Ordinary Desktop has no active SSH sandbox. Explicit durable jobs can now select the SSH backend described in [jobs](jobs.md). Historical documentation describing one is
 retained only in the superseded ADR.
 
 ## Reduced-refusal model behavior
@@ -190,3 +190,20 @@ If compromise or secret disclosure is suspected:
 
 Do not publish live credentials or unredacted private prompts while reporting
 an incident.
+
+## Optional job execution and supervision
+
+Durable local jobs retain user authority and manual approvals. Private Hermes
+homes prevent job provider/backend/plugin changes from rewriting Desktop config.
+Container jobs opt into one disposable clone mount, explicit image/toolchain,
+CPU/RAM bounds, dropped capabilities, no privilege escalation and default no
+network. SSH jobs use an explicitly provisioned Linux workspace. The native
+Hermes process remains on the host; browser/connector containment is not claimed.
+No broad host mounts, Docker socket or inference credentials are forwarded to the
+worker container. Docker itself remains a privileged host dependency.
+
+Checkpoint hashes detect accidental corruption, not a hostile same-user actor.
+Native tool filesystem checkpoints and epoch ledgers do not undo network actions.
+Private logs/reports/session databases can contain project information and must
+not be committed. An opt-in supervisor sends only after explicit `--send`, using
+an environment credential and a reviewable compact packet. See [jobs](jobs.md).

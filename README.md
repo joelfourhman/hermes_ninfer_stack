@@ -49,422 +49,170 @@ and existing model files are preserved. For alternate models, storage needs,
 the complete prompt walkthrough, and common first-run problems, see the
 [installation guide](docs/installation.md).
 
-## Overview
+## Local agents with measured, recoverable work
 
-This project is the shortest supported path from a Windows PC with an RTX 5090
-to a working local Hermes Desktop chat. You do not need to know how AI models,
-CUDA, Docker Compose, or API keys work. Install the four normal prerequisites,
-clone the repository, and run one Python command.
+Stock Hermes Desktop runs natively on Windows. NInfer runs in a single hardened
+Linux GPU container. Hermes talks to its authenticated OpenAI-compatible API.
+Optional durable jobs use the installed Hermes CLI in a private job home, bounded
+epochs, independent validation and a checksummed handoff. Ordinary Desktop use
+continues to work without the job controller.
 
-The setup order is intentional: it gets the local AI model running first and
-then installs and connects Hermes Desktop. When Hermes opens at the end, it has
-a working local model to talk to.
+The recommended starting point remains **stock + balanced + MTP3**. Workload
+profiles and DFlash2 are selectable candidates. See the actual
+[measurements](BENCHMARK_RESULTS.md) before changing your daily configuration.
 
-## What is installed
+## Hardware and provenance
 
-This project runs one Docker container: NInfer, the program that loads the AI
-model on the RTX 5090. A normal, native installation of
-[Hermes Desktop](https://hermes-agent.nousresearch.com/desktop) connects to it
-through the selected host address. Fresh setup is local-only; trusted-LAN
-access is an explicit opt-in.
+- RTX 5090, 32 GB VRAM; close other GPU-heavy applications.
+- Windows is the primary host. Docker Desktop needs Linux containers with GPU
+  access. Python 3.10+ and Git are required; a host CUDA Toolkit is unnecessary.
+- Allow substantial system RAM for Docker, Hermes and pinned host KV. Profiles
+  can reserve 8 GiB of host KV in addition to model staging and other processes.
+- Allow model storage plus Docker build space. Selecting the companion artifact
+  retains the original files and adds another roughly 22 GiB.
 
-Hermes is not packaged, forked, or run in Docker by this repository. It runs as
-the signed-in desktop user and keeps its configuration, sessions, skills, and
-updates in the standard Hermes locations.
+The exact NInfer commit, CUDA base, immutable model revisions, file sizes and
+SHA-256 checksums are generated in the [configuration reference](docs/generated-config.md)
+from [stack/manifest.json](stack/manifest.json). NInfer is pinned to an audited
+upstream master commit; it is not represented as a tagged stable release.
+`build`, `verify` and `validate` check source/image/artifact/CLI provenance.
+[AUDIT.md](AUDIT.md) records the previous deployment and verified upstream behavior.
 
-> **Security boundary:** native Hermes has the same filesystem permissions as
-> the user who launches it. A UAC prompt, approval dialog, or Hermes safe-root
-> setting is not a filesystem sandbox. Review tool calls and use backups or a
-> separate OS account when stronger isolation is required.
-
-## What the project provides
-
-- A pinned NInfer source revision built for the RTX 5090 (`sm_120a`).
-- Two fixed, checksum-verified model downloads: stock Qwen3.8-27B NVFP4 and
-  Qwen3.8-27B Uncensored groupwise-int.
-- An interactive first-run choice and a safe `select-model` command that retain
-  both artifacts and restore the previous profile if the new one cannot start.
-- Three reviewed RTX 5090 runtime profiles, with a balanced two-request agent
-  profile selected automatically for first-time users.
-- An authenticated OpenAI-compatible endpoint published on loopback by default,
-  with reversible single-interface LAN access.
-- A single Python control command, `ninfer.py`, for setup, operation,
-  verification, performance diagnosis, and benchmarking.
-- A helper that finds or directs the user to the official Hermes Desktop
-  installer and configures the stock installation for NInfer.
-
-The helper is not a custom installer and this repository does not produce a
-Hermes executable. The official Hermes installer remains responsible for the
-desktop application and its runtime dependencies.
-
-## Architecture
-
-```mermaid
-flowchart LR
-    User[Current desktop user] --> Hermes[Stock Hermes Desktop]
-    Hermes -->|Bearer-authenticated OpenAI API| Port[Selected host address:NINFER_HOST_PORT]
-
-    subgraph Docker[Docker Compose]
-        NInfer[NInfer server]
-        Model[(Read-only .ninfer model)]
-        Model --> NInfer
-    end
-
-    Port --> NInfer
-    NInfer --> GPU[RTX 5090]
-```
-
-NInfer owns model loading, GPU memory, tokenization, and generation. Hermes
-owns the agent loop, native tools, memory, skills, and integrations. They meet
-only at the authenticated OpenAI-compatible HTTP boundary.
-
-See [Architecture](docs/architecture.md) for the full trust and data flow.
-
-## Requirements
-
-- NVIDIA GeForce RTX 5090 with enough free VRAM for the selected profile.
-- A driver capable of running CUDA 13.1 containers.
-- Docker Desktop or Docker Engine with NVIDIA GPU support and Docker Compose.
-- Git and Python 3.10 or newer on the host.
-- At least 24 GiB free for stock, or 21 GiB for uncensored. Keeping both final
-  artifacts uses about 37 GiB.
-- Network access during initial source, model, and Hermes Desktop installation.
-
-On Windows, use Linux containers in Docker Desktop. This project does not
-require the user to install or work inside WSL, Bash, or a Linux shell. The
-stock Hermes Windows installer may provision its own upstream-managed runtime
-dependencies, including PortableGit, as described by the
-[official Windows guide](https://hermes-agent.nousresearch.com/docs/user-guide/windows-native).
-That upstream installer currently invokes a PowerShell bootstrap internally.
-You do not need to open or script PowerShell yourself, and this project never
-does so, but a literal policy that forbids any PowerShell or Bash process on the
-host is not compatible with the current stock Windows Hermes distribution.
-
-## What the setup command does
-
-`python ninfer.py setup` asks which pinned model profile to use, initializes the
-exact NInfer source and the balanced runtime profile, safely migrates obsolete
-local settings, asks before the large transfer,
-downloads and verifies the selected model in a short-lived CPU-only container,
-starts NInfer, waits for a real answer, and then offers the official
-stock Hermes Desktop installation. It is safe to rerun after an interruption.
-The host installs no Python packages; container tools use committed uv locks.
-
-## Install or repair Hermes separately
-
-NInfer can be prepared before Hermes Desktop is installed. Once NInfer is
-healthy, run:
+## Choose a workload
 
 ```text
-python ninfer.py install-hermes
+python ninfer.py profiles
+python ninfer.py profile coding
+python ninfer.py profile research
+python ninfer.py profile autonomous
+python ninfer.py profile low-vram
+python ninfer.py profile balanced
 ```
 
-The helper:
+`profile` configures NInfer and the installed Hermes provider together, preserves
+existing execution/approval settings, live-tests startup and rolls back on failure.
+Restart Desktop after changing context so existing processes reload their settings.
+`select-runtime --profile NAME` remains supported.
 
-- detects the normal `hermes` command and the standard Windows per-user
-  installation path;
-- opens the [official Hermes Desktop download page](https://hermes-agent.nousresearch.com/desktop)
-  when the stock installation is missing;
-- waits for the user to finish that installer instead of substituting a custom
-  package;
-- stores the NInfer bearer key in Hermes's normal secret file;
-- creates or updates the named `ninfer` provider and selected model, then
-  applies the documented session and approval defaults;
-- keeps the native terminal backend and stock working-directory behavior;
-- removes this project's former `workspace/` and `HERMES_WRITE_SAFE_ROOT`
-  overrides while retaining stock protected-path checks;
-- sets command approvals to `manual` so flagged commands require the user's
-  decision instead of an auxiliary model's automatic approval;
-- runs Hermes's own configuration check.
+<!-- BEGIN GENERATED PROFILES -->
 
-It is safe to rerun after a Hermes reinstall, NInfer port change, model alias
-change, or key rotation. Existing unrelated Hermes providers, sessions, tools,
-and preferences are preserved; the documented compression, turn-cap, and
-manual-approval settings are intentionally applied.
+| Profile | Context tokens | Shared KV tokens | Lanes | Device / host cache slots | Host KV MiB | Compression tokens | Turns |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `balanced` | 131,072 | 196,608 | 2 | 2 / 8 | 8,192 | 90,000 | 40 |
+| `single-session` | 131,072 | 131,072 | 1 | 1 / 4 | 4,096 | 100,000 | 40 |
+| `max-context` | 240,000 | 240,000 | 2 | 2 / 8 | 8,192 | 200,000 | 40 |
+| `interactive` | 131,072 | 196,608 | 2 | 2 / 8 | 8,192 | 90,000 | 40 |
+| `coding` | 196,608 | 196,608 | 2 | 2 / 8 | 8,192 | 150,000 | 40 |
+| `research` | 240,000 | 240,000 | 2 | 2 / 8 | 8,192 | 200,000 | 40 |
+| `autonomous` | 196,608 | 196,608 | 2 | 2 / 8 | 8,192 | 150,000 | 24 |
+| `low-vram` | 65,536 | 65,536 | 1 | 1 / 2 | 2,048 | 48,000 | 40 |
 
-After configuration, the helper asks you to close Hermes so it can reload the
-new provider, then reopens it automatically when possible. If it cannot reopen
-the app, launch **Hermes** normally from the Start menu or the platform's
-application launcher.
+<!-- END GENERATED PROFILES -->
 
-There is no project dashboard username or password in this architecture.
-Hermes Desktop runs as the signed-in OS user; the NInfer bearer key is stored
-privately and is not an interactive login credential.
+All profiles use FP8 KV, 1,024-token prefill chunks, preserved thinking and the
+optimized draft head. `interactive` mirrors balanced; `coding` retains a larger
+working history; `research` allows large documents; `autonomous` uses shorter
+epochs; `low-vram` reduces the cache footprint. Original names remain available.
+These are context ceilings, not guaranteed sustained capacity or speed on every
+artifact. Companion weights and draft windows have their own memory costs.
 
-## Hermes settings
+“240K” means **240,000 tokens total per request**, including prompt and output.
+The shared KV pool is not divided statically by two lanes. Concurrent requests
+and retained state compete for capacity; two lanes do not promise two full
+240K sessions simultaneously. See [cache behavior](docs/performance.md).
 
-The helper applies the equivalent of these stock Hermes settings:
-
-```yaml
-providers:
-  ninfer:
-    api: http://127.0.0.1:8080/v1
-    key_env: NINFER_API_KEY
-    transport: chat_completions
-    default_model: qwen-local
-    models:
-      qwen-local:
-        context_length: 131072
-        supports_vision: false
-
-model:
-  provider: custom:ninfer
-  default: qwen-local
-  context_length: 131072
-  supports_vision: false
-
-terminal:
-  backend: local
-
-approvals:
-  mode: manual
-
-compression:
-  enabled: true
-  threshold: 0.9
-  threshold_tokens: 90000
-```
-
-The example shows the local-only default. The actual address and port come from
-`NINFER_BIND_ADDRESS` and `NINFER_HOST_PORT`.
-The API key is not written inline in `config.yaml`, and the Hermes installation
-helper never prints it. Only the explicit `network --show-key` command reveals
-it for transfer to a remote client. The helper removes its older `terminal.cwd` and
-`HERMES_WRITE_SAFE_ROOT` overrides. Desktop follows stock Hermes behavior:
-Desktop/gateway tools begin in the user's home directory, while CLI sessions
-use the directory where Hermes was launched. Hermes's built-in credential and
-protected-path denylist remains active.
-
-## Model profiles
-
-| Profile | Stock (default) | Uncensored (optional) |
-| --- | --- | --- |
-| Download | `neroued/Qwen3.8-27B-nvfp4-NInfer` | `DogOnKeyboard/Qwen3.8-27B-Uncensored-NInfer` |
-| Artifact | `qwen3_8_27b_nvfp4.ninfer` | `qwen3_8_27b_uncensored.ninfer` |
-| Preparation | Verified 20.02 GiB download | Verified 16.96 GiB download |
-| Quantization | NVFP4 | NInfer `qwen3_8_27b-v1` groupwise-int |
-| Behavior | Stock model behavior; recommended | Reduced refusal behavior; use deliberately |
-
-Model choice and runtime tuning are independent. Fresh setup uses `balanced`:
-
-| Runtime | Context | Shared device KV | Lanes | Hermes compression | Use case |
-| --- | ---: | ---: | ---: | ---: | --- |
-| `balanced` (default) | 131,072 | 196,608 | 2 | 90,000 | Long AFK task plus a smaller interactive request |
-| `single-session` | 131,072 | 131,072 | 1 | 100,000 | One isolated request with the smallest device allocation |
-| `max-context` | 240,000 | 240,000 | 2 | 200,000 | Very large histories; slower prompt ingestion |
-
-All profiles use FP8 KV, a 1,024-token prefill chunk, MTP with three draft
-tokens, CUDA Graphs, prefix reuse, retained thinking, and bounded device/host
-checkpoint caches. Vision remains disabled. Switch safely with
-`python ninfer.py select-runtime`; the command restarts NInfer, runs a real
-answer test, rolls back on failure, and updates stock Hermes when installed.
-See [Models](docs/models.md) and [Performance](docs/performance.md).
-
-For the recommended general-purpose coding configuration, use these exact
-commands:
+## Choose a model and decoder
 
 ```text
 python ninfer.py select-model --model stock
-python ninfer.py select-runtime --profile balanced
-python ninfer.py verify
+python ninfer.py spec mtp3
+
+python ninfer.py prepare-model --model stock-dflash2
+python ninfer.py select-model --model stock-dflash2
+python ninfer.py spec dflash2-7
+python ninfer.py spec dflash2-11
+python ninfer.py spec dflash2 --draft-tokens 5
 ```
 
-Model selection uses `--model`; runtime selection uses `--profile`. Close and
-reopen Hermes Desktop after switching so it reloads the updated provider
-metadata.
+DFlash2 requires the explicitly selected companion artifact. The original stock
+and optional uncensored artifacts support MTP; they are never silently replaced.
+MTP accepts 1–5 draft tokens; DFlash2 accepts 1–15. Selecting an older artifact
+while DFlash2 is active prints a notice and restores MTP3. Model and decoder
+changes live-test startup and restore the previous configuration on failure.
+[Model provenance and fallback](docs/models.md) explains the distinction between
+an artifact change and a decoder change.
 
-> **Model behavior is not a safety boundary.** For the uncensored profile, its publisher measured
-> substantially fewer refusals on harmful prompts, not zero refusals, and did
-> not evaluate code, math, generative quality, vision, or MTP behavior. Manual
-> approvals and filesystem backups matter more with this model, not less.
-
-## Verification
-
-Run the layered local verifier after setup:
+## Measure complete work
 
 ```text
-python ninfer.py verify
+python ninfer.py bench-agent coding --runs 3 --max-tokens 2048
+python ninfer.py bench-agent coding --driver hermes --runs 3
+python ninfer.py bench-agent research --context-kib 256 --runs 3
+python ninfer.py bench-agent long-session --session-turns 12 --max-turns 40
+python ninfer.py bench-agent parallel --session-turns 6 --max-turns 30
+python ninfer.py bench-compare benchmarks/RUN1/results.json benchmarks/RUN2/results.json
+python ninfer.py observe
 ```
 
-The verifier checks the pinned source and image provenance, GPU visibility,
-model checksum, NInfer health, endpoint authentication, model discovery, and a
-real generation. When stock Hermes is installed, it also checks the native
-provider configuration and the Hermes-to-NInfer route.
+The bounded driver executes real fixture reads, model edits and tests. The
+`hermes` driver invokes actual stock Hermes with terminal/file tools in a private
+home. Both save JSON, acceptance results, human-readable summaries, native logs
+and whole-device/host memory samples. Mock `--smoke` results are explicitly
+excluded from performance comparisons. [BENCHMARK_PLAN.md](BENCHMARK_PLAN.md)
+gives the controlled matrix, cache protocol and exact RTX 5090 commands.
 
-Hardware-independent repository checks remain available as:
+## Resume autonomous work
 
 ```text
-python ninfer.py validate
+python ninfer.py job init --repo C:/work/project --goal "Fix the failing tests" --test-command '["python","-m","unittest"]'
+python ninfer.py job resume --state C:/work/project/PROJECT_STATE.json --epochs 3
+python ninfer.py job status --state C:/work/project/PROJECT_STATE.json
 ```
 
-## Routine operation
+The JSON quoting above works in PowerShell; Command Prompt needs escaped inner
+double quotes. Each epoch restores the Hermes session, reads the durable handoff,
+makes a bounded increment, runs your validation command and checkpoints. Three
+failed attempts require `job replan`; the default total budget is 50 epochs.
+The controller runs in the foreground. After a crash or reboot, run `job resume`
+again; it does not install a background service. See [durable jobs](docs/jobs.md)
+for corruption recovery, compression limits, supervisor and artifact export.
+
+## Security and execution
+
+Desktop and local jobs run with your normal user permissions and manual Hermes
+approvals. Model refusal behavior is not an isolation boundary. Container jobs
+are opt-in, clone the committed repository into a disposable workspace, expose
+one mount and default to no network. SSH jobs target an explicitly provisioned
+Linux workspace. These modes isolate supported terminal/file tools; they do not
+claim to isolate the native Hermes process or every possible plugin/browser.
+See [security](docs/security.md) and [job backends](docs/jobs.md).
+
+Remote supervision is disabled by default. Explicitly configure it, review the
+compact packet and invoke `job supervise --send` to make a remote request. No
+credentials or full conversation histories belong in Git.
+
+The API binds to loopback by default. `python ninfer.py network --mode lan` is an
+explicit opt-in to authenticated private-LAN HTTP, without TLS. Use only a
+trusted network. `network --mode local` returns to loopback.
+
+## Maintain and troubleshoot
 
 ```text
-python ninfer.py prepare-model
-python ninfer.py select-model
-python ninfer.py select-runtime
-python ninfer.py network
-python ninfer.py build
 python ninfer.py up
-python ninfer.py status
 python ninfer.py logs
-python ninfer.py shell
 python ninfer.py verify
-python ninfer.py diagnose-performance
-python ninfer.py down
+python ninfer.py validate
+python ninfer.py docs --check
+python -m unittest discover -s tests -v
 ```
 
-`prepare-model` prepares the currently configured profile (or one named with
-`--model stock|uncensored`). `select-model` displays the same two choices,
-prepares the selection if necessary, starts it, and restores the previous
-profile if the live test fails. Both model files are retained.
-`select-runtime` chooses one of the reviewed memory/performance profiles without
-changing or redownloading the model. For non-interactive selection, use
-`select-model --model stock|uncensored` and
-`select-runtime --profile balanced|single-session|max-context`; the option
-names are intentionally different.
-`network` shows the current endpoint; its explicit modes safely switch between
-local-only and trusted-LAN publication.
-`down` stops NInfer without removing the downloaded model. The model is a host
-file mounted read-only into the container.
-`shell` opens Bash inside the NInfer container; it does not install or invoke a
-host Bash environment.
+For OOM/startup failure, inspect logs, close competing GPU work and restore
+`profile balanced` or `profile low-vram` with `spec mtp3`. A running Desktop
+session keeps its loaded config until restarted. Missing native metrics are
+reported as unavailable. NInfer caches and Responses IDs are process-local and
+are lost when NInfer restarts; durable Hermes sessions/checkpoints rebuild them.
 
-After verification passes, collect direct NInfer measurements with:
-
-```text
-python ninfer.py benchmark
-python ninfer.py benchmark --runs 5 --max-tokens 1024
-```
-
-To summarize recent private NInfer counters without printing prompts or model
-responses, run `python ninfer.py diagnose-performance`.
-
-## Optional LAN access
-
-Fresh setup binds NInfer only to `127.0.0.1`. To use it from another computer
-on a trusted LAN, run:
-
-```text
-python ninfer.py network --mode lan
-```
-
-The command prefers the private IPv4 address used by the default route, asks
-which interface to use when that cannot be determined,
-warns before exposure, restarts and live-tests NInfer, rolls back on failure,
-and updates local Hermes. It binds one RFC1918 address rather than `0.0.0.0`.
-
-Show the connection details, then deliberately reveal the bearer key needed by
-the remote client:
-
-```text
-python ninfer.py network
-python ninfer.py network --show-key
-```
-
-Configure the remote OpenAI-compatible client with the displayed endpoint,
-bearer key, model `qwen-local`, and the context length shown by the command.
-Treat the key like a password. Do not forward the port on the router. If the
-host firewall blocks the client, allow the selected TCP port only on Private
-networks and only from the local subnet.
-
-Return to the secure default at any time:
-
-```text
-python ninfer.py network --mode local
-```
-
-## Configuration
-
-`python ninfer.py setup` creates the ignored `.env` file from `.env.example`
-and generates a random NInfer bearer key. The main settings are:
-
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `NINFER_ACCESS_MODE` | `local` | `local` or explicit trusted-`lan` publication |
-| `NINFER_BIND_ADDRESS` | `127.0.0.1` | Exact host interface used by Docker publication |
-| `NINFER_HOST_PORT` | `8080` | Host endpoint port |
-| `NINFER_GPU_DEVICE` | detected (`0` normally) | NVIDIA device reserved for NInfer |
-| `NINFER_MODEL_PROFILE` | `stock` | Fixed profile: `stock` or `uncensored` |
-| `NINFER_MODEL_FILE` | `qwen3_8_27b_nvfp4.ninfer` | Profile-controlled artifact mounted read-only |
-| `NINFER_MODEL_ID` | `qwen-local` | API alias configured in Hermes |
-| `NINFER_RUNTIME_PROFILE` | `balanced` | Reviewed runtime profile |
-| `NINFER_CONTEXT_LENGTH` | `131072` | Per-request sequence ceiling |
-| `NINFER_KV_CAPACITY` | `196608` | Shared device KV-token budget |
-| `NINFER_MAX_CONCURRENCY` | `2` | Simultaneous request limit |
-| `NINFER_PENDING_TIMEOUT_MS` | `120000` | Preparation and admission deadline |
-| `NINFER_KV_DTYPE` | `fp8` | Device KV storage format |
-| `NINFER_HOST_KV_MIB` | `8192` | Pinned host checkpoint KV budget |
-| `NINFER_API_KEY` | generated | Bearer key shared with native Hermes |
-| `HERMES_COMPRESSION_ENABLED` | `true` | Native Hermes long-session compression |
-| `HERMES_COMPRESSION_THRESHOLD_TOKENS` | `90000` | Compress before prompt ingestion dominates latency |
-| `HERMES_MAX_TURNS` | `40` | Native Hermes tool-loop turn cap |
-
-Changing the port, model alias, context, or key requires NInfer recreation and
-another idempotent Hermes configuration pass:
-
-```text
-python ninfer.py down
-python ninfer.py up
-python ninfer.py install-hermes
-python ninfer.py verify
-```
-
-See [Configuration](docs/configuration.md) for validation rules and coupling.
-
-## Security notes
-
-- NInfer is bound to `127.0.0.1` by default; LAN mode binds one selected private
-  IPv4 address and never uses `0.0.0.0`.
-- The API requires the generated bearer key.
-- LAN mode is not an internet security boundary: never forward the port, use a
-  trusted LAN, and scope the host firewall to Private/local-subnet traffic.
-- Only NInfer receives the GPU reservation and read-only model mount; both
-  container root filesystems are read-only with bounded temporary storage.
-- No Docker socket is mounted into the container or exposed to Hermes.
-- Hermes runs outside Docker with the current user's normal authority.
-- Hermes retains its stock protected-path denylist, but other file and terminal
-  actions have the signed-in user's normal access.
-- UAC controls elevation; it does not stop a non-elevated Hermes process from
-  changing files that the current user can change.
-- Hermes approvals and safe-root checks are useful guardrails, not OS-level
-  containment.
-- Keep important work in version control and maintain backups that Hermes
-  cannot silently overwrite.
-
-Read [Security](docs/security.md) before enabling broad native terminal,
-browser-control, plugin, cron, or unattended capabilities.
-
-## Project layout
-
-```text
-.
-├── ninfer.py                  Cross-platform control command
-├── docker-compose.yml         NInfer runtime and one-shot download profile
-├── .env.example               Supported non-secret defaults
-├── ninfer/                    Pinned NInfer source submodule
-├── model-downloader/          uv-locked, checksum-verifying model downloader
-├── models/                    Ignored local model storage
-├── scripts/                   Validation, verification, and benchmark helpers
-├── benchmarks/                Ignored benchmark result directories
-└── docs/                      Architecture and operating guidance
-```
-
-## Documentation
-
-- [Installation](docs/installation.md)
-- [Architecture](docs/architecture.md)
-- [Configuration](docs/configuration.md)
-- [Models](docs/models.md)
-- [Compatibility](docs/compatibility.md)
-- [Performance](docs/performance.md)
-- [Security](docs/security.md)
-- [Troubleshooting](docs/troubleshooting.md)
-- [Design overview](docs/design-overview.md)
-
-## License and upstream projects
-
-Repository integration code is licensed under Apache License 2.0. NInfer,
-Hermes Agent, model artifacts, CUDA components, container bases, and downloaded
-dependencies retain their own licenses and terms. Review them before
-redistribution or commercial deployment.
+More detail: [installation](docs/installation.md),
+[configuration](docs/configuration.md), [architecture](docs/architecture.md),
+[compatibility](docs/compatibility.md), [troubleshooting](docs/troubleshooting.md),
+[performance](docs/performance.md), [final report](FINAL_REPORT.md).

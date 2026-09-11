@@ -158,7 +158,7 @@
       "label": "Coding",
       "description": "One long coding agent plus an occasional small request",
       "context_length": 196608,
-      "kv_capacity": 240000,
+      "kv_capacity": 196608,
       "max_concurrency": 2,
       "pending_timeout_ms": 120000,
       "kv_dtype": "fp8",
@@ -168,7 +168,7 @@
       "preserve_thinking": true,
       "compression_threshold_tokens": 150000,
       "max_turns": 40,
-      "qualification": "candidate; validate VRAM and workload on target GPU"
+      "qualification": "196608 shared KV selected after DFlash2-7 failed the 240000 reservation on RTX 5090; see BENCHMARK_RESULTS.md"
     },
     "research": {
       "key": "research",
@@ -192,7 +192,7 @@
       "label": "Autonomous",
       "description": "Bounded durable epochs with conservative context headroom",
       "context_length": 196608,
-      "kv_capacity": 240000,
+      "kv_capacity": 196608,
       "max_concurrency": 2,
       "pending_timeout_ms": 120000,
       "kv_dtype": "fp8",
@@ -202,7 +202,7 @@
       "preserve_thinking": true,
       "compression_threshold_tokens": 150000,
       "max_turns": 24,
-      "qualification": "candidate; validate VRAM and workload on target GPU"
+      "qualification": "shares the reduced coding KV budget; multi-hour stability remains unqualified"
     },
     "low-vram": {
       "key": "low-vram",

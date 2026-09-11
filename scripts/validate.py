@@ -82,6 +82,18 @@ required_paths = [
     "docs/decisions/0009-direct-model-downloads.md",
     "docs/decisions/0010-runtime-profiles-and-context-cache.md",
     ".github/workflows/ci.yml",
+    "stack/manifest.json",
+    "stack/config.py",
+    "stack/jobs.py",
+    "docs/generated-config.md",
+    "docs/jobs.md",
+    "AUDIT.md",
+    "BENCHMARK_PLAN.md",
+    "BENCHMARK_RESULTS.md",
+    "FINAL_REPORT.md",
+    "pyproject.toml",
+    "requirements-dev.txt",
+    "benchmarks/measured-summary.json",
 ]
 for relative in required_paths:
     if not (ROOT / relative).is_file():
@@ -263,6 +275,9 @@ for flag, key in {"--spec": "NINFER_SPEC_BACKEND", "--draft-tokens": "NINFER_DRA
         error(f"Compose {flag} must use {key}")
 
 markdown_files = [ROOT / "README.md", ROOT / "CONTRIBUTING.md", ROOT / "SECURITY.md", ROOT / "CHANGELOG.md"]
+markdown_files.extend(ROOT / name for name in (
+    "AUDIT.md", "BENCHMARK_PLAN.md", "BENCHMARK_RESULTS.md", "FINAL_REPORT.md", "PROJECT_STATE.md"
+))
 markdown_files.extend(sorted((ROOT / "docs").rglob("*.md")))
 markdown_files.extend(sorted((ROOT / ".github").rglob("*.md")))
 markdown_files.append(ROOT / "benchmarks/README.md")

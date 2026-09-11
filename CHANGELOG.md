@@ -8,6 +8,18 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Authoritative source/model/profile manifest with image, binary CLI, SHA-256,
+  clean submodule and staged-gitlink verification; generated profile documentation.
+- Audited NInfer upgrade, explicit DFlash2 companion artifact and configurable
+  MTP/DFlash2 drafts, retaining original artifacts and MTP3 fallback.
+- Workload profiles, measured coding/research/growing/parallel agent fixtures,
+  actual Hermes driver and lightweight native cache/timing/resource observations.
+- Durable bounded Hermes epochs, checksummed handoffs, validated reports,
+  retry/re-plan budgets, private hook integration and opt-in container/SSH tools.
+- Disabled-by-default compatible supervisor with explicit packet preview/send.
+- Windows/Linux unit, lint, generated-doc and mock benchmark CI checks, plus
+  manually runnable GPU chat/tool/reasoning/prefix tests and benchmark matrix.
+
 - Opt-in `python ninfer.py network --mode lan` access that binds one private
   IPv4 interface, preserves bearer authentication, live-tests and rolls back
   changes, updates local Hermes, and keeps loopback as the default.

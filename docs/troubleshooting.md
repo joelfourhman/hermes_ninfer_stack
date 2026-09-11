@@ -71,8 +71,8 @@ created and verifies the exact reviewed revision automatically:
 python ninfer.py setup
 ```
 
-The expected revision is
-`ad0f3d384b5cbcec4a48a3951c287b4e9831443e`. Do not replace it with an
+The expected revision is generated in [the configuration reference](generated-config.md)
+from `stack/manifest.json`. Do not replace it with an
 unpinned checkout as a troubleshooting shortcut. If setup reports local or
 untracked changes, it deliberately leaves them untouched; move your own NInfer
 source edits to a separate clone before rerunning setup.

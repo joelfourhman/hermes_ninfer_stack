@@ -239,5 +239,5 @@ def benchmark_hermes(helper, workspace, kind, args):
         if any(e["event"] == "post_api_request" for e in events)
         else None,
         "compression_events": None,
-        "notes": "Actual stock Hermes CLI, isolated job home, native local tools and manual approvals. Hook timings may be unavailable on older builds; native NInfer records remain separate.",
+        "notes": "Actual stock Hermes CLI, private job home, native local tools and manual approvals. Output cap/thinking/temperature use installed Hermes defaults, not bounded-driver --max-tokens/--thinking. Hook timings may be unavailable on older builds; native NInfer records remain separate.",
     }

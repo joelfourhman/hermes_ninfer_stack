@@ -42,14 +42,14 @@ jobs:
 
       - name: Check Python syntax
         shell: bash
-        run: >-
-          python3 -m py_compile
-          ninfer.py
-          scripts/benchmark.py
-          scripts/validate.py
-          scripts/verify.py
-          model-downloader/download_model.py
-          tests/test_ninfer.py
+        run: python3 -m compileall -q ninfer.py stack scripts tests model-downloader/download_model.py
+
+      - name: Lint Python and check generated documentation
+        shell: bash
+        run: |
+          python3 -m pip install -r requirements-dev.txt
+          python3 -m ruff check ninfer.py stack scripts tests model-downloader/download_model.py
+          python3 ninfer.py docs --check
 
       - name: Run Python unit tests
         shell: bash
@@ -62,6 +62,10 @@ jobs:
           python3 ninfer.py prepare-model --help
           python3 ninfer.py select-model --help
           python3 ninfer.py install-hermes --help
+          python3 ninfer.py profile --help
+          python3 ninfer.py spec --help
+          python3 ninfer.py job --help
+          python3 ninfer.py bench-agent coding --smoke
 
       - name: Validate repository invariants
         shell: bash
@@ -94,7 +98,14 @@ jobs:
 
       - name: Check Python syntax
         shell: cmd
-        run: python -m py_compile ninfer.py tests/test_ninfer.py
+        run: python -m compileall -q ninfer.py stack scripts tests model-downloader/download_model.py
+
+      - name: Lint Python and check generated documentation
+        shell: cmd
+        run: |
+          python -m pip install -r requirements-dev.txt
+          python -m ruff check ninfer.py stack scripts tests model-downloader/download_model.py
+          python ninfer.py docs --check
 
       - name: Run Python unit tests
         shell: cmd
@@ -107,3 +118,7 @@ jobs:
           python ninfer.py prepare-model --help
           python ninfer.py select-model --help
           python ninfer.py install-hermes --help
+          python ninfer.py profile --help
+          python ninfer.py spec --help
+          python ninfer.py job --help
+          python ninfer.py bench-agent coding --smoke

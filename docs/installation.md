@@ -3,7 +3,7 @@
 This guide assumes you have a Windows PC with an NVIDIA GeForce RTX 5090 and
 have never installed a local AI model before. You will use normal graphical
 installers for the prerequisites, paste three lines into Command Prompt, choose
-one of two model profiles, and accept the download and Hermes prompts.
+a model profile (stock remains recommended), and accept the download and Hermes prompts.
 
 At the end:
 
@@ -116,17 +116,12 @@ fix and stops before the large download.
 
 ### Model choice and download prompt
 
-The first menu is:
-
-```text
-1. Stock Qwen3.8-27B (recommended)
-2. Qwen3.8-27B Uncensored
-```
-
-Press Enter for stock. It is the simpler, faster, and safer starting choice: a
-verified 20.02 GiB artifact is downloaded directly. Enter `2` only if you
-specifically want substantially reduced refusal behavior; that path directly
-downloads a verified 16.96 GiB artifact and needs about 21 GiB free.
+The menu lists the supported models with their download size and decoder
+capabilities from the [generated reference](generated-config.md). On a fresh
+installation, press Enter for the recommended stock model. Select uncensored
+only if you specifically want reduced refusal behavior. The optional
+stock-dflash2 companion is a separate artifact for decoder experiments, with
+additional storage and GPU memory costs; it is not the default.
 
 Setup next describes the selected transfer and asks whether to download it.
 Press Enter to accept yes. Nothing large is downloaded until you
@@ -134,16 +129,16 @@ consent.
 
 The shared downloader uses a committed uv lock inside a temporary, CPU-only
 Docker container. It does not use pip or install Python packages on Windows.
-No Hugging Face account or token is required for either public model. Both
-profiles are pinned to immutable repository revisions and validated against
+No Hugging Face account or token is required for the public models. Artifacts
+are pinned to immutable repository revisions and validated against
 their published byte size and SHA-256. The old model file remains available
 when switching. Setup does not continue to
 Hermes until the selected model produces a short authenticated answer.
 
-Setup automatically uses the balanced RTX 5090 runtime: two request lanes,
-131K context, a larger shared device KV pool, resource-aware host prefix cache,
-and Hermes compression at 90K. This avoids adding a technical tuning question
-to the beginner flow.
+Fresh setup uses the balanced RTX 5090 runtime with shared KV and host prefix
+retention, and matches Hermes's context/compression settings to it. Exact
+capacities are in the generated profile table. Existing selected profiles are
+preserved when setup is rerun.
 
 If you type `n` at the download prompt, setup stops cleanly. Run
 `python ninfer.py setup` again when you are ready for the download.
@@ -161,7 +156,7 @@ python ninfer.py select-model --model stock
 python ninfer.py select-model --model uncensored
 ```
 
-It preserves both artifacts and restores the old profile if the selected one
+It preserves existing artifacts and restores the old profile if the selected one
 does not pass its live test.
 
 To change performance/context behavior without downloading another model, run:
@@ -397,3 +392,5 @@ installation.
   actions. Setup never deletes a downloaded model or old rollback model.
 
 For other failures, continue with [Troubleshooting](troubleshooting.md).
+
+The optional DFlash2 companion artifact is a third explicit selection with additional disk/VRAM costs. See [models](models.md) and the [generated sizes/checksums](generated-config.md).

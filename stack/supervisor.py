@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 from typing import Protocol
 from urllib.parse import urlsplit
@@ -132,6 +133,18 @@ def configure(args) -> None:
         raise ValueError(
             "Supervisor config accepts only documented fields and environment variable names, never inline credentials"
         )
+    for field in ("milestone_review", "final_review"):
+        if field in config and not isinstance(config[field], bool):
+            raise ValueError(f"{field} must be boolean")
+    retries = config.get("escalation_after_failures", 3)
+    if type(retries) is not int or not 1 <= retries <= 10:
+        raise ValueError("escalation_after_failures must be 1..10")
+    for field in ("endpoint_env", "key_env", "model_env"):
+        if field in config and (
+            not isinstance(config[field], str)
+            or not re.fullmatch(r"[A-Z][A-Z0-9_]*", config[field])
+        ):
+            raise ValueError(f"{field} must name an environment variable")
     with exclusive(path.with_suffix(".lock")):
         state = load_state(path)
         if worker_alive(state.get("worker_pid")):
