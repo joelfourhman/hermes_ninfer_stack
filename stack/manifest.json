@@ -64,6 +64,14 @@
       "runtime": "research",
       "spec": "mtp3"
     },
+    "autonomous": {
+      "key": "autonomous",
+      "label": "Reliable autonomous work",
+      "description": "Stock/MTP3 with conservative context headroom for long-running goals",
+      "model": "stock",
+      "runtime": "autonomous",
+      "spec": "mtp3"
+    },
     "low-vram": {
       "key": "low-vram",
       "label": "Share the GPU",

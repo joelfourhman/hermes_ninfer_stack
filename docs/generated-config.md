@@ -24,6 +24,7 @@ CUDA image base: `docker.io/nvidia/cuda:13.1.2-runtime-ubuntu24.04`.
 | `coding` | `stock-dflash2` | `coding` | `dflash2-7` | Measured DFlash2 coding setup with the best TTFT |
 | `coding-fast` | `stock-dflash2` | `coding` | `dflash2-11` | DFlash2-11; use while the RTX 5090 is otherwise idle |
 | `research` | `stock` | `research` | `mtp3` | 240K stock/MTP3 path qualified for growing sessions |
+| `autonomous` | `stock` | `autonomous` | `mtp3` | Stock/MTP3 with conservative context headroom for long-running goals |
 | `low-vram` | `stock` | `low-vram` | `mtp3` | 64K stock/MTP3 profile with a smaller cache footprint |
 | `uncensored` | `uncensored` | `max-context` | `mtp3` | Original user selection: uncensored, 240K and MTP3 |
 

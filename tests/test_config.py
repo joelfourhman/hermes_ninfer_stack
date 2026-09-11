@@ -25,7 +25,7 @@ class ConfigurationTests(unittest.TestCase):
     def test_deployment_presets_are_complete_and_compatible(self):
         self.assertEqual(
             set(DEPLOYMENT_PRESETS),
-            {"default", "coding", "coding-fast", "research", "low-vram", "uncensored"},
+            {"default", "coding", "coding-fast", "research", "autonomous", "low-vram", "uncensored"},
         )
         for preset in DEPLOYMENT_PRESETS.values():
             values = dict(spec_values(preset.spec), NINFER_MODEL_PROFILE=preset.model)

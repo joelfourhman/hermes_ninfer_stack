@@ -87,6 +87,7 @@ python ninfer.py use default
 python ninfer.py use coding
 python ninfer.py use coding-fast
 python ninfer.py use research
+python ninfer.py use autonomous
 python ninfer.py use low-vram
 python ninfer.py use uncensored
 ```
