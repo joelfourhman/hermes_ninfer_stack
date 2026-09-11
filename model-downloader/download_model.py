@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -24,22 +25,12 @@ class Artifact:
     expected_sha256: str
 
 
-ARTIFACTS = {
-    "stock": Artifact(
-        filename="qwen3_8_27b_nvfp4.ninfer",
-        repository="neroued/Qwen3.8-27B-nvfp4-NInfer",
-        revision="204e3d92c30d9d05f3300d2f52e443ad1edf6ddf",
-        expected_bytes=21_492_695_040,
-        expected_sha256="bb3360522a06e136e0367f5703414d26272b7285c8a6ab6194135c17dbd81b32",
-    ),
-    "uncensored": Artifact(
-        filename="qwen3_8_27b_uncensored.ninfer",
-        repository="DogOnKeyboard/Qwen3.8-27B-Uncensored-NInfer",
-        revision="1e15b5919b796bcd96621f13572ad92b5555b641",
-        expected_bytes=18_210_531_328,
-        expected_sha256="714565ed29db4415322e9bc13a3464dc1fd8fcc911234740a79af67934e49969",
-    ),
-}
+_manifest_path = Path(__file__).with_name("manifest.json")
+if not _manifest_path.exists():
+    _manifest_path = Path(__file__).resolve().parents[1] / "stack/manifest.json"
+_models = json.loads(_manifest_path.read_text(encoding="utf-8"))["models"]
+ARTIFACTS = {key: Artifact(p["filename"], p["repository"], p["revision"], p["expected_bytes"], p["sha256"])
+             for key, p in _models.items()}
 
 
 def digest(path: Path) -> str:
@@ -82,13 +73,16 @@ def main() -> None:
         print(
             f"Downloading {artifact.repository}/{artifact.filename}@{artifact.revision}"
         )
-        hf_hub_download(
+        downloaded = Path(hf_hub_download(
             repo_id=artifact.repository,
-            filename=artifact.filename,
+            filename=_models[args.profile]["source_filename"],
             revision=artifact.revision,
-            local_dir=MODELS,
+            local_dir=MODELS / ".downloads" / args.profile,
             token=os.environ.get("HF_TOKEN") or None,
-        )
+        ))
+        if downloaded.stat().st_size != artifact.expected_bytes or digest(downloaded) != artifact.expected_sha256:
+            raise SystemExit("Downloaded artifact failed manifest size/checksum verification")
+        downloaded.replace(model_file)
 
     actual = verify(artifact)
     print(f"{args.profile.capitalize()} model checksum verified: {actual}")

@@ -20,60 +20,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 ENV_FILE = ROOT / ".env"
 COMPOSE_FILE = ROOT / "docker-compose.yml"
-EXPECTED_COMMIT = "ad0f3d384b5cbcec4a48a3951c287b4e9831443e"
-MODEL_PROFILES = {
-    "stock": {
-        "file": "qwen3_8_27b_nvfp4.ninfer",
-        "bytes": 21_492_695_040,
-        "sha256": "bb3360522a06e136e0367f5703414d26272b7285c8a6ab6194135c17dbd81b32",
-        "label": "Qwen3.8-27B stock NVFP4",
-    },
-    "uncensored": {
-        "file": "qwen3_8_27b_uncensored.ninfer",
-        "bytes": 18_210_531_328,
-        "sha256": "714565ed29db4415322e9bc13a3464dc1fd8fcc911234740a79af67934e49969",
-        "label": "Qwen3.8-27B Uncensored",
-    },
-}
-RUNTIME_PROFILES = {
-    "balanced": {
-        "NINFER_CONTEXT_LENGTH": "131072",
-        "NINFER_KV_CAPACITY": "196608",
-        "NINFER_MAX_CONCURRENCY": "2",
-        "NINFER_PENDING_TIMEOUT_MS": "120000",
-        "NINFER_KV_DTYPE": "fp8",
-        "NINFER_DEVICE_STATE_SLOTS": "2",
-        "NINFER_HOST_STATE_SLOTS": "8",
-        "NINFER_HOST_KV_MIB": "8192",
-        "NINFER_PRESERVE_THINKING": "true",
-        "HERMES_COMPRESSION_THRESHOLD_TOKENS": "90000",
-    },
-    "single-session": {
-        "NINFER_CONTEXT_LENGTH": "131072",
-        "NINFER_KV_CAPACITY": "131072",
-        "NINFER_MAX_CONCURRENCY": "1",
-        "NINFER_PENDING_TIMEOUT_MS": "120000",
-        "NINFER_KV_DTYPE": "fp8",
-        "NINFER_DEVICE_STATE_SLOTS": "1",
-        "NINFER_HOST_STATE_SLOTS": "4",
-        "NINFER_HOST_KV_MIB": "4096",
-        "NINFER_PRESERVE_THINKING": "true",
-        "HERMES_COMPRESSION_THRESHOLD_TOKENS": "100000",
-    },
-    "max-context": {
-        "NINFER_CONTEXT_LENGTH": "240000",
-        "NINFER_KV_CAPACITY": "240000",
-        "NINFER_MAX_CONCURRENCY": "2",
-        "NINFER_PENDING_TIMEOUT_MS": "120000",
-        "NINFER_KV_DTYPE": "fp8",
-        "NINFER_DEVICE_STATE_SLOTS": "2",
-        "NINFER_HOST_STATE_SLOTS": "8",
-        "NINFER_HOST_KV_MIB": "8192",
-        "NINFER_PRESERVE_THINKING": "true",
-        "HERMES_COMPRESSION_THRESHOLD_TOKENS": "200000",
-    },
-}
-EXPECTED_BASE = "docker.io/nvidia/cuda:13.1.2-runtime-ubuntu24.04"
+sys.path.insert(0, str(ROOT))
+from stack.config import MANIFEST, MODEL_PROFILES as MODELS, RUNTIME_PROFILES as RUNTIMES, runtime_env_values
+EXPECTED_COMMIT = MANIFEST["ninfer"]["commit"]
+EXPECTED_BASE = MANIFEST["ninfer"]["cuda_base"]
+MODEL_PROFILES = {key: {"file": p.filename, "sha256": p.sha256, "bytes": p.expected_bytes,
+                        "label": p.label, "quantization": p.quantization} for key, p in MODELS.items()}
+RUNTIME_PROFILES = {key: runtime_env_values(p) for key, p in RUNTIMES.items()}
+
 TOTAL = 11
 step = 0
 temp_dir = Path(tempfile.mkdtemp(prefix="ninfer-verify-"))
@@ -114,7 +68,7 @@ def run(
             stderr=subprocess.PIPE,
             timeout=timeout,
             check=False,
-            env=env,
+            env=dict(env or os.environ, NINFER_SOURCE_REVISION=EXPECTED_COMMIT),
         )
     except FileNotFoundError as exc:
         raise Failure(f"Missing required command: {command[0]}", "install the documented prerequisites") from exc
@@ -329,6 +283,12 @@ def verify_optional_hermes(
 
 def main() -> int:
     values = env_values()
+    from stack.config import validate_spec
+    from stack.provenance import verify_cli_help
+    try:
+        validate_spec(values)
+    except ValueError as exc:
+        raise Failure(str(exc)) from exc
     api_key = values.get("NINFER_API_KEY", "")
     access_mode = values.get("NINFER_ACCESS_MODE", "")
     bind_address = values.get("NINFER_BIND_ADDRESS", "")
@@ -435,6 +395,11 @@ def main() -> int:
     ).stdout.strip()
     if revision != EXPECTED_COMMIT or base != EXPECTED_BASE:
         raise Failure("NInfer image provenance labels do not match the pinned source and CUDA base", "python ninfer.py build")
+    help_text = compose("run", "--rm", "--no-deps", "-T", "ninfer", "ninfer-serve", "--help").stdout
+    try:
+        verify_cli_help(help_text)
+    except ValueError as exc:
+        raise Failure(str(exc)) from exc
     gpu_output = compose(
         "run",
         "--rm",

@@ -1,0 +1,8 @@
+**
+!model-downloader/
+!model-downloader/Dockerfile
+!model-downloader/pyproject.toml
+!model-downloader/uv.lock
+!model-downloader/download_model.py
+!stack/
+!stack/manifest.json

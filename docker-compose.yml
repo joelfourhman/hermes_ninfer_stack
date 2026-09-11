@@ -2,7 +2,8 @@ services:
   model-downloader:
     profiles: [tools]
     build:
-      context: ./model-downloader
+      context: .
+      dockerfile: model-downloader/Dockerfile
     init: true
     restart: "no"
     user: "${MODEL_DOWNLOAD_UID:-1000}:${MODEL_DOWNLOAD_GID:-1000}"
@@ -25,7 +26,7 @@ services:
       context: ./ninfer
       labels:
         org.opencontainers.image.source: https://github.com/Neroued/ninfer
-        org.opencontainers.image.revision: ad0f3d384b5cbcec4a48a3951c287b4e9831443e
+        org.opencontainers.image.revision: ${NINFER_SOURCE_REVISION:?Run python ninfer.py setup to sync provenance}
         org.opencontainers.image.base.name: docker.io/nvidia/cuda:13.1.2-runtime-ubuntu24.04
     command:
       - ninfer-serve
@@ -57,11 +58,13 @@ services:
       - --host-kv-mib
       - ${NINFER_HOST_KV_MIB:-8192}
       - --spec
-      - mtp
+      - ${NINFER_SPEC_BACKEND:-mtp}
       - --draft-tokens
-      - "3"
+      - ${NINFER_DRAFT_TOKENS:-3}
       - --lm-head-draft
       - --preserve-thinking
+      - --request-log-jsonl
+      - /dev/stdout
     init: true
     restart: unless-stopped
     read_only: true

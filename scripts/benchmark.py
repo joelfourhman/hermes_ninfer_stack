@@ -23,20 +23,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 ENV_FILE = ROOT / ".env"
 COMPOSE_FILE = ROOT / "docker-compose.yml"
-EXPECTED_COMMIT = "ad0f3d384b5cbcec4a48a3951c287b4e9831443e"
-MODEL_PROFILES = {
-    "stock": {
-        "file": "qwen3_8_27b_nvfp4.ninfer",
-        "sha256": "bb3360522a06e136e0367f5703414d26272b7285c8a6ab6194135c17dbd81b32",
-        "quantization": "NInfer NVFP4",
-    },
-    "uncensored": {
-        "file": "qwen3_8_27b_uncensored.ninfer",
-        "sha256": "714565ed29db4415322e9bc13a3464dc1fd8fcc911234740a79af67934e49969",
-        "quantization": "NInfer qwen3_8_27b-v1 groupwise-int",
-    },
-}
-EXPECTED_BASE = "docker.io/nvidia/cuda:13.1.2-runtime-ubuntu24.04"
+sys.path.insert(0, str(ROOT))
+from stack.config import MANIFEST, MODEL_PROFILES as MODELS, RUNTIME_PROFILES as RUNTIMES, runtime_env_values
+EXPECTED_COMMIT = MANIFEST["ninfer"]["commit"]
+EXPECTED_BASE = MANIFEST["ninfer"]["cuda_base"]
+MODEL_PROFILES = {key: {"file": p.filename, "sha256": p.sha256, "bytes": p.expected_bytes,
+                        "label": p.label, "quantization": p.quantization} for key, p in MODELS.items()}
+RUNTIME_PROFILES = {key: runtime_env_values(p) for key, p in RUNTIMES.items()}
+
 PROMPT_TEMPLATE = (
     "Explain how prefill and decode differ in an autoregressive transformer. Use eight numbered "
     "points, include one concrete latency example, and finish with a two-sentence summary."
@@ -53,6 +47,7 @@ def run(command: list[str], *, timeout: int = 120, check: bool = True) -> subpro
         result = subprocess.run(
             command,
             cwd=ROOT,
+            env=dict(os.environ, NINFER_SOURCE_REVISION=EXPECTED_COMMIT),
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -276,7 +271,7 @@ def main() -> int:
                         continue
                     event = json.loads(data)
                     events.append({"elapsed_ms": (event_ns - start_ns) / 1_000_000, "data": event})
-                    choice = event.get("choices", [{}])[0]
+                    choice = (event.get("choices") or [{}])[0]
                     delta = choice.get("delta", {})
                     content = delta.get("content") or delta.get("reasoning_content") or ""
                     if content and first_ns is None:

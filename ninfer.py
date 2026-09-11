@@ -20,7 +20,6 @@ import time
 import urllib.error
 import urllib.request
 import webbrowser
-from dataclasses import dataclass
 from pathlib import Path
 
 
@@ -28,114 +27,17 @@ ROOT = Path(__file__).resolve().parent
 ENV_FILE = ROOT / ".env"
 ENV_EXAMPLE = ROOT / ".env.example"
 COMPOSE_FILE = ROOT / "docker-compose.yml"
-NINFER_COMMIT = "ad0f3d384b5cbcec4a48a3951c287b4e9831443e"
-NINFER_URL = "https://github.com/Neroued/ninfer.git"
-STOCK_MODEL_FILE = "qwen3_8_27b_nvfp4.ninfer"
-UNCENSORED_MODEL_FILE = "qwen3_8_27b_uncensored.ninfer"
-STOCK_MODEL_SHA256 = "bb3360522a06e136e0367f5703414d26272b7285c8a6ab6194135c17dbd81b32"
-UNCENSORED_MODEL_SHA256 = "714565ed29db4415322e9bc13a3464dc1fd8fcc911234740a79af67934e49969"
+from stack.config import (
+    MANIFEST, MODEL_PROFILES, RUNTIME_PROFILES, ModelProfile, RuntimeProfile,
+    NINFER_COMMIT, NINFER_URL, DEFAULT_MODEL_PROFILE, DEFAULT_RUNTIME_PROFILE,
+    runtime_env_values, spec_values, validate_spec,
+)
 
+STOCK_MODEL_FILE = MODEL_PROFILES["stock"].filename
+UNCENSORED_MODEL_FILE = MODEL_PROFILES["uncensored"].filename
+STOCK_MODEL_SHA256 = MODEL_PROFILES["stock"].sha256
+UNCENSORED_MODEL_SHA256 = MODEL_PROFILES["uncensored"].sha256
 
-@dataclass(frozen=True)
-class ModelProfile:
-    key: str
-    label: str
-    filename: str
-    sha256: str
-    expected_bytes: int
-    required_free_gib: int
-    transfer_description: str
-    final_size_gib: str
-
-
-@dataclass(frozen=True)
-class RuntimeProfile:
-    key: str
-    label: str
-    description: str
-    context_length: int
-    kv_capacity: int
-    max_concurrency: int
-    pending_timeout_ms: int
-    kv_dtype: str
-    device_state_slots: int
-    host_state_slots: int
-    host_kv_mib: int
-    preserve_thinking: bool
-    compression_threshold_tokens: int
-
-
-MODEL_PROFILES = {
-    "stock": ModelProfile(
-        key="stock",
-        label="Stock Qwen3.8-27B NVFP4",
-        filename=STOCK_MODEL_FILE,
-        sha256=STOCK_MODEL_SHA256,
-        expected_bytes=21_492_695_040,
-        required_free_gib=24,
-        transfer_description="20.02 GiB verified artifact download",
-        final_size_gib="20.02",
-    ),
-    "uncensored": ModelProfile(
-        key="uncensored",
-        label="Qwen3.8-27B Uncensored",
-        filename=UNCENSORED_MODEL_FILE,
-        sha256=UNCENSORED_MODEL_SHA256,
-        expected_bytes=18_210_531_328,
-        required_free_gib=21,
-        transfer_description="16.96 GiB verified artifact download",
-        final_size_gib="16.96",
-    ),
-}
-DEFAULT_MODEL_PROFILE = "stock"
-RUNTIME_PROFILES = {
-    "balanced": RuntimeProfile(
-        key="balanced",
-        label="Balanced agent",
-        description="Two request lanes, earlier compression, and room for a long task plus a smaller request",
-        context_length=131_072,
-        kv_capacity=196_608,
-        max_concurrency=2,
-        pending_timeout_ms=120_000,
-        kv_dtype="fp8",
-        device_state_slots=2,
-        host_state_slots=8,
-        host_kv_mib=8192,
-        preserve_thinking=True,
-        compression_threshold_tokens=90_000,
-    ),
-    "single-session": RuntimeProfile(
-        key="single-session",
-        label="Single session",
-        description="One isolated request lane with the smallest resident cache allocation",
-        context_length=131_072,
-        kv_capacity=131_072,
-        max_concurrency=1,
-        pending_timeout_ms=120_000,
-        kv_dtype="fp8",
-        device_state_slots=1,
-        host_state_slots=4,
-        host_kv_mib=4096,
-        preserve_thinking=True,
-        compression_threshold_tokens=100_000,
-    ),
-    "max-context": RuntimeProfile(
-        key="max-context",
-        label="Maximum context",
-        description="NInfer's reviewed 240K long-agent allocation with two request lanes",
-        context_length=240_000,
-        kv_capacity=240_000,
-        max_concurrency=2,
-        pending_timeout_ms=120_000,
-        kv_dtype="fp8",
-        device_state_slots=2,
-        host_state_slots=8,
-        host_kv_mib=8192,
-        preserve_thinking=True,
-        compression_threshold_tokens=200_000,
-    ),
-}
-DEFAULT_RUNTIME_PROFILE = "balanced"
 PRIVATE_LAN_NETWORKS = tuple(
     ipaddress.ip_network(cidr)
     for cidr in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16")
@@ -244,7 +146,8 @@ def compose(*args: str, check: bool = True, capture: bool = False) -> subprocess
     if ENV_FILE.is_file():
         command += ["--env-file", str(ENV_FILE)]
     command += ["-f", str(COMPOSE_FILE), *args]
-    return run(command, check=check, capture=capture)
+    process_env = dict(os.environ, NINFER_SOURCE_REVISION=NINFER_COMMIT)
+    return run(command, check=check, capture=capture, env=process_env)
 
 
 def windows_docker_desktop_executable() -> Path | None:
@@ -551,25 +454,6 @@ def env_backup_path(prefix: str = ".env.backup-before") -> Path:
     return ENV_FILE.with_name(f"{prefix}-{time.time_ns()}")
 
 
-def runtime_env_values(profile: RuntimeProfile) -> dict[str, str]:
-    return {
-        "NINFER_RUNTIME_PROFILE": profile.key,
-        "NINFER_CONTEXT_LENGTH": str(profile.context_length),
-        "NINFER_KV_CAPACITY": str(profile.kv_capacity),
-        "NINFER_MAX_CONCURRENCY": str(profile.max_concurrency),
-        "NINFER_PENDING_TIMEOUT_MS": str(profile.pending_timeout_ms),
-        "NINFER_KV_DTYPE": profile.kv_dtype,
-        "NINFER_DEVICE_STATE_SLOTS": str(profile.device_state_slots),
-        "NINFER_HOST_STATE_SLOTS": str(profile.host_state_slots),
-        "NINFER_HOST_KV_MIB": str(profile.host_kv_mib),
-        "NINFER_PRESERVE_THINKING": "true" if profile.preserve_thinking else "false",
-        "HERMES_COMPRESSION_ENABLED": "true",
-        "HERMES_COMPRESSION_THRESHOLD_TOKENS": str(
-            profile.compression_threshold_tokens
-        ),
-    }
-
-
 def is_private_lan_ipv4(value: str) -> bool:
     try:
         address = ipaddress.ip_address(value)
@@ -696,6 +580,7 @@ def merge_env(detected_gpu_device: str | None = None) -> None:
         else DEFAULT_RUNTIME_PROFILE
     )
     forced.update(runtime_env_values(runtime_profile(selected_runtime)))
+    forced["NINFER_SOURCE_REVISION"] = NINFER_COMMIT
     configured_access = original_values.get("NINFER_ACCESS_MODE", "")
     configured_bind = original_values.get("NINFER_BIND_ADDRESS", "")
     if configured_access == "lan" and is_private_lan_ipv4(configured_bind):
@@ -816,6 +701,10 @@ def validate_env() -> None:
         )
     if not max_turns.isdigit() or not 1 <= int(max_turns) <= 1000:
         raise StackError("HERMES_MAX_TURNS must be from 1 through 1000")
+    try:
+        validate_spec(values)
+    except ValueError as exc:
+        raise StackError(str(exc)) from exc
     expected_runtime = runtime_env_values(selected_runtime)
     drifted = [
         key for key, expected in expected_runtime.items() if values.get(key) != expected
@@ -1923,6 +1812,12 @@ def diagnose_performance(args: argparse.Namespace) -> None:
         print(f"  - {recommendation}")
 
 
+def build(_: argparse.Namespace) -> None:
+    from stack.provenance import verify_source
+    verify_source(ROOT)
+    compose("build", "ninfer")
+
+
 def passthrough(command: tuple[str, ...]):
     def handler(_: argparse.Namespace) -> None:
         compose(*command)
@@ -2002,7 +1897,7 @@ def main() -> int:
         "--yes", action="store_true", help="skip the LAN exposure confirmation"
     )
     network_parser.set_defaults(func=network)
-    sub.add_parser("build", help="build the NInfer image").set_defaults(func=passthrough(("build", "ninfer")))
+    sub.add_parser("build", help="build the verified NInfer source").set_defaults(func=build)
     sub.add_parser("up", help="start NInfer and wait until the model is ready").set_defaults(func=up)
     sub.add_parser("down", help="stop NInfer while preserving the model").set_defaults(
         func=passthrough(("down", "--remove-orphans"))
@@ -2029,6 +1924,8 @@ def main() -> int:
     )
     diagnose.set_defaults(func=diagnose_performance)
 
+    from stack.commands import register_commands
+    register_commands(sub)
     args = parser.parse_args()
     args.func(args)
     return 0
@@ -2040,6 +1937,6 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("\nInterrupted.", file=sys.stderr)
         raise SystemExit(130)
-    except StackError as exc:
+    except (StackError, ValueError) as exc:
         print(f"ninfer: {exc}", file=sys.stderr)
         raise SystemExit(1)

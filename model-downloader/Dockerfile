@@ -9,9 +9,10 @@ ENV UV_FROZEN=1 \
     UV_PROJECT_ENVIRONMENT=/opt/downloader
 
 WORKDIR /app
-COPY pyproject.toml uv.lock ./
+COPY model-downloader/pyproject.toml model-downloader/uv.lock ./
 RUN uv sync --no-dev --no-install-project
 
-COPY download_model.py /app/download_model.py
+COPY model-downloader/download_model.py /app/download_model.py
+COPY stack/manifest.json /app/manifest.json
 
 ENTRYPOINT ["/opt/downloader/bin/python", "/app/download_model.py"]

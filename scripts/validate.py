@@ -11,15 +11,15 @@ from urllib.parse import unquote, urlsplit
 
 
 ROOT = Path(__file__).resolve().parent.parent
-EXPECTED_NINFER_COMMIT = "ad0f3d384b5cbcec4a48a3951c287b4e9831443e"
-EXPECTED_STOCK_MODEL_FILE = "qwen3_8_27b_nvfp4.ninfer"
-EXPECTED_UNCENSORED_MODEL_FILE = "qwen3_8_27b_uncensored.ninfer"
+sys.path.insert(0, str(ROOT))
+from stack.config import MANIFEST, MODEL_PROFILES, RUNTIME_PROFILES, runtime_env_values, validate_manifest
+from stack.documentation import generate
+from stack.provenance import verify_source
+EXPECTED_NINFER_COMMIT = MANIFEST["ninfer"]["commit"]
+EXPECTED_STOCK_MODEL_FILE = MODEL_PROFILES["stock"].filename
+EXPECTED_UNCENSORED_MODEL_FILE = MODEL_PROFILES["uncensored"].filename
 EXPECTED_MODEL_ID = "qwen-local"
-EXPECTED_CONTEXT = "131072"
-EXPECTED_KV_CAPACITY = "196608"
-EXPECTED_CONCURRENCY = "2"
-EXPECTED_REFERENCE_SHA256 = "714565ed29db4415322e9bc13a3464dc1fd8fcc911234740a79af67934e49969"
-EXPECTED_UNCENSORED_REVISION = "1e15b5919b796bcd96621f13572ad92b5555b641"
+DEFAULT_RUNTIME = runtime_env_values(RUNTIME_PROFILES[MANIFEST["defaults"]["runtime"]])
 
 errors: list[str] = []
 
@@ -115,9 +115,9 @@ expected_env = {
     "NINFER_MODEL_FILE": EXPECTED_STOCK_MODEL_FILE,
     "NINFER_MODEL_ID": EXPECTED_MODEL_ID,
     "NINFER_RUNTIME_PROFILE": "balanced",
-    "NINFER_CONTEXT_LENGTH": EXPECTED_CONTEXT,
-    "NINFER_KV_CAPACITY": EXPECTED_KV_CAPACITY,
-    "NINFER_MAX_CONCURRENCY": EXPECTED_CONCURRENCY,
+    "NINFER_CONTEXT_LENGTH": DEFAULT_RUNTIME["NINFER_CONTEXT_LENGTH"],
+    "NINFER_KV_CAPACITY": DEFAULT_RUNTIME["NINFER_KV_CAPACITY"],
+    "NINFER_MAX_CONCURRENCY": DEFAULT_RUNTIME["NINFER_MAX_CONCURRENCY"],
     "NINFER_PENDING_TIMEOUT_MS": "120000",
     "NINFER_KV_DTYPE": "fp8",
     "NINFER_DEVICE_STATE_SLOTS": "2",
@@ -127,6 +127,9 @@ expected_env = {
     "HERMES_COMPRESSION_ENABLED": "true",
     "HERMES_COMPRESSION_THRESHOLD_TOKENS": "90000",
     "HERMES_MAX_TURNS": "40",
+    "NINFER_SOURCE_REVISION": EXPECTED_NINFER_COMMIT,
+    "NINFER_SPEC_BACKEND": "mtp",
+    "NINFER_DRAFT_TOKENS": "3",
     "MODEL_DOWNLOAD_UID": "1000",
     "MODEL_DOWNLOAD_GID": "1000",
 }
@@ -241,88 +244,23 @@ for pattern, description in unsafe_compose_patterns.items():
         error(f"Compose must not grant {description}")
 
 
-consistency_requirements = {
-    "ninfer.py": [
-        EXPECTED_NINFER_COMMIT,
-        EXPECTED_STOCK_MODEL_FILE,
-        EXPECTED_UNCENSORED_MODEL_FILE,
-        "Choose a model:",
-        "select-model",
-        "select-runtime",
-        "network",
-        "NINFER_BIND_ADDRESS",
-        "diagnose-performance",
-        "install-hermes",
-        "https://hermes-agent.nousresearch.com/desktop",
-        "providers.ninfer",
-        "custom:ninfer",
-        "approvals.mode",
-        "HERMES_WRITE_SAFE_ROOT",
-        "terminal.cwd",
-        "HERMES_COMPRESSION_ENABLED",
-        "HERMES_COMPRESSION_THRESHOLD_TOKENS",
-        "HERMES_MAX_TURNS",
-    ],
-    "docker-compose.yml": [
-        EXPECTED_NINFER_COMMIT,
-        EXPECTED_STOCK_MODEL_FILE,
-        EXPECTED_MODEL_ID,
-        EXPECTED_CONTEXT,
-        EXPECTED_KV_CAPACITY,
-        "13.1.2-runtime-ubuntu24.04",
-        "${NINFER_BIND_ADDRESS:-127.0.0.1}:${NINFER_HOST_PORT:-8080}:8080",
-        "profiles: [tools]",
-    ],
-    "model-downloader/download_model.py": [
-        EXPECTED_STOCK_MODEL_FILE,
-        "204e3d92c30d9d05f3300d2f52e443ad1edf6ddf",
-        "bb3360522a06e136e0367f5703414d26272b7285c8a6ab6194135c17dbd81b32",
-        EXPECTED_UNCENSORED_MODEL_FILE,
-        EXPECTED_REFERENCE_SHA256,
-        EXPECTED_UNCENSORED_REVISION,
-        "DogOnKeyboard/Qwen3.8-27B-Uncensored-NInfer",
-    ],
-    "scripts/verify.py": [
-        EXPECTED_NINFER_COMMIT,
-        EXPECTED_STOCK_MODEL_FILE,
-        EXPECTED_UNCENSORED_MODEL_FILE,
-        EXPECTED_REFERENCE_SHA256,
-        "Optional native Hermes config",
-        "providers.ninfer.api",
-        "custom:ninfer",
-        "approvals.mode",
-        "HERMES_WRITE_SAFE_ROOT",
-    ],
-    "scripts/benchmark.py": [
-        EXPECTED_NINFER_COMMIT,
-        EXPECTED_STOCK_MODEL_FILE,
-        EXPECTED_UNCENSORED_MODEL_FILE,
-    ],
-    "tests/test_ninfer.py": [
-        "providers.ninfer.api",
-        "custom:ninfer",
-        "approvals.mode",
-        "HERMES_WRITE_SAFE_ROOT",
-        "terminal.cwd",
-        "HERMES_COMPRESSION_ENABLED",
-        "HERMES_COMPRESSION_THRESHOLD_TOKENS",
-        "HERMES_MAX_TURNS",
-    ],
-    "docs/models.md": [
-        EXPECTED_STOCK_MODEL_FILE,
-        EXPECTED_UNCENSORED_MODEL_FILE,
-        EXPECTED_MODEL_ID,
-        EXPECTED_REFERENCE_SHA256,
-        EXPECTED_UNCENSORED_REVISION,
-        "DogOnKeyboard/Qwen3.8-27B-Uncensored-NInfer",
-    ],
-}
-for relative, values in consistency_requirements.items():
-    text = read_text(ROOT / relative)
-    for value in values:
-        if value not in text:
-            error(f"{relative} is missing pinned value {value}")
-
+try:
+    validate_manifest()
+    generate(check=True)
+    verify_source(ROOT)
+except (ValueError, OSError, subprocess.CalledProcessError) as exc:
+    error(str(exc))
+for key, value in DEFAULT_RUNTIME.items():
+    if env_values.get(key) != value:
+        error(f"Default profile/env drift: {key}")
+if "${NINFER_SOURCE_REVISION:?" not in ninfer_service:
+    error("Image revision must derive from generated manifest projection")
+for flag in MANIFEST["ninfer"]["required_cli_flags"]:
+    if f"      - {flag}\n" not in ninfer_service:
+        error(f"Compose is missing required flag {flag}")
+for flag, key in {"--spec": "NINFER_SPEC_BACKEND", "--draft-tokens": "NINFER_DRAFT_TOKENS"}.items():
+    if not re.search(re.escape("- " + flag) + r"\s+- \$\{" + key, ninfer_service):
+        error(f"Compose {flag} must use {key}")
 
 markdown_files = [ROOT / "README.md", ROOT / "CONTRIBUTING.md", ROOT / "SECURITY.md", ROOT / "CHANGELOG.md"]
 markdown_files.extend(sorted((ROOT / "docs").rglob("*.md")))
