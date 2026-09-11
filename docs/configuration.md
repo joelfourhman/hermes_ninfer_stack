@@ -21,9 +21,10 @@ actual clean submodule HEAD; `verify` checks image metadata and binary flags.
 
 For normal use, `use default|coding|coding-fast|research|low-vram|uncensored`
 applies a complete manifest-defined model/runtime/decoder preset with one service
-restart. It prints the mapping, retains download confirmation, synchronizes
-Hermes and rolls the whole selection back on failure. `presets` lists the exact
-mappings.
+restart. It prints the mapping, retains download confirmation, creates or updates
+the matching native `ninfer-*` Hermes profile, activates that profile and rolls
+the whole selection back on failure. The profiles keep Desktop sessions and
+settings separate between workloads. `presets` lists the exact mappings.
 
 Lower-level workload selection uses `profile NAME` or `select-runtime --profile NAME`.
 Model selection uses `select-model --model NAME`. Decoder selection uses
@@ -35,6 +36,9 @@ manifest profile for reproducible custom settings instead.
 Profile changes update the backend and native Hermes provider context,
 compression threshold and turn limit. They preserve terminal/approval settings,
 back up local config and restore both sides when startup or synchronization fails.
+`configure-client PRESET --endpoint URL` applies the same profile mapping to a
+Hermes Desktop on another trusted LAN computer. It securely prompts for the key,
+tests the endpoint before writing the profile and supports `--no-activate`.
 Restart Desktop after profile changes. The initial `install-hermes` setup retains
 the existing project behavior: native local tools and manual approvals, removing
 obsolete project-imposed working-directory overrides.

@@ -228,6 +228,79 @@ class NInferSourceInitializationTests(unittest.TestCase):
 
 
 class HermesDesktopConfigurationTests(unittest.TestCase):
+    def test_lan_client_endpoint_accepts_only_explicit_private_http_v1_urls(self) -> None:
+        self.assertEqual(
+            ninfer.normalize_ninfer_client_endpoint(" http://192.168.50.9:8080/v1/ "),
+            "http://192.168.50.9:8080/v1",
+        )
+        self.assertEqual(
+            ninfer.normalize_ninfer_client_endpoint("http://127.0.0.1:8080/v1"),
+            "http://127.0.0.1:8080/v1",
+        )
+        rejected = (
+            "https://192.168.50.9:8080/v1",
+            "http://example.com:8080/v1",
+            "http://8.8.8.8:8080/v1",
+            "http://" + "user:pass" + "@192.168.50.9:8080/v1",
+            "http://192.168.50.9/v1",
+            "http://192.168.50.9:8080/other",
+            "http://192.168.50.9:8080/v1?key=value",
+        )
+        for endpoint in rejected:
+            with self.subTest(endpoint=endpoint):
+                with self.assertRaises(ninfer.StackError):
+                    ninfer.normalize_ninfer_client_endpoint(endpoint)
+
+    def test_preset_profile_is_created_at_root_and_activated(self) -> None:
+        calls: list[tuple[list[str], dict[str, object]]] = []
+        configured: list[tuple[list[str], dict[str, str], dict[str, str], object]] = []
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            current_profile = root / "profiles" / "old-profile"
+            current_profile.mkdir(parents=True)
+            target = root / "profiles" / "ninfer-autonomous"
+
+            def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+                calls.append((command, kwargs))
+                if command[1:3] == ["profile", "create"]:
+                    target.mkdir()
+                return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+            def fake_configure(
+                command: list[str],
+                environment: dict[str, str],
+                values: dict[str, str],
+                **kwargs: object,
+            ) -> None:
+                configured.append((command, environment, values, kwargs))
+
+            with (
+                mock.patch.object(ninfer, "run", side_effect=fake_run),
+                mock.patch.object(ninfer, "configure_native_hermes", side_effect=fake_configure),
+            ):
+                name = ninfer.configure_hermes_preset_profile(
+                    ["hermes"],
+                    {"HERMES_HOME": str(current_profile)},
+                    "autonomous",
+                    sample_values(),
+                    endpoint="http://192.168.1.20:8080/v1",
+                    api_key="lan-key",
+                )
+
+        self.assertEqual(name, "ninfer-autonomous")
+        create_call, create_kwargs = calls[0]
+        self.assertEqual(create_call[1:5], ["profile", "create", "ninfer-autonomous", "--clone-from"])
+        self.assertIn("--no-alias", create_call)
+        self.assertEqual(create_kwargs["env"]["HERMES_HOME"], str(root))
+        self.assertEqual(calls[-1][0], ["hermes", "profile", "use", "ninfer-autonomous"])
+        self.assertEqual(configured[0][1]["HERMES_HOME"], str(target))
+        self.assertEqual(configured[0][2]["NINFER_API_KEY"], "lan-key")
+        self.assertTrue(configured[0][3]["preserve_execution"])
+        self.assertEqual(
+            configured[0][3]["endpoint_override"],
+            "http://192.168.1.20:8080/v1",
+        )
+
     def test_native_configuration_uses_named_authenticated_provider(self) -> None:
         calls: list[tuple[list[str], dict[str, object]]] = []
         with tempfile.TemporaryDirectory() as temporary:

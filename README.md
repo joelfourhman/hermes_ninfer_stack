@@ -93,12 +93,18 @@ python ninfer.py use uncensored
 ```
 
 Each command selects the model artifact, runtime capacity and decoder together,
-then starts the service once and synchronizes Hermes. `coding` uses DFlash2-7;
+then starts the service once and creates or updates the matching native Hermes
+profile. The profiles are named `ninfer-default`, `ninfer-coding`,
+`ninfer-coding-fast`, `ninfer-research`, `ninfer-autonomous`,
+`ninfer-low-vram` and `ninfer-uncensored`. The selected profile becomes Hermes'
+sticky active profile, so Desktop sessions and settings stay separate between
+workloads. `coding` uses DFlash2-7;
 `coding-fast` uses the slightly faster but more aggressive DFlash2-11. A preset
 prints its complete mapping before it changes configuration. Run
 `python ninfer.py presets` to display the mappings. If its artifact is absent,
 the normal large-download confirmation still appears unless you pass `--yes`.
 On startup failure, all NInfer and Hermes settings return to their prior values.
+Restart Hermes Desktop after `use` so the running app loads the selected profile.
 
 The lower-level controls remain available for experiments:
 
@@ -218,6 +224,29 @@ credentials or full conversation histories belong in Git.
 The API binds to loopback by default. `python ninfer.py network --mode lan` is an
 explicit opt-in to authenticated private-LAN HTTP, without TLS. Use only a
 trusted network. `network --mode local` returns to loopback.
+
+To provision another computer on that LAN, install Hermes Desktop and copy or
+clone this repository there. On the NInfer host, select the server preset, enable
+LAN mode and display the connection details:
+
+```text
+python ninfer.py use autonomous
+python ninfer.py network --mode lan
+python ninfer.py network
+python ninfer.py network --show-key
+```
+
+Then run this on each client, substituting the endpoint printed by the host:
+
+```text
+python ninfer.py configure-client autonomous --endpoint http://192.168.1.20:8080/v1
+```
+
+The command securely prompts for the key, verifies the authenticated endpoint,
+and creates and activates `ninfer-autonomous` in that client's Hermes Desktop.
+Restart Desktop afterward. The host loads one backend preset at a time, so use
+the same preset name on the host and every active client profile. Use
+`--no-activate` to prepare a client profile without switching to it.
 
 ## Maintain and troubleshoot
 

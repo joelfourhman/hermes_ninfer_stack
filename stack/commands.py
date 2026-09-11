@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
+import getpass
+import os
 
 from stack.config import (
     DEPLOYMENT_PRESETS,
@@ -81,28 +82,21 @@ def use_preset(args: argparse.Namespace) -> None:
     }
     validate_spec(dict(previous, **replacements))
     resolved = helper.native_hermes_command()
-    hermes_backups = {}
-    if resolved is not None:
-        home = Path(resolved[1]["HERMES_HOME"]).expanduser().resolve()
-        hermes_backups = {
-            path: path.read_bytes() if path.exists() else None
-            for path in (home / "config.yaml", home / ".env")
-        }
     env_backup = helper.replace_env_values(replacements)
     try:
         helper.validate_env()
         helper.start_ninfer(helper.read_env())
         if resolved is not None:
-            helper.configure_native_hermes(*resolved, helper.read_env(), preserve_execution=True)
-            print("Hermes was updated too. Restart Hermes Desktop to load this preset.")
+            profile_name = helper.configure_hermes_preset_profile(
+                *resolved, preset.key, helper.read_env()
+            )
+            print(
+                f"Hermes profile {profile_name} is active too. "
+                "Restart Hermes Desktop to load this preset."
+            )
         else:
             print("Hermes was not found; the NInfer preset is active.")
     except (helper.StackError, ValueError, OSError) as selected_error:
-        for path, contents in hermes_backups.items():
-            if contents is None:
-                path.unlink(missing_ok=True)
-            else:
-                path.write_bytes(contents)
         if env_backup is not None:
             helper.atomic_write(helper.ENV_FILE, env_backup.read_text(encoding="utf-8"))
         try:
@@ -117,6 +111,44 @@ def use_preset(args: argparse.Namespace) -> None:
             "runtime, decoder and Hermes configuration were restored."
         ) from selected_error
     print(f"ACTIVE: {preset.key} ({model.key} / {runtime.key} / {preset.spec})")
+
+
+def configure_client(args: argparse.Namespace) -> None:
+    """Configure a native Hermes profile on a LAN client without a local NInfer checkout."""
+    helper = _helper()
+    endpoint = helper.normalize_ninfer_client_endpoint(args.endpoint)
+    key = os.environ.get(args.key_env, "").strip()
+    if not key:
+        key = getpass.getpass("NInfer LAN API key: ").strip()
+    if not key:
+        raise ValueError(f"Set {args.key_env} or enter the NInfer LAN API key")
+    resolved = helper.native_hermes_command()
+    if resolved is None:
+        raise ValueError("Hermes Desktop is not installed on this computer")
+
+    preset = DEPLOYMENT_PRESETS[args.preset]
+    model = helper.model_profile(preset.model)
+    runtime = helper.runtime_profile(preset.runtime)
+    values = {
+        "NINFER_API_KEY": key,
+        "NINFER_MODEL_ID": "qwen-local",
+        "NINFER_MODEL_PROFILE": model.key,
+        "NINFER_MODEL_FILE": model.filename,
+        **runtime_env_values(runtime),
+        **spec_values(preset.spec),
+    }
+    helper.require_ninfer_endpoint(endpoint, key, values["NINFER_MODEL_ID"])
+    profile_name = helper.configure_hermes_preset_profile(
+        *resolved,
+        preset.key,
+        values,
+        endpoint=endpoint,
+        api_key=key,
+        activate=not args.no_activate,
+    )
+    state = "configured and activated" if not args.no_activate else "configured"
+    print(f"Hermes profile {profile_name} is {state} for {endpoint}.")
+    print("Restart Hermes Desktop to load it.")
 
 
 def docs(args: argparse.Namespace) -> None:
@@ -135,6 +167,27 @@ def register_commands(sub) -> None:
         "--yes", action="store_true", help="skip confirmation if its model must download"
     )
     use.set_defaults(func=use_preset)
+    client = sub.add_parser(
+        "configure-client",
+        help="create a native Hermes profile for this NInfer host or a trusted LAN host",
+    )
+    client.add_argument("preset", choices=tuple(DEPLOYMENT_PRESETS))
+    client.add_argument(
+        "--endpoint",
+        required=True,
+        help="NInfer URL, for example http://192.168.1.20:8080/v1",
+    )
+    client.add_argument(
+        "--key-env",
+        default="NINFER_API_KEY",
+        help="environment variable containing the API key; securely prompts when unset",
+    )
+    client.add_argument(
+        "--no-activate",
+        action="store_true",
+        help="create/update without changing the active profile",
+    )
+    client.set_defaults(func=configure_client)
     sub.add_parser("presets", help="show one-command deployment presets").set_defaults(
         func=show_presets
     )

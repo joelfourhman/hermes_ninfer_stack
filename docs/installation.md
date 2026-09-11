@@ -350,7 +350,30 @@ python ninfer.py network --mode lan
 Choose the host's private IPv4 interface and confirm the warning. Then run
 `python ninfer.py network` to show the endpoint and
 `python ninfer.py network --show-key` to reveal the bearer key deliberately.
-On the remote client, use that endpoint and key with model `qwen-local`.
+
+Install Hermes Desktop and copy or clone this repository on each client. Select
+the backend preset on the NInfer host first, then configure the same named preset
+on the client:
+
+```text
+# NInfer host
+python ninfer.py use autonomous
+python ninfer.py network --mode lan
+python ninfer.py network --show-key
+
+# LAN client; use the endpoint printed by `network`
+python ninfer.py configure-client autonomous --endpoint http://192.168.1.20:8080/v1
+```
+
+The client command prompts for the bearer key without placing it in shell
+history, verifies the authenticated `qwen-local` endpoint, creates or updates
+the native `ninfer-autonomous` Hermes profile and makes it active. Restart Hermes
+Desktop afterward. Pass `--no-activate` to prepare the profile without switching.
+Repeat with `default`, `coding`, `coding-fast`, `research`, `low-vram` or
+`uncensored` as needed.
+
+One NInfer host serves one backend preset at a time. The preset selected with
+`use` on the host and the active `ninfer-*` profile on every client must match.
 
 LAN mode is intended only for a trusted private network. Do not configure a
 router port forward. If required, create a host firewall allowance limited to

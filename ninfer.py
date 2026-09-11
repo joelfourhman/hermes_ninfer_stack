@@ -18,6 +18,7 @@ import sys
 import tempfile
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import webbrowser
 from pathlib import Path
@@ -28,7 +29,7 @@ ENV_FILE = ROOT / ".env"
 ENV_EXAMPLE = ROOT / ".env.example"
 COMPOSE_FILE = ROOT / "docker-compose.yml"
 from stack.config import (  # noqa: E402 - keep public compatibility exports beside paths
-    MODEL_PROFILES, RUNTIME_PROFILES, ModelProfile, RuntimeProfile,
+    DEPLOYMENT_PRESETS, MODEL_PROFILES, RUNTIME_PROFILES, ModelProfile, RuntimeProfile,
     NINFER_COMMIT, NINFER_URL, DEFAULT_MODEL_PROFILE, DEFAULT_RUNTIME_PROFILE,
     DEFAULT_GOAL_MAX_TURNS,
     runtime_env_values, validate_spec,
@@ -1143,24 +1144,62 @@ def ninfer_endpoint(values: dict[str, str]) -> str:
     return f"http://{endpoint_host(values)}:{values['NINFER_HOST_PORT']}/v1"
 
 
-def require_ninfer_api(values: dict[str, str]) -> None:
-    endpoint = ninfer_endpoint(values)
+def normalize_ninfer_client_endpoint(value: str) -> str:
+    """Validate a loopback/RFC1918 NInfer URL without accepting ambiguous URL parts."""
+    candidate = value.strip().rstrip("/")
+    parsed = urllib.parse.urlsplit(candidate)
+    if (
+        parsed.scheme != "http"
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+        or parsed.path != "/v1"
+        or parsed.hostname is None
+    ):
+        raise StackError("Endpoint must be an HTTP URL like http://192.168.1.20:8080/v1")
+    try:
+        address = ipaddress.ip_address(parsed.hostname)
+    except ValueError as exc:
+        raise StackError("Endpoint host must be a loopback or RFC1918 IPv4 address") from exc
+    if address.version != 4 or not (address.is_loopback or is_private_lan_ipv4(str(address))):
+        raise StackError("Endpoint host must be a loopback or RFC1918 IPv4 address")
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise StackError("Endpoint has an invalid port") from exc
+    if port is None or not 1 <= port <= 65535:
+        raise StackError("Endpoint must include a valid TCP port")
+    return candidate
+
+
+def require_ninfer_endpoint(endpoint: str, api_key: str, model_id: str = "qwen-local") -> None:
     request = urllib.request.Request(
         f"{endpoint}/models",
-        headers={"Authorization": f"Bearer {values['NINFER_API_KEY']}"},
+        headers={"Authorization": f"Bearer {api_key}"},
     )
     try:
         with urllib.request.urlopen(request, timeout=30) as response:
             payload = json.loads(response.read())
+    except urllib.error.HTTPError as exc:
+        if exc.code in {401, 403}:
+            raise StackError("NInfer rejected the supplied LAN client key") from exc
+        raise StackError(f"NInfer returned HTTP {exc.code} at {endpoint}") from exc
     except (urllib.error.URLError, json.JSONDecodeError) as exc:
-        raise StackError(
-            f"NInfer is not reachable at {endpoint}. Run 'python ninfer.py up' and try again: {exc}"
-        ) from exc
+        raise StackError(f"NInfer is not reachable at {endpoint}: {exc}") from exc
     advertised = [item.get("id") for item in payload.get("data", [])]
-    if values["NINFER_MODEL_ID"] not in advertised:
+    if model_id not in advertised:
+        raise StackError(f"NInfer does not advertise the configured model {model_id!r}")
+
+
+def require_ninfer_api(values: dict[str, str]) -> None:
+    endpoint = ninfer_endpoint(values)
+    try:
+        require_ninfer_endpoint(endpoint, values["NINFER_API_KEY"], values["NINFER_MODEL_ID"])
+    except StackError as exc:
         raise StackError(
-            f"NInfer does not advertise the configured model {values['NINFER_MODEL_ID']!r}"
-        )
+            f"NInfer is not ready at {endpoint}. Run 'python ninfer.py up' and try again: {exc}"
+        ) from exc
 
 
 def require_ninfer_generation(values: dict[str, str]) -> None:
@@ -1256,6 +1295,92 @@ def native_hermes_command() -> tuple[list[str], dict[str, str]] | None:
     return command, process_env
 
 
+def hermes_profile_name(preset_key: str) -> str:
+    if preset_key not in DEPLOYMENT_PRESETS:
+        raise StackError(f"Unknown deployment preset: {preset_key}")
+    return f"ninfer-{preset_key}"
+
+
+def configure_hermes_preset_profile(
+    command: list[str],
+    base_env: dict[str, str],
+    preset_key: str,
+    values: dict[str, str],
+    *,
+    endpoint: str | None = None,
+    api_key: str | None = None,
+    activate: bool = True,
+) -> str:
+    """Create/update one native Hermes profile and optionally make it sticky-active."""
+    preset = DEPLOYMENT_PRESETS[preset_key]
+    profile_name = hermes_profile_name(preset_key)
+    base_home = Path(base_env["HERMES_HOME"]).expanduser().resolve()
+    if base_home.parent.name == "profiles":
+        base_home = base_home.parent.parent
+    profile_cli_env = dict(base_env)
+    profile_cli_env["HERMES_HOME"] = str(base_home)
+    profile_home = (base_home / "profiles" / profile_name).resolve()
+    profiles_root = (base_home / "profiles").resolve()
+    if profile_home.parent != profiles_root:
+        raise StackError("Resolved Hermes profile outside the profiles directory")
+
+    created = not profile_home.is_dir()
+    backups: dict[Path, bytes | None] = {}
+    if not created:
+        backups = {
+            path: path.read_bytes() if path.exists() else None
+            for path in (profile_home / "config.yaml", profile_home / ".env")
+        }
+    try:
+        if created:
+            run(
+                [
+                    *command,
+                    "profile",
+                    "create",
+                    profile_name,
+                    "--clone-from",
+                    "default",
+                    "--no-alias",
+                    "--description",
+                    f"NInfer {preset.label}: {preset.description}",
+                ],
+                env=profile_cli_env,
+            )
+            if not profile_home.is_dir():
+                raise StackError(f"Hermes did not create profile {profile_name}")
+
+        profile_env = dict(base_env)
+        profile_env["HERMES_HOME"] = str(profile_home)
+        selected_values = dict(values)
+        if api_key is not None:
+            selected_values["NINFER_API_KEY"] = api_key
+        configure_native_hermes(
+            command,
+            profile_env,
+            selected_values,
+            preserve_execution=True,
+            endpoint_override=endpoint,
+        )
+        if activate:
+            run([*command, "profile", "use", profile_name], env=profile_cli_env)
+        return profile_name
+    except Exception:
+        if created and profile_home.is_dir():
+            run(
+                [*command, "profile", "delete", "-y", profile_name],
+                check=False,
+                env=profile_cli_env,
+            )
+        else:
+            for path, contents in backups.items():
+                if contents is None:
+                    path.unlink(missing_ok=True)
+                else:
+                    path.write_bytes(contents)
+        raise
+
+
 def windows_hermes_desktop_executable() -> Path | None:
     """Return the stock installer's standard managed Windows desktop artifact."""
     if os.name != "nt":
@@ -1290,13 +1415,21 @@ def launch_windows_hermes_desktop() -> bool:
     return True
 
 
-def configure_native_hermes(command: list[str], process_env: dict[str, str], values: dict[str, str], *, preserve_execution: bool = False) -> None:
+def configure_native_hermes(
+    command: list[str],
+    process_env: dict[str, str],
+    values: dict[str, str],
+    *,
+    preserve_execution: bool = False,
+    endpoint_override: str | None = None,
+) -> None:
     model_id = values["NINFER_MODEL_ID"]
     context = values["NINFER_CONTEXT_LENGTH"]
     profile_home = Path(process_env["HERMES_HOME"]).expanduser().resolve()
+    endpoint = endpoint_override or ninfer_endpoint(values)
     provider = json.dumps(
         {
-            "api": ninfer_endpoint(values),
+            "api": endpoint,
             "key_env": "NINFER_API_KEY",
             "transport": "chat_completions",
             "default_model": model_id,
@@ -1354,7 +1487,7 @@ def configure_native_hermes(command: list[str], process_env: dict[str, str], val
     run([*command, "config", "check"], env=process_env)
 
     expected = {
-        "providers.ninfer.api": ninfer_endpoint(values),
+        "providers.ninfer.api": endpoint,
         "model.provider": "custom:ninfer",
         "model.default": model_id,
         "model.context_length": context,

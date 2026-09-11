@@ -12,7 +12,7 @@ from unittest.mock import Mock, patch
 from stack.api import Client, Completion
 from stack.bench_agent import run_workload
 from stack.config import MODEL_PROFILES, RUNTIME_PROFILES
-from stack.commands import use_preset
+from stack.commands import configure_client, use_preset
 from stack.metrics import parse_native_logs
 from stack.testing import fake_client
 from stack.workloads import Workspace, validate_fixture_code
@@ -96,6 +96,67 @@ class BenchmarkTests(unittest.TestCase):
             helper.atomic_write.assert_called_once_with(env_file, "previous")
             self.assertEqual(helper.start_ninfer.call_count, 2)
             self.assertEqual(helper.start_ninfer.call_args_list[-1].args[0], previous)
+
+    def test_complete_preset_activates_matching_native_hermes_profile(self):
+        helper = Mock()
+        helper.ENV_FILE = Mock()
+        helper.ENV_FILE.exists.return_value = True
+        helper.StackError = ValueError
+        helper.model_profile.side_effect = lambda key: MODEL_PROFILES[key]
+        helper.runtime_profile.side_effect = lambda key: RUNTIME_PROFILES[key]
+        helper.prepare_model.return_value = True
+        helper.read_env.return_value = {
+            "NINFER_MODEL_PROFILE": "stock-dflash2",
+            "NINFER_RUNTIME_PROFILE": "autonomous",
+            "NINFER_SPEC_BACKEND": "dflash2",
+            "NINFER_DRAFT_TOKENS": "7",
+        }
+        resolved = (["hermes"], {"HERMES_HOME": "hermes-home"})
+        helper.native_hermes_command.return_value = resolved
+        helper.configure_hermes_preset_profile.return_value = "ninfer-autonomous"
+
+        with patch("stack.commands._helper", return_value=helper):
+            use_preset(argparse.Namespace(preset="autonomous", yes=True))
+
+        helper.configure_hermes_preset_profile.assert_called_once_with(
+            *resolved,
+            "autonomous",
+            helper.read_env.return_value,
+        )
+
+    def test_lan_client_configures_matching_profile_with_environment_key(self):
+        helper = Mock()
+        helper.normalize_ninfer_client_endpoint.return_value = "http://192.168.1.20:8080/v1"
+        helper.native_hermes_command.return_value = (
+            ["hermes"],
+            {"HERMES_HOME": "hermes-home"},
+        )
+        helper.model_profile.side_effect = lambda key: MODEL_PROFILES[key]
+        helper.runtime_profile.side_effect = lambda key: RUNTIME_PROFILES[key]
+        helper.configure_hermes_preset_profile.return_value = "ninfer-coding"
+        args = argparse.Namespace(
+            preset="coding",
+            endpoint="http://192.168.1.20:8080/v1",
+            key_env="TEST_NINFER_KEY",
+            no_activate=False,
+        )
+
+        with (
+            patch("stack.commands._helper", return_value=helper),
+            patch.dict("os.environ", {"TEST_NINFER_KEY": "secret-key"}),
+        ):
+            configure_client(args)
+
+        helper.require_ninfer_endpoint.assert_called_once_with(
+            "http://192.168.1.20:8080/v1",
+            "secret-key",
+            "qwen-local",
+        )
+        call = helper.configure_hermes_preset_profile.call_args
+        self.assertEqual(call.args[2], "coding")
+        self.assertEqual(call.kwargs["endpoint"], "http://192.168.1.20:8080/v1")
+        self.assertEqual(call.kwargs["api_key"], "secret-key")
+        self.assertTrue(call.kwargs["activate"])
 
     def test_compression_failure_retains_completed_request_evidence(self):
         class FailingSummary:

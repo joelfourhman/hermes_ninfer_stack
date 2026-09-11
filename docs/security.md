@@ -56,6 +56,12 @@ service. Opt-in LAN mode binds one RFC1918 address, never `0.0.0.0`. NInfer
 requires the generated bearer key in both modes. LAN traffic is HTTP without
 TLS, so the endpoint and key should be used only on a trusted private network.
 
+`configure-client` accepts only an explicit loopback or RFC1918 IPv4 HTTP URL
+ending in `/v1`. It reads the key from the requested environment variable or a
+hidden prompt, authenticates against `/models`, then stores it in the selected
+native Hermes profile's private `.env`. Do not pass the key as a command-line
+argument, commit that profile data, or copy `network --show-key` output into logs.
+
 Do not configure router port forwarding. Scope the host firewall rule to its
 Private profile and local subnet. These controls do not defend against another
 LAN device that knows the key, a hostile device able to observe unencrypted

@@ -63,6 +63,7 @@ jobs:
           python3 ninfer.py select-model --help
           python3 ninfer.py install-hermes --help
           python3 ninfer.py use --help
+          python3 ninfer.py configure-client --help
           python3 ninfer.py presets
           python3 ninfer.py profile --help
           python3 ninfer.py spec --help
@@ -121,6 +122,7 @@ jobs:
           python ninfer.py select-model --help
           python ninfer.py install-hermes --help
           python ninfer.py use --help
+          python ninfer.py configure-client --help
           python ninfer.py presets
           python ninfer.py profile --help
           python ninfer.py spec --help
