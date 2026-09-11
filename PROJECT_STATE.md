@@ -9,8 +9,11 @@ Goal: purpose-built Windows/RTX 5090 NInfer platform for stock Hermes agents.
 - Config authority implemented in stack/manifest.json; source checkout upgraded.
 - Added explicit stock-dflash2 artifact, legal draft counts, five candidate workload
   profiles and generated reference. Existing 35 + five new tests pass.
-- Current milestone: finalize config/provenance validation and commit; build may
-  run concurrently but the baseline container must remain until measured.
+- Config milestone committed as f115cc1. Upgraded NInfer image builds successfully.
+- Benchmark/API modules implemented; 44 tests pass, including real bounded fixture
+  edits/tests and mocked streaming reasoning/tool/usage round trip. Baseline GPU
+  coding measurement is in progress; preserve baseline container until it finishes.
+- Next: integrate durable epochs using stock Hermes CLI/session/checkpoint APIs.
 - Following milestones: protocol metrics/agent benchmarks; durable Hermes epochs,
   optional supervisor and native backend integration; docs/CI/live validation.
 - GPU and baseline container are available. No new performance results yet.
