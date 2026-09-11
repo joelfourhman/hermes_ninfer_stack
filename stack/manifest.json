@@ -217,7 +217,7 @@
       "host_kv_mib": 8192,
       "preserve_thinking": true,
       "compression_threshold_tokens": 150000,
-      "max_turns": 100000,
+      "max_turns": 40,
       "qualification": "196608 shared KV selected after DFlash2-7 failed the 240000 reservation on RTX 5090; see BENCHMARK_RESULTS.md"
     },
     "research": {

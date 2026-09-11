@@ -697,8 +697,8 @@ def validate_env() -> None:
         raise StackError(
             "HERMES_COMPRESSION_THRESHOLD_TOKENS must be at least 1024 and below context"
         )
-    if not max_turns.isdigit() or not 1 <= int(max_turns) <= 100000:
-        raise StackError("HERMES_MAX_TURNS must be from 1 through 100000")
+    if not max_turns.isdigit() or not 1 <= int(max_turns) <= 1000:
+        raise StackError("HERMES_MAX_TURNS must be from 1 through 1000")
     try:
         validate_spec(values)
     except ValueError as exc:
@@ -1321,7 +1321,6 @@ def configure_native_hermes(command: list[str], process_env: dict[str, str], val
             values["HERMES_COMPRESSION_THRESHOLD_TOKENS"],
         ),
         ("agent.max_turns", values["HERMES_MAX_TURNS"]),
-        ("goals.max_turns", values["HERMES_MAX_TURNS"]),
     ]
     if not preserve_execution:
         settings += [("terminal.backend", "local"), ("approvals.mode", "manual")]

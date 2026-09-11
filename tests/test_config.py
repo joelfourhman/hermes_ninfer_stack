@@ -78,7 +78,6 @@ class ConfigurationTests(unittest.TestCase):
     def test_manifest_profiles_context_and_generated_docs(self):
         validate_manifest()
         generate(check=True)
-        self.assertEqual(RUNTIME_PROFILES["coding"].max_turns, 100000)
         for profile in RUNTIME_PROFILES.values():
             values = runtime_env_values(profile)
             self.assertLess(
