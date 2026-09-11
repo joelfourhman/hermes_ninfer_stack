@@ -13,6 +13,7 @@ NINFER_COMMIT = MANIFEST["ninfer"]["commit"]
 NINFER_URL = MANIFEST["ninfer"]["repository"]
 DEFAULT_MODEL_PROFILE = MANIFEST["defaults"]["model"]
 DEFAULT_RUNTIME_PROFILE = MANIFEST["defaults"]["runtime"]
+DEFAULT_GOAL_MAX_TURNS = MANIFEST["defaults"]["goal_max_turns"]
 
 
 @dataclass(frozen=True)
@@ -116,6 +117,8 @@ def validate_spec(values: dict[str, str]) -> None:
 def validate_manifest() -> None:
     if MANIFEST["schema_version"] != 1 or not re.fullmatch(r"[0-9a-f]{40}", NINFER_COMMIT):
         raise ValueError("Invalid manifest schema or source SHA")
+    if not 1 <= DEFAULT_GOAL_MAX_TURNS <= 100000:
+        raise ValueError("Invalid default Hermes goal turn limit")
     for key, model in MODEL_PROFILES.items():
         if key != model.key or not re.fullmatch(r"[0-9a-f]{64}", model.sha256):
             raise ValueError(f"Invalid model identity/checksum: {key}")

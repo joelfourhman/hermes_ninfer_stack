@@ -112,6 +112,8 @@ python ninfer.py profile balanced
 
 `profile` configures NInfer and the installed Hermes provider together, preserves
 existing execution/approval settings, live-tests startup and rolls back on failure.
+Every preset configures Hermes goals for up to 100,000 turns; the profile table's
+Turns column remains the ordinary per-response agent tool-loop limit.
 Restart Desktop after changing context so existing processes reload their settings.
 `select-runtime --profile NAME` remains supported.
 

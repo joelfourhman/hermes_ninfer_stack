@@ -30,6 +30,7 @@ COMPOSE_FILE = ROOT / "docker-compose.yml"
 from stack.config import (  # noqa: E402 - keep public compatibility exports beside paths
     MODEL_PROFILES, RUNTIME_PROFILES, ModelProfile, RuntimeProfile,
     NINFER_COMMIT, NINFER_URL, DEFAULT_MODEL_PROFILE, DEFAULT_RUNTIME_PROFILE,
+    DEFAULT_GOAL_MAX_TURNS,
     runtime_env_values, validate_spec,
 )
 
@@ -1321,6 +1322,7 @@ def configure_native_hermes(command: list[str], process_env: dict[str, str], val
             values["HERMES_COMPRESSION_THRESHOLD_TOKENS"],
         ),
         ("agent.max_turns", values["HERMES_MAX_TURNS"]),
+        ("goals.max_turns", str(DEFAULT_GOAL_MAX_TURNS)),
     ]
     if not preserve_execution:
         settings += [("terminal.backend", "local"), ("approvals.mode", "manual")]

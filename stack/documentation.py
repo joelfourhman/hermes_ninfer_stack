@@ -52,6 +52,7 @@ def generated_reference() -> str:
         preset_table(),
         "",
         "All profiles use FP8 KV, prefill chunk 1024, preserved thinking and optimized draft heads.",
+        f"All presets configure Hermes goals for up to {MANIFEST['defaults']['goal_max_turns']:,} turns.",
         "Speculation is independent of workload: default MTP3; DFlash2 requires explicit stock-dflash2 selection.",
         "Candidate profiles require target-GPU memory and workload validation. A context ceiling is not a speed guarantee.",
         "",

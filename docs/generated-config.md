@@ -28,6 +28,7 @@ CUDA image base: `docker.io/nvidia/cuda:13.1.2-runtime-ubuntu24.04`.
 | `uncensored` | `uncensored` | `max-context` | `mtp3` | Original user selection: uncensored, 240K and MTP3 |
 
 All profiles use FP8 KV, prefill chunk 1024, preserved thinking and optimized draft heads.
+All presets configure Hermes goals for up to 100,000 turns.
 Speculation is independent of workload: default MTP3; DFlash2 requires explicit stock-dflash2 selection.
 Candidate profiles require target-GPU memory and workload validation. A context ceiling is not a speed guarantee.
 

@@ -28,7 +28,8 @@
     "model": "stock",
     "runtime": "balanced",
     "spec": "mtp3",
-    "prefill_chunk": 1024
+    "prefill_chunk": 1024,
+    "goal_max_turns": 100000
   },
   "presets": {
     "default": {

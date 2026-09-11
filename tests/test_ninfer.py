@@ -302,6 +302,10 @@ class HermesDesktopConfigurationTests(unittest.TestCase):
             ["hermes", "config", "set", "compression.threshold_tokens", "90000"],
             [command for command, _ in calls],
         )
+        self.assertIn(
+            ["hermes", "config", "set", "goals.max_turns", "100000"],
+            [command for command, _ in calls],
+        )
 
     def test_private_env_removal_preserves_unrelated_values(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

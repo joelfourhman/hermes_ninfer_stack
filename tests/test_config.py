@@ -77,6 +77,7 @@ class ConfigurationTests(unittest.TestCase):
 
     def test_manifest_profiles_context_and_generated_docs(self):
         validate_manifest()
+        self.assertEqual(MANIFEST["defaults"]["goal_max_turns"], 100000)
         generate(check=True)
         for profile in RUNTIME_PROFILES.values():
             values = runtime_env_values(profile)
