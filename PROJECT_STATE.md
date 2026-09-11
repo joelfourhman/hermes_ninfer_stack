@@ -4,6 +4,12 @@ Implementation, self-review and live validation are complete. See FINAL_REPORT.m
 for architecture, exact changed files, tests and limitations; BENCHMARK_RESULTS.md
 and benchmarks/measured-summary.json contain the measured evidence.
 
+- Follow-up adds manifest-defined one-command deployment presets: `use default`,
+  `coding`, `coding-fast`, `research`, `low-vram` and `uncensored`. Each applies
+  model/runtime/decoder together with one restart and transactional rollback.
+  Preset compatibility, one-start behavior and rollback are tested; 62 tests
+  pass locally (58 passed, 4 GPU-only skips). Repository/docs/lint checks pass.
+
 - Source authority: stack/manifest.json. NInfer upgraded ad0f3d3 -> d492968.
   Original baseline: 37d57b2. Audit/config/benchmark/jobs/recovery checkpoints
   precede the final documentation, CI and measurement milestone.

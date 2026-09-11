@@ -3,7 +3,13 @@
 from __future__ import annotations
 
 from pathlib import Path
-from stack.config import MANIFEST, MODEL_PROFILES, RUNTIME_PROFILES, NINFER_COMMIT
+from stack.config import (
+    DEPLOYMENT_PRESETS,
+    MANIFEST,
+    MODEL_PROFILES,
+    NINFER_COMMIT,
+    RUNTIME_PROFILES,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -20,6 +26,16 @@ def profile_table() -> str:
     return "\n".join(rows)
 
 
+def preset_table() -> str:
+    rows = [
+        "| Preset | Model | Runtime | Decoder | Purpose |",
+        "|---|---|---|---|---|",
+    ]
+    for p in DEPLOYMENT_PRESETS.values():
+        rows.append(f"| `{p.key}` | `{p.model}` | `{p.runtime}` | `{p.spec}` | {p.description} |")
+    return "\n".join(rows)
+
+
 def generated_reference() -> str:
     rows = [
         "# Generated configuration reference",
@@ -30,6 +46,10 @@ def generated_reference() -> str:
         f"CUDA image base: `{MANIFEST['ninfer']['cuda_base']}`.",
         "",
         profile_table(),
+        "",
+        "## One-command presets",
+        "",
+        preset_table(),
         "",
         "All profiles use FP8 KV, prefill chunk 1024, preserved thinking and optimized draft heads.",
         "Speculation is independent of workload: default MTP3; DFlash2 requires explicit stock-dflash2 selection.",

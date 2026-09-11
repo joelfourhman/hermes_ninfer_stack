@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 import ninfer
 from stack.config import (
+    DEPLOYMENT_PRESETS,
     MANIFEST,
     MODEL_PROFILES,
     RUNTIME_PROFILES,
@@ -21,6 +22,15 @@ from stack.provenance import verify_cli_help, verify_image, verify_model
 
 
 class ConfigurationTests(unittest.TestCase):
+    def test_deployment_presets_are_complete_and_compatible(self):
+        self.assertEqual(
+            set(DEPLOYMENT_PRESETS),
+            {"default", "coding", "coding-fast", "research", "low-vram", "uncensored"},
+        )
+        for preset in DEPLOYMENT_PRESETS.values():
+            values = dict(spec_values(preset.spec), NINFER_MODEL_PROFILE=preset.model)
+            validate_spec(values)
+
     def test_runtime_rolls_back_backend_and_hermes_on_sync_failure(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)

@@ -51,8 +51,19 @@ class RuntimeProfile:
     qualification: str
 
 
+@dataclass(frozen=True)
+class DeploymentPreset:
+    key: str
+    label: str
+    description: str
+    model: str
+    runtime: str
+    spec: str
+
+
 MODEL_PROFILES = {k: ModelProfile(**v) for k, v in MANIFEST["models"].items()}
 RUNTIME_PROFILES = {k: RuntimeProfile(**v) for k, v in MANIFEST["profiles"].items()}
+DEPLOYMENT_PRESETS = {k: DeploymentPreset(**v) for k, v in MANIFEST["presets"].items()}
 
 
 def runtime_env_values(profile: RuntimeProfile) -> dict[str, str]:
@@ -129,3 +140,12 @@ def validate_manifest() -> None:
             raise ValueError(f"Invalid KV dtype: {key}")
         if min(p.device_state_slots, p.host_state_slots, p.host_kv_mib) < 0:
             raise ValueError(f"Invalid state capacity: {key}")
+    for key, preset in DEPLOYMENT_PRESETS.items():
+        if (
+            key != preset.key
+            or preset.model not in MODEL_PROFILES
+            or preset.runtime not in RUNTIME_PROFILES
+        ):
+            raise ValueError(f"Invalid deployment preset: {key}")
+        values = dict(spec_values(preset.spec), NINFER_MODEL_PROFILE=preset.model)
+        validate_spec(values)

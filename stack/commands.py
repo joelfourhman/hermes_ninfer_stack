@@ -3,8 +3,15 @@
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 
-from stack.config import RUNTIME_PROFILES, spec_values, validate_spec
+from stack.config import (
+    DEPLOYMENT_PRESETS,
+    RUNTIME_PROFILES,
+    runtime_env_values,
+    spec_values,
+    validate_spec,
+)
 
 
 def _helper():
@@ -42,6 +49,76 @@ def show_profiles(_: argparse.Namespace) -> None:
     print("\nProfiles are memory/workload candidates; balanced + MTP3 remains the default.")
 
 
+def show_presets(_: argparse.Namespace) -> None:
+    print("| Preset | Model | Runtime | Decoder | Purpose |")
+    print("|---|---|---|---|---|")
+    for preset in DEPLOYMENT_PRESETS.values():
+        print(
+            f"| {preset.key} | {preset.model} | {preset.runtime} | "
+            f"{preset.spec} | {preset.description} |"
+        )
+
+
+def use_preset(args: argparse.Namespace) -> None:
+    helper = _helper()
+    if not helper.ENV_FILE.exists():
+        raise ValueError("Run setup before selecting a deployment preset")
+    preset = DEPLOYMENT_PRESETS[args.preset]
+    model = helper.model_profile(preset.model)
+    runtime = helper.runtime_profile(preset.runtime)
+    print(f"Applying {preset.key}: model={model.key}, runtime={runtime.key}, decoder={preset.spec}")
+    helper.check_setup_prerequisites(model)
+    if not helper.prepare_model(argparse.Namespace(model=model.key, yes=args.yes)):
+        return
+
+    previous = helper.read_env()
+    replacements = {
+        "NINFER_MODEL_PROFILE": model.key,
+        "NINFER_MODEL_FILE": model.filename,
+        "NINFER_MODEL_ID": "qwen-local",
+        **runtime_env_values(runtime),
+        **spec_values(preset.spec),
+    }
+    validate_spec(dict(previous, **replacements))
+    resolved = helper.native_hermes_command()
+    hermes_backups = {}
+    if resolved is not None:
+        home = Path(resolved[1]["HERMES_HOME"]).expanduser().resolve()
+        hermes_backups = {
+            path: path.read_bytes() if path.exists() else None
+            for path in (home / "config.yaml", home / ".env")
+        }
+    env_backup = helper.replace_env_values(replacements)
+    try:
+        helper.validate_env()
+        helper.start_ninfer(helper.read_env())
+        if resolved is not None:
+            helper.configure_native_hermes(*resolved, helper.read_env(), preserve_execution=True)
+            print("Hermes was updated too. Restart Hermes Desktop to load this preset.")
+        else:
+            print("Hermes was not found; the NInfer preset is active.")
+    except (helper.StackError, ValueError, OSError) as selected_error:
+        for path, contents in hermes_backups.items():
+            if contents is None:
+                path.unlink(missing_ok=True)
+            else:
+                path.write_bytes(contents)
+        if env_backup is not None:
+            helper.atomic_write(helper.ENV_FILE, env_backup.read_text(encoding="utf-8"))
+        try:
+            helper.start_ninfer(previous)
+        except helper.StackError as rollback_error:
+            raise helper.StackError(
+                "The preset failed and its previous configuration was restored, "
+                "but the former service also needs attention. Run 'python ninfer.py logs'."
+            ) from rollback_error
+        raise helper.StackError(
+            f"The {preset.key} preset failed its live test. The previous model, "
+            "runtime, decoder and Hermes configuration were restored."
+        ) from selected_error
+    print(f"ACTIVE: {preset.key} ({model.key} / {runtime.key} / {preset.spec})")
+
+
 def docs(args: argparse.Namespace) -> None:
     from stack.documentation import generate
 
@@ -50,6 +127,17 @@ def docs(args: argparse.Namespace) -> None:
 
 
 def register_commands(sub) -> None:
+    use = sub.add_parser(
+        "use", help="apply a complete model/runtime/decoder preset with one restart"
+    )
+    use.add_argument("preset", choices=tuple(DEPLOYMENT_PRESETS))
+    use.add_argument(
+        "--yes", action="store_true", help="skip confirmation if its model must download"
+    )
+    use.set_defaults(func=use_preset)
+    sub.add_parser("presets", help="show one-command deployment presets").set_defaults(
+        func=show_presets
+    )
     profile = sub.add_parser("profile", help="select a workload profile and synchronize Hermes")
     profile.add_argument("profile", choices=tuple(RUNTIME_PROFILES))
     profile.set_defaults(func=lambda args: _helper().select_runtime(args))

@@ -30,6 +30,56 @@
     "spec": "mtp3",
     "prefill_chunk": 1024
   },
+  "presets": {
+    "default": {
+      "key": "default",
+      "label": "Reliable everyday use",
+      "description": "Recommended stock model, balanced context and MTP3 fallback",
+      "model": "stock",
+      "runtime": "balanced",
+      "spec": "mtp3"
+    },
+    "coding": {
+      "key": "coding",
+      "label": "Fast coding",
+      "description": "Measured DFlash2 coding setup with the best TTFT",
+      "model": "stock-dflash2",
+      "runtime": "coding",
+      "spec": "dflash2-7"
+    },
+    "coding-fast": {
+      "key": "coding-fast",
+      "label": "Fastest measured coding",
+      "description": "DFlash2-11; use while the RTX 5090 is otherwise idle",
+      "model": "stock-dflash2",
+      "runtime": "coding",
+      "spec": "dflash2-11"
+    },
+    "research": {
+      "key": "research",
+      "label": "Large-context research",
+      "description": "240K stock/MTP3 path qualified for growing sessions",
+      "model": "stock",
+      "runtime": "research",
+      "spec": "mtp3"
+    },
+    "low-vram": {
+      "key": "low-vram",
+      "label": "Share the GPU",
+      "description": "64K stock/MTP3 profile with a smaller cache footprint",
+      "model": "stock",
+      "runtime": "low-vram",
+      "spec": "mtp3"
+    },
+    "uncensored": {
+      "key": "uncensored",
+      "label": "Uncensored maximum context",
+      "description": "Original user selection: uncensored, 240K and MTP3",
+      "model": "uncensored",
+      "runtime": "max-context",
+      "spec": "mtp3"
+    }
+  },
   "models": {
     "stock": {
       "key": "stock",

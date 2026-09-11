@@ -19,7 +19,13 @@ Compose requires the source revision interpolation and the helper always supplie
 the authoritative revision to builds. `validate` checks the staged gitlink and
 actual clean submodule HEAD; `verify` checks image metadata and binary flags.
 
-Workload selection uses `profile NAME` or `select-runtime --profile NAME`.
+For normal use, `use default|coding|coding-fast|research|low-vram|uncensored`
+applies a complete manifest-defined model/runtime/decoder preset with one service
+restart. It prints the mapping, retains download confirmation, synchronizes
+Hermes and rolls the whole selection back on failure. `presets` lists the exact
+mappings.
+
+Lower-level workload selection uses `profile NAME` or `select-runtime --profile NAME`.
 Model selection uses `select-model --model NAME`. Decoder selection uses
 `spec mtp3`, `spec dflash2-7`, or `spec dflash2 --draft-tokens N`. These are separate
 choices; DFlash2 is accepted only on the companion artifact. Hand-editing a

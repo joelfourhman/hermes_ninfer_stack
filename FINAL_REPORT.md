@@ -19,6 +19,11 @@ optional review and generated documentation. The stock Hermes distribution is
 not forked. Jobs use a private home and existing CLI session/checkpoint mechanisms.
 See [architecture](docs/architecture.md) and [audit](AUDIT.md).
 
+A follow-up adds `use` presets so daily switching takes one command. These
+manifest-defined presets apply model, runtime and decoder together, start NInfer
+once, synchronize Hermes, retain download confirmation and roll the whole
+selection back if startup fails. Granular controls remain for experiments.
+
 ## Exact provenance and profiles
 
 NInfer before: `ad0f3d384b5cbcec4a48a3951c287b4e9831443e`.

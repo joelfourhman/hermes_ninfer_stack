@@ -8,6 +8,8 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- One-command `use` presets for complete model/runtime/decoder selection with a
+  single restart, download confirmation, Hermes synchronization and rollback.
 - Authoritative source/model/profile manifest with image, binary CLI, SHA-256,
   clean submodule and staged-gitlink verification; generated profile documentation.
 - Audited NInfer upgrade, explicit DFlash2 companion artifact and configurable

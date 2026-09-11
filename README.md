@@ -80,6 +80,27 @@ upstream master commit; it is not represented as a tagged stable release.
 
 ## Choose a workload
 
+Use one complete preset for normal switching:
+
+```text
+python ninfer.py use default
+python ninfer.py use coding
+python ninfer.py use coding-fast
+python ninfer.py use research
+python ninfer.py use low-vram
+python ninfer.py use uncensored
+```
+
+Each command selects the model artifact, runtime capacity and decoder together,
+then starts the service once and synchronizes Hermes. `coding` uses DFlash2-7;
+`coding-fast` uses the slightly faster but more aggressive DFlash2-11. A preset
+prints its complete mapping before it changes configuration. Run
+`python ninfer.py presets` to display the mappings. If its artifact is absent,
+the normal large-download confirmation still appears unless you pass `--yes`.
+On startup failure, all NInfer and Hermes settings return to their prior values.
+
+The lower-level controls remain available for experiments:
+
 ```text
 python ninfer.py profiles
 python ninfer.py profile coding

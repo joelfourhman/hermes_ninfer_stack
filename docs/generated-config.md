@@ -16,6 +16,17 @@ CUDA image base: `docker.io/nvidia/cuda:13.1.2-runtime-ubuntu24.04`.
 | `autonomous` | 196,608 | 196,608 | 2 | 2 / 8 | 8,192 | 150,000 | 24 |
 | `low-vram` | 65,536 | 65,536 | 1 | 1 / 2 | 2,048 | 48,000 | 40 |
 
+## One-command presets
+
+| Preset | Model | Runtime | Decoder | Purpose |
+|---|---|---|---|---|
+| `default` | `stock` | `balanced` | `mtp3` | Recommended stock model, balanced context and MTP3 fallback |
+| `coding` | `stock-dflash2` | `coding` | `dflash2-7` | Measured DFlash2 coding setup with the best TTFT |
+| `coding-fast` | `stock-dflash2` | `coding` | `dflash2-11` | DFlash2-11; use while the RTX 5090 is otherwise idle |
+| `research` | `stock` | `research` | `mtp3` | 240K stock/MTP3 path qualified for growing sessions |
+| `low-vram` | `stock` | `low-vram` | `mtp3` | 64K stock/MTP3 profile with a smaller cache footprint |
+| `uncensored` | `uncensored` | `max-context` | `mtp3` | Original user selection: uncensored, 240K and MTP3 |
+
 All profiles use FP8 KV, prefill chunk 1024, preserved thinking and optimized draft heads.
 Speculation is independent of workload: default MTP3; DFlash2 requires explicit stock-dflash2 selection.
 Candidate profiles require target-GPU memory and workload validation. A context ceiling is not a speed guarantee.
