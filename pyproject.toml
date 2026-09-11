@@ -1,0 +1,7 @@
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+extend-exclude = ["ninfer", "out", "models", "benchmarks"]
+
+[tool.ruff.lint.per-file-ignores]
+"scripts/*.py" = ["E402"] # Direct script entrypoints add the repository to sys.path.

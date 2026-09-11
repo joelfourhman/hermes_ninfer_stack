@@ -44,6 +44,11 @@ coverage/
 *.sqlite
 *.sqlite3
 *.db
+.ninfer-jobs/
+PROJECT_STATE.json
+PROJECT_STATE.json.*
+PROJECT_STATE.lock
+EPOCH_REPORT.json
 
 # Private keys, certificates, and local SSH material
 .ssh/

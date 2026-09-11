@@ -27,10 +27,10 @@ ROOT = Path(__file__).resolve().parent
 ENV_FILE = ROOT / ".env"
 ENV_EXAMPLE = ROOT / ".env.example"
 COMPOSE_FILE = ROOT / "docker-compose.yml"
-from stack.config import (
-    MANIFEST, MODEL_PROFILES, RUNTIME_PROFILES, ModelProfile, RuntimeProfile,
+from stack.config import (  # noqa: E402 - keep public compatibility exports beside paths
+    MODEL_PROFILES, RUNTIME_PROFILES, ModelProfile, RuntimeProfile,
     NINFER_COMMIT, NINFER_URL, DEFAULT_MODEL_PROFILE, DEFAULT_RUNTIME_PROFILE,
-    runtime_env_values, spec_values, validate_spec,
+    runtime_env_values, validate_spec,
 )
 
 STOCK_MODEL_FILE = MODEL_PROFILES["stock"].filename

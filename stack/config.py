@@ -1,4 +1,5 @@
 """One authoritative manifest for source, artifacts and resource profiles."""
+
 from __future__ import annotations
 
 import json
@@ -78,11 +79,15 @@ def spec_values(mode: str, draft_tokens: int | None = None) -> dict[str, str]:
     if mode in {"mtp", "dflash2"} and draft_tokens is not None:
         backend, count = mode, draft_tokens
     elif match:
-        backend, count = ("mtp", int(match[2])) if match[1] else ("dflash2", int(match[3]))
+        backend, count = (
+            ("mtp", int(match[2])) if match[1] else ("dflash2", int(match[3]))
+        )
         if draft_tokens is not None:
             count = draft_tokens
     else:
-        raise ValueError("Choose mtp3, dflash2-7, dflash2-11 or a backend with --draft-tokens")
+        raise ValueError(
+            "Choose mtp3, dflash2-7, dflash2-11 or a backend with --draft-tokens"
+        )
     if not 1 <= count <= (5 if backend == "mtp" else 15):
         raise ValueError("MTP supports 1..5 drafts; DFlash2 supports 1..15")
     return {"NINFER_SPEC_BACKEND": backend, "NINFER_DRAFT_TOKENS": str(count)}
@@ -96,23 +101,38 @@ def validate_spec(values: dict[str, str]) -> None:
         raise ValueError(f"Invalid speculative configuration: {exc}") from exc
     model = MODEL_PROFILES[values["NINFER_MODEL_PROFILE"]]
     if backend not in model.capabilities:
-        raise ValueError(f"{model.key} lacks {backend} companion weights. Explicitly select-model --model stock-dflash2 first; no artifact is changed automatically.")
+        raise ValueError(
+            f"{model.key} lacks {backend} companion weights. Explicitly select-model --model stock-dflash2 first; no artifact is changed automatically."
+        )
 
 
 def validate_manifest() -> None:
-    if MANIFEST["schema_version"] != 1 or not re.fullmatch(r"[0-9a-f]{40}", NINFER_COMMIT):
+    if MANIFEST["schema_version"] != 1 or not re.fullmatch(
+        r"[0-9a-f]{40}", NINFER_COMMIT
+    ):
         raise ValueError("Invalid manifest schema or source SHA")
     for key, model in MODEL_PROFILES.items():
         if key != model.key or not re.fullmatch(r"[0-9a-f]{64}", model.sha256):
             raise ValueError(f"Invalid model identity/checksum: {key}")
-        if not re.fullmatch(r"[0-9a-f]{40}", model.revision) or model.expected_bytes <= 0:
+        if (
+            not re.fullmatch(r"[0-9a-f]{40}", model.revision)
+            or model.expected_bytes <= 0
+        ):
             raise ValueError(f"Invalid model revision/size: {key}")
-        if Path(model.filename).name != model.filename or "/" in model.filename or "\\" in model.filename:
+        if (
+            Path(model.filename).name != model.filename
+            or "/" in model.filename
+            or "\\" in model.filename
+        ):
             raise ValueError(f"Model filename escapes directory: {key}")
     for key, p in RUNTIME_PROFILES.items():
         if key != p.key or not 1024 <= p.context_length <= 262144:
             raise ValueError(f"Invalid profile context: {key}")
-        if not p.context_length <= p.kv_capacity <= p.context_length * p.max_concurrency:
+        if (
+            not p.context_length
+            <= p.kv_capacity
+            <= p.context_length * p.max_concurrency
+        ):
             raise ValueError(f"Invalid profile shared KV: {key}")
         if not 1 <= p.max_concurrency <= 8 or not 1 <= p.max_turns <= 1000:
             raise ValueError(f"Invalid profile limits: {key}")

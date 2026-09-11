@@ -1,0 +1,10 @@
+{
+  "enabled": false,
+  "provider": "openai-compatible",
+  "escalation_after_failures": 3,
+  "milestone_review": true,
+  "final_review": true,
+  "endpoint_env": "SUPERVISOR_BASE_URL",
+  "key_env": "SUPERVISOR_API_KEY",
+  "model_env": "SUPERVISOR_MODEL"
+}
