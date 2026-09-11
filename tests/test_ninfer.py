@@ -34,7 +34,7 @@ def sample_values() -> dict[str, str]:
         "NINFER_PRESERVE_THINKING": "true",
         "HERMES_COMPRESSION_ENABLED": "true",
         "HERMES_COMPRESSION_THRESHOLD_TOKENS": "90000",
-        "HERMES_MAX_TURNS": "40",
+        "HERMES_MAX_TURNS": "100000",
     }
 
 
@@ -304,6 +304,10 @@ class HermesDesktopConfigurationTests(unittest.TestCase):
         )
         self.assertIn(
             ["hermes", "config", "set", "goals.max_turns", "100000"],
+            [command for command, _ in calls],
+        )
+        self.assertIn(
+            ["hermes", "config", "set", "agent.max_turns", "100000"],
             [command for command, _ in calls],
         )
 

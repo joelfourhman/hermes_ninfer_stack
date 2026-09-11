@@ -150,7 +150,7 @@
       "host_kv_mib": 8192,
       "preserve_thinking": true,
       "compression_threshold_tokens": 90000,
-      "max_turns": 40,
+      "max_turns": 100000,
       "qualification": "legacy configuration; remeasure on new source"
     },
     "single-session": {
@@ -167,7 +167,7 @@
       "host_kv_mib": 4096,
       "preserve_thinking": true,
       "compression_threshold_tokens": 100000,
-      "max_turns": 40,
+      "max_turns": 100000,
       "qualification": "legacy configuration; remeasure on new source"
     },
     "max-context": {
@@ -184,7 +184,7 @@
       "host_kv_mib": 8192,
       "preserve_thinking": true,
       "compression_threshold_tokens": 200000,
-      "max_turns": 40,
+      "max_turns": 100000,
       "qualification": "legacy configuration; remeasure on new source"
     },
     "interactive": {
@@ -201,7 +201,7 @@
       "host_kv_mib": 8192,
       "preserve_thinking": true,
       "compression_threshold_tokens": 90000,
-      "max_turns": 40,
+      "max_turns": 100000,
       "qualification": "candidate; validate VRAM and workload on target GPU"
     },
     "coding": {
@@ -218,7 +218,7 @@
       "host_kv_mib": 8192,
       "preserve_thinking": true,
       "compression_threshold_tokens": 150000,
-      "max_turns": 40,
+      "max_turns": 100000,
       "qualification": "196608 shared KV selected after DFlash2-7 failed the 240000 reservation on RTX 5090; see BENCHMARK_RESULTS.md"
     },
     "research": {
@@ -235,7 +235,7 @@
       "host_kv_mib": 8192,
       "preserve_thinking": true,
       "compression_threshold_tokens": 200000,
-      "max_turns": 40,
+      "max_turns": 100000,
       "qualification": "candidate; validate VRAM and workload on target GPU"
     },
     "autonomous": {
@@ -252,7 +252,7 @@
       "host_kv_mib": 8192,
       "preserve_thinking": true,
       "compression_threshold_tokens": 150000,
-      "max_turns": 24,
+      "max_turns": 100000,
       "qualification": "shares the reduced coding KV budget; multi-hour stability remains unqualified"
     },
     "low-vram": {
@@ -269,7 +269,7 @@
       "host_kv_mib": 2048,
       "preserve_thinking": true,
       "compression_threshold_tokens": 48000,
-      "max_turns": 40,
+      "max_turns": 100000,
       "qualification": "candidate; validate VRAM and workload on target GPU"
     }
   }

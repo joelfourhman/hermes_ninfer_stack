@@ -698,8 +698,8 @@ def validate_env() -> None:
         raise StackError(
             "HERMES_COMPRESSION_THRESHOLD_TOKENS must be at least 1024 and below context"
         )
-    if not max_turns.isdigit() or not 1 <= int(max_turns) <= 1000:
-        raise StackError("HERMES_MAX_TURNS must be from 1 through 1000")
+    if not max_turns.isdigit() or not 1 <= int(max_turns) <= 100000:
+        raise StackError("HERMES_MAX_TURNS must be from 1 through 100000")
     try:
         validate_spec(values)
     except ValueError as exc:

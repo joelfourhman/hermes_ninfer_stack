@@ -112,8 +112,8 @@ python ninfer.py profile balanced
 
 `profile` configures NInfer and the installed Hermes provider together, preserves
 existing execution/approval settings, live-tests startup and rolls back on failure.
-Every preset configures Hermes goals for up to 100,000 turns; the profile table's
-Turns column remains the ordinary per-response agent tool-loop limit.
+Every preset configures both Hermes goals and the ordinary agent tool loop for up
+to 100,000 turns. Durable `job` epochs keep their separate explicit turn budget.
 Restart Desktop after changing context so existing processes reload their settings.
 `select-runtime --profile NAME` remains supported.
 
@@ -121,21 +121,21 @@ Restart Desktop after changing context so existing processes reload their settin
 
 | Profile | Context tokens | Shared KV tokens | Lanes | Device / host cache slots | Host KV MiB | Compression tokens | Turns |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| `balanced` | 131,072 | 196,608 | 2 | 2 / 8 | 8,192 | 90,000 | 40 |
-| `single-session` | 131,072 | 131,072 | 1 | 1 / 4 | 4,096 | 100,000 | 40 |
-| `max-context` | 240,000 | 240,000 | 2 | 2 / 8 | 8,192 | 200,000 | 40 |
-| `interactive` | 131,072 | 196,608 | 2 | 2 / 8 | 8,192 | 90,000 | 40 |
-| `coding` | 196,608 | 196,608 | 2 | 2 / 8 | 8,192 | 150,000 | 40 |
-| `research` | 240,000 | 240,000 | 2 | 2 / 8 | 8,192 | 200,000 | 40 |
-| `autonomous` | 196,608 | 196,608 | 2 | 2 / 8 | 8,192 | 150,000 | 24 |
-| `low-vram` | 65,536 | 65,536 | 1 | 1 / 2 | 2,048 | 48,000 | 40 |
+| `balanced` | 131,072 | 196,608 | 2 | 2 / 8 | 8,192 | 90,000 | 100000 |
+| `single-session` | 131,072 | 131,072 | 1 | 1 / 4 | 4,096 | 100,000 | 100000 |
+| `max-context` | 240,000 | 240,000 | 2 | 2 / 8 | 8,192 | 200,000 | 100000 |
+| `interactive` | 131,072 | 196,608 | 2 | 2 / 8 | 8,192 | 90,000 | 100000 |
+| `coding` | 196,608 | 196,608 | 2 | 2 / 8 | 8,192 | 150,000 | 100000 |
+| `research` | 240,000 | 240,000 | 2 | 2 / 8 | 8,192 | 200,000 | 100000 |
+| `autonomous` | 196,608 | 196,608 | 2 | 2 / 8 | 8,192 | 150,000 | 100000 |
+| `low-vram` | 65,536 | 65,536 | 1 | 1 / 2 | 2,048 | 48,000 | 100000 |
 
 <!-- END GENERATED PROFILES -->
 
 All profiles use FP8 KV, 1,024-token prefill chunks, preserved thinking and the
 optimized draft head. `interactive` mirrors balanced; `coding` retains a larger
 working history; `research` allows large documents; `autonomous` uses shorter
-epochs; `low-vram` reduces the cache footprint. Original names remain available.
+job epochs; `low-vram` reduces the cache footprint. Original names remain available.
 These are context ceilings, not guaranteed sustained capacity or speed on every
 artifact. Companion weights and draft windows have their own memory costs.
 

@@ -79,6 +79,7 @@ class ConfigurationTests(unittest.TestCase):
         validate_manifest()
         self.assertEqual(MANIFEST["defaults"]["goal_max_turns"], 100000)
         generate(check=True)
+        self.assertTrue(all(profile.max_turns == 100000 for profile in RUNTIME_PROFILES.values()))
         for profile in RUNTIME_PROFILES.values():
             values = runtime_env_values(profile)
             self.assertLess(

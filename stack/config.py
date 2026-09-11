@@ -135,7 +135,7 @@ def validate_manifest() -> None:
             raise ValueError(f"Invalid profile context: {key}")
         if not p.context_length <= p.kv_capacity <= p.context_length * p.max_concurrency:
             raise ValueError(f"Invalid profile shared KV: {key}")
-        if not 1 <= p.max_concurrency <= 8 or not 1 <= p.max_turns <= 1000:
+        if not 1 <= p.max_concurrency <= 8 or not 1 <= p.max_turns <= 100000:
             raise ValueError(f"Invalid profile limits: {key}")
         if not 1024 <= p.compression_threshold_tokens <= p.context_length - 8192:
             raise ValueError(f"Profile lacks output/context headroom: {key}")
