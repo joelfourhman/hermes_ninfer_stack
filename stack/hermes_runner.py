@@ -6,19 +6,16 @@ import json
 import os
 import re
 import shutil
-import signal
 import subprocess
 import time
 from pathlib import Path
 
-from stack.execution import terminal_settings
+from stack.execution import stop_tree, terminal_settings
 from stack.storage import atomic_json
 from stack.workloads import CODING_PROMPT
 
 
-def prepare_home(
-    helper, directory: Path, workspace: Path, backend: dict
-) -> tuple[list[str], dict]:
+def prepare_home(helper, directory: Path, workspace: Path, backend: dict) -> tuple[list[str], dict]:
     resolved = helper.native_hermes_command()
     if resolved is None:
         raise ValueError("Stock Hermes CLI is not installed; run install-hermes")
@@ -60,9 +57,7 @@ def prepare_home(
                 "key_env": "NINFER_API_KEY",
                 "transport": "chat_completions",
                 "default_model": model,
-                "models": {
-                    model: {"context_length": context, "supports_vision": False}
-                },
+                "models": {model: {"context_length": context, "supports_vision": False}},
             }
         },
         "compression": {
@@ -80,9 +75,7 @@ def prepare_home(
     # JSON is valid YAML; avoid a host PyYAML dependency. This directory belongs
     # exclusively to the job, never to the user's Desktop profile.
     atomic_json(directory / "config.yaml", config)
-    helper.atomic_write(
-        directory / ".env", "NINFER_API_KEY=" + values["NINFER_API_KEY"] + "\n"
-    )
+    helper.atomic_write(directory / ".env", "NINFER_API_KEY=" + values["NINFER_API_KEY"] + "\n")
     plugin = directory / "plugins/ninfer-job-observer"
     plugin.mkdir(parents=True, exist_ok=True)
     for name in ("__init__.py", "plugin.yaml"):
@@ -106,28 +99,6 @@ def prepare_home(
     ):
         env.pop(key, None)
     return command, env
-
-
-def stop_tree(process: subprocess.Popen) -> None:
-    if process.poll() is not None:
-        return
-    if os.name == "nt":
-        subprocess.run(
-            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            check=False,
-        )
-    else:
-        os.killpg(process.pid, signal.SIGTERM)
-    try:
-        process.wait(timeout=10)
-    except subprocess.TimeoutExpired:
-        if os.name != "nt":
-            os.killpg(process.pid, signal.SIGKILL)
-        else:
-            process.kill()
-        process.wait(timeout=10)
 
 
 def run_epoch(
@@ -186,12 +157,8 @@ def run_epoch(
         except BaseException:
             stop_tree(process)
             raise
-    stderr = (directory / "stderr.txt").read_text(encoding="utf-8", errors="replace")[
-        -100000:
-    ]
-    stdout = (directory / "stdout.txt").read_text(encoding="utf-8", errors="replace")[
-        -100000:
-    ]
+    stderr = (directory / "stderr.txt").read_text(encoding="utf-8", errors="replace")[-100000:]
+    stdout = (directory / "stdout.txt").read_text(encoding="utf-8", errors="replace")[-100000:]
     sessions = re.findall(r"(?m)^session_id:\s*([A-Za-z0-9_.:-]+)\s*$", stderr)
     current = sessions[-1] if sessions else session_id
     event_session = Path(env["NINFER_JOB_EVENTS"]) / "session.json"
@@ -247,9 +214,7 @@ def benchmark_hermes(helper, workspace, kind, args):
     if kind == "coding":
         success = success and validation["passed"]
     else:
-        success = success and all(
-            f"FIXTURE-{i}" in rows[-1]["answer"] for i in range(4)
-        )
+        success = success and all(f"FIXTURE-{i}" in rows[-1]["answer"] for i in range(4))
     events_path = home.parent / "events/events.jsonl"
     events = (
         [json.loads(line) for line in events_path.read_text().splitlines()]
@@ -266,14 +231,10 @@ def benchmark_hermes(helper, workspace, kind, args):
         "validation": validation,
         "hook_events": events,
         "tool_seconds": sum(
-            e.get("duration_seconds", 0)
-            for e in events
-            if e["event"] == "post_tool_call"
+            e.get("duration_seconds", 0) for e in events if e["event"] == "post_tool_call"
         ),
         "model_request_seconds": sum(
-            e.get("duration_seconds") or 0
-            for e in events
-            if e["event"] == "post_api_request"
+            e.get("duration_seconds") or 0 for e in events if e["event"] == "post_api_request"
         )
         if any(e["event"] == "post_api_request" for e in events)
         else None,

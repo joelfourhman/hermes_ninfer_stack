@@ -109,9 +109,7 @@ class Client:
                     finish = choice.get("finish_reason") or finish
         elapsed = time.perf_counter() - start
         if not done or finish is None or not usage:
-            raise ValueError(
-                "Incomplete SSE response: require terminal finish, usage and [DONE]"
-            )
+            raise ValueError("Incomplete SSE response: require terminal finish, usage and [DONE]")
         message: dict[str, Any] = {
             "role": "assistant",
             "content": "".join(content) or None,

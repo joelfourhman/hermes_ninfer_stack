@@ -34,13 +34,9 @@ STATE_FIELDS = (
 
 def load_state(path: Path) -> dict:
     state = checked_json(path)
-    if state.get("schema_version") != 1 or any(
-        key not in state for key in STATE_FIELDS
-    ):
+    if state.get("schema_version") != 1 or any(key not in state for key in STATE_FIELDS):
         raise ValueError("Unsupported or incomplete checkpoint schema")
-    if not isinstance(state["agent_epoch"], int) or not isinstance(
-        state["failed_attempts"], list
-    ):
+    if not isinstance(state["agent_epoch"], int) or not isinstance(state["failed_attempts"], list):
         raise ValueError("Invalid checkpoint field types")
     return state
 
@@ -77,9 +73,7 @@ def record_failure(state: dict, returncode: int, output: str) -> None:
         row["approach"] == state["approach"] and row["fingerprint"] == fingerprint
         for row in state["failed_attempts"]
     )
-    attempts = sum(
-        row["approach"] == state["approach"] for row in state["failed_attempts"]
-    )
+    attempts = sum(row["approach"] == state["approach"] for row in state["failed_attempts"])
     if repeated >= state["max_retries"] or attempts >= state["max_retries"]:
         state["status"] = "needs_replan"
         state["current_blocker"] = (
@@ -207,9 +201,8 @@ def epoch_prompt(state: dict, report: Path) -> str:
 
 
 def apply_report(state: dict, report: dict) -> bool:
-    if not isinstance(report, dict) or not isinstance(
-        report.get("goal_complete"), bool
-    ):
+    updates = {}
+    if not isinstance(report, dict) or not isinstance(report.get("goal_complete"), bool):
         raise ValueError("Epoch report must declare goal_complete as a boolean")
     for key in ("completed_tasks", "important_findings", "next_actions"):
         value = report.get(key)
@@ -220,14 +213,17 @@ def apply_report(state: dict, report: dict) -> bool:
         ):
             raise ValueError(f"Invalid epoch report {key}")
         if key == "next_actions":
-            state[key] = value
+            updates[key] = value
         else:
-            state[key] = list(dict.fromkeys(state[key] + value))[-200:]
+            updates[key] = list(dict.fromkeys(state[key] + value))[-200:]
     for key in ("current_milestone", "current_blocker"):
         value = report.get(key)
         if not (isinstance(value, str) or (key == "current_blocker" and value is None)):
             raise ValueError(f"Invalid epoch report {key}")
-        state[key] = value
+        if isinstance(value, str) and len(value) > 8000:
+            raise ValueError(f"Invalid epoch report {key}")
+        updates[key] = value
+    state.update(updates)
     return report["goal_complete"]
 
 
@@ -241,9 +237,7 @@ def resume_job(args) -> None:
         or not 1 <= args.max_turns <= 200
         or not 30 <= args.timeout <= 7200
     ):
-        raise ValueError(
-            "Bounds: epochs 1..100, turns 1..200, timeout 30..7200 seconds"
-        )
+        raise ValueError("Bounds: epochs 1..100, turns 1..200, timeout 30..7200 seconds")
     with exclusive(path.with_suffix(".lock")):
         state = load_state(path)
         if state["status"] == "complete":
@@ -257,15 +251,11 @@ def resume_job(args) -> None:
             )
         workspace = Path(state["workspace"])
         job_dir = Path(state["job_dir"])
-        command, env = prepare_home(
-            helper, job_dir / "hermes", workspace, state["backend"]
-        )
+        command, env = prepare_home(helper, job_dir / "hermes", workspace, state["backend"])
         env["NINFER_JOB_STATE"] = str(path)
         for _ in range(args.epochs):
             if state["agent_epoch"] >= state["max_epochs_total"]:
-                state.update(
-                    status="needs_replan", current_blocker="Total epoch budget reached"
-                )
+                state.update(status="needs_replan", current_blocker="Total epoch budget reached")
                 checkpoint(path, state, "budget")
                 break
             before = repo_snapshot(state["backend"], workspace)
@@ -287,12 +277,8 @@ def resume_job(args) -> None:
             report_path = workspace / "EPOCH_REPORT.json"
             # A previous report must never certify a new epoch.
             if state["backend"]["mode"] == "remote":
-                report_display = (
-                    PurePosixPath(state["backend"]["workspace"]) / "EPOCH_REPORT.json"
-                )
-                execute(
-                    state["backend"], workspace, ["rm", "-f", "--", "EPOCH_REPORT.json"]
-                )
+                report_display = PurePosixPath(state["backend"]["workspace"]) / "EPOCH_REPORT.json"
+                execute(state["backend"], workspace, ["rm", "-f", "--", "EPOCH_REPORT.json"])
             else:
                 report_display = (
                     PurePosixPath("/workspace/EPOCH_REPORT.json")
@@ -300,9 +286,7 @@ def resume_job(args) -> None:
                     else report_path
                 )
                 if report_path.exists():
-                    report_path.rename(
-                        job_dir / f"report-before-{state['agent_epoch']}.json"
-                    )
+                    report_path.rename(job_dir / f"report-before-{state['agent_epoch']}.json")
 
             def started(pid):
                 state["worker_pid"] = pid
@@ -348,6 +332,7 @@ def resume_job(args) -> None:
                 complete = apply_report(state, json.loads(report_text))
                 progressed = (
                     before["diff"] != after["diff"]
+                    or before["files_changed"] != after["files_changed"]
                     or before["repo_head"] != after["repo_head"]
                     or state["important_findings"] != previous_findings
                     or state["completed_tasks"] != previous_tasks
@@ -361,20 +346,16 @@ def resume_job(args) -> None:
                 elif complete:
                     state.update(status="complete", current_blocker=None)
                 elif not progressed:
-                    record_failure(
-                        state, 1, "No validated repository progress in this epoch"
-                    )
+                    record_failure(state, 1, "No validated repository progress in this epoch")
                 else:
                     state["status"] = "ready"
                 checkpoint(path, state, "validated")
-                if state["status"] == "needs_replan" and len(
-                    state["failed_attempts"]
-                ) >= state["supervisor"].get("escalation_after_failures", 3):
+                if state["status"] == "needs_replan" and len(state["failed_attempts"]) >= state[
+                    "supervisor"
+                ].get("escalation_after_failures", 3):
                     from stack.supervisor import packet_for
 
-                    atomic_json(
-                        job_dir / "supervisor-request.json", packet_for(state, "stuck")
-                    )
+                    atomic_json(job_dir / "supervisor-request.json", packet_for(state, "stuck"))
                 print(
                     f"Epoch {state['agent_epoch']}: {state['status']}; validation exit {validation.returncode}"
                 )
@@ -398,10 +379,18 @@ def manage_job(args) -> None:
     with exclusive(path.with_suffix(".lock")):
         if args.action == "recover":
             recovered = load_state(Path(args.snapshot))
+            current = None
             if path.exists():
-                shutil.copy2(
-                    path, path.with_name(path.name + ".corrupt-" + str(time.time_ns()))
-                )
+                try:
+                    current = load_state(path)
+                except ValueError:
+                    pass
+            if any(worker_alive(s.get("worker_pid")) for s in (recovered, current) if s):
+                raise ValueError("Worker is still active; recovery cannot replace its state")
+            if current and recovered["job_dir"] != current["job_dir"]:
+                raise ValueError("Recovery snapshot belongs to another job")
+            if path.exists():
+                shutil.copy2(path, path.with_name(path.name + ".corrupt-" + str(time.time_ns())))
             checkpoint(path, recovered, "recovered")
         else:
             state = load_state(path)
@@ -410,9 +399,7 @@ def manage_job(args) -> None:
             if args.action == "replan":
                 if args.approach == state["approach"]:
                     raise ValueError("Re-plan must name a different approach")
-                state.update(
-                    approach=args.approach, status="ready", current_blocker=None
-                )
+                state.update(approach=args.approach, status="ready", current_blocker=None)
                 checkpoint(path, state, "replan")
             elif args.action == "checkpoint":
                 checkpoint(path, state, "manual")
@@ -420,13 +407,26 @@ def manage_job(args) -> None:
                 destination = Path(args.destination).resolve()
                 destination.mkdir(parents=True, exist_ok=False)
                 snapshot = repo_snapshot(state["backend"], Path(state["workspace"]))
-                (destination / "changes.patch").write_text(
-                    snapshot["diff"], encoding="utf-8"
-                )
+                (destination / "changes.patch").write_text(snapshot["diff"], encoding="utf-8")
                 atomic_json(destination / "PROJECT_STATE.json", state, checksum=True)
-                print(
-                    "Exported tracked-file patch and state. Untracked build artifacts remain in the job workspace."
-                )
+                for relative in getattr(args, "artifact", None) or []:
+                    name = Path(relative)
+                    if name.is_absolute() or ".." in name.parts:
+                        raise ValueError("Artifacts must be relative files inside the workspace")
+                    source = (Path(state["workspace"]) / name).resolve()
+                    if state["backend"]["mode"] == "remote":
+                        raise ValueError(
+                            "For remote artifacts use an explicit scp transfer from the recorded workspace"
+                        )
+                    if (
+                        not source.is_relative_to(Path(state["workspace"]).resolve())
+                        or not source.is_file()
+                    ):
+                        raise ValueError("Artifact escapes the workspace or is not a file")
+                    target = destination / "artifacts" / name
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(source, target)
+                print("Exported tracked-file patch, state and explicitly selected artifacts.")
 
 
 def register_jobs(sub):
@@ -441,9 +441,7 @@ def register_jobs(sub):
         required=True,
         help='JSON argv, e.g. ["python","-m","unittest"]',
     )
-    init.add_argument(
-        "--backend", choices=("local", "container", "remote"), default="local"
-    )
+    init.add_argument("--backend", choices=("local", "container", "remote"), default="local")
     init.add_argument("--image")
     init.add_argument("--network", choices=("none", "bridge"), default="none")
     init.add_argument("--host")
@@ -467,6 +465,11 @@ def register_jobs(sub):
             command.add_argument("--snapshot", required=True)
         if action == "export":
             command.add_argument("--destination", required=True)
+            command.add_argument(
+                "--artifact",
+                action="append",
+                help="Relative file to extract; repeat for multiple files (local/container)",
+            )
     from stack.supervisor import REASONS, configure, supervise
 
     review = actions.add_parser("supervise")

@@ -20,28 +20,22 @@ def command_json(command: list[str]) -> object:
     )
 
 
-def runtime_metadata(
-    helper, *, baseline: bool = False, hash_model: bool = True
-) -> dict:
+def runtime_metadata(helper, *, baseline: bool = False, hash_model: bool = True) -> dict:
     values = helper.read_env()
     container = helper.compose("ps", "-q", "ninfer", capture=True).stdout.strip()
     if not container:
         raise ValueError("NInfer is not running")
-    info = command_json([helper.docker_executable() or "docker", "inspect", container])[
-        0
-    ]
+    info = command_json([helper.docker_executable() or "docker", "inspect", container])[0]
     labels = (
-        command_json(
-            [helper.docker_executable() or "docker", "image", "inspect", info["Image"]]
-        )[0]["Config"].get("Labels")
+        command_json([helper.docker_executable() or "docker", "image", "inspect", info["Image"]])[
+            0
+        ]["Config"].get("Labels")
         or {}
     )
     revision = labels.get("org.opencontainers.image.revision")
     if baseline:
         if revision != MANIFEST["ninfer"]["baseline_commit"]:
-            raise ValueError(
-                "--baseline requires the original known-good image revision"
-            )
+            raise ValueError("--baseline requires the original known-good image revision")
     else:
         verify_image(labels)
     args = info["Config"].get("Cmd") or []
@@ -177,12 +171,8 @@ class Sampler:
                         timeout=5,
                         check=False,
                     )
-                    values = [
-                        float(v.strip()) for v in result.stdout.strip().split(",")
-                    ]
-                    row.update(
-                        gpu_utilization_percent=values[0], vram_used_mib=values[1]
-                    )
+                    values = [float(v.strip()) for v in result.stdout.strip().split(",")]
+                    row.update(gpu_utilization_percent=values[0], vram_used_mib=values[1])
                 except (OSError, ValueError, IndexError, subprocess.TimeoutExpired):
                     pass
             self.samples.append(row)
@@ -209,9 +199,7 @@ def observe(args) -> None:
     latest = {}
     for record in records:
         latest[record["event"]] = record
-    with Sampler(
-        helper.nvidia_smi_executable(), helper.read_env()["NINFER_GPU_DEVICE"]
-    ) as sampler:
+    with Sampler(helper.nvidia_smi_executable(), helper.read_env()["NINFER_GPU_DEVICE"]) as sampler:
         sampler.stop.wait(1.1)
     result = {
         "metadata": metadata,

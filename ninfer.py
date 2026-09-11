@@ -211,7 +211,7 @@ def model_profile(key: str) -> ModelProfile:
         return MODEL_PROFILES[key]
     except KeyError as exc:
         raise StackError(
-            f"Unknown model profile {key!r}; choose stock or uncensored"
+            f"Unknown model profile {key!r}; choose {', '.join(MODEL_PROFILES)}"
         ) from exc
 
 
@@ -242,26 +242,24 @@ def configured_runtime_profile_key() -> str:
 
 def choose_model_profile(default_key: str | None = None) -> ModelProfile:
     default = default_key or configured_model_profile_key()
-    default_number = "1" if default == "stock" else "2"
+    keys = tuple(MODEL_PROFILES)
+    default_number = str(keys.index(default) + 1)
     print()
     print("Choose a model:")
     print()
-    print("  1. Stock Qwen3.8-27B NVFP4 (recommended)")
-    print("     Faster setup; standard refusal behavior")
-    print("     Download: 20.02 GiB")
-    print()
-    print("  2. Qwen3.8-27B Uncensored")
-    print("     Reduced refusals and less tested for agent work")
-    print("     Download: 16.96 GiB")
+    for number, profile in enumerate(MODEL_PROFILES.values(), start=1):
+        recommended = " (recommended)" if profile.key == DEFAULT_MODEL_PROFILE else ""
+        print(f"  {number}. {profile.label}{recommended}")
+        print(f"     Download: {profile.expected_bytes / 1024**3:.2f} GiB; capabilities: {', '.join(profile.capabilities)}")
     while True:
         answer = input(f"Selection [{default_number}]: ").strip().lower()
         if not answer:
             return model_profile(default)
-        if answer in {"1", "stock"}:
-            return model_profile("stock")
-        if answer in {"2", "uncensored"}:
-            return model_profile("uncensored")
-        print("Enter 1 for stock or 2 for uncensored.")
+        if answer.isdigit() and 1 <= int(answer) <= len(keys):
+            return model_profile(keys[int(answer) - 1])
+        if answer in MODEL_PROFILES:
+            return model_profile(answer)
+        print(f"Enter a number from 1 through {len(keys)}, or a model name.")
 
 
 def choose_runtime_profile(default_key: str | None = None) -> RuntimeProfile:
@@ -952,11 +950,16 @@ def replace_env_values(replacements: dict[str, str]) -> Path | None:
 
 def activate_model_profile(profile: ModelProfile) -> Path | None:
     require_model_artifact(profile)
+    speculation = {}
+    if read_env().get("NINFER_SPEC_BACKEND", "mtp") not in profile.capabilities:
+        print("The selected artifact requires MTP; restoring the supported MTP3 fallback.")
+        speculation = {"NINFER_SPEC_BACKEND": "mtp", "NINFER_DRAFT_TOKENS": "3"}
     return replace_env_values(
         {
             "NINFER_MODEL_PROFILE": profile.key,
             "NINFER_MODEL_FILE": profile.filename,
             "NINFER_MODEL_ID": "qwen-local",
+            **speculation,
         }
     )
 
@@ -1063,8 +1066,8 @@ def activate_and_start_network(mode: str, address: str | None) -> None:
 def activate_and_start_profile(profile: ModelProfile, *, build_runtime: bool) -> None:
     previous_profile = model_profile(configured_model_profile_key())
     env_backup = activate_model_profile(profile)
-    validate_env()
     try:
+        validate_env()
         if build_runtime:
             print("Building the local AI service. The first build can take several minutes...")
             compose("build", "ninfer")
@@ -1093,11 +1096,27 @@ def activate_and_start_profile(profile: ModelProfile, *, build_runtime: bool) ->
 
 def activate_and_start_runtime(profile: RuntimeProfile) -> None:
     previous = runtime_profile(configured_runtime_profile_key())
+    resolved = native_hermes_command()
+    backups = {}
+    if resolved is not None:
+        profile_home = Path(resolved[1]["HERMES_HOME"]).expanduser().resolve()
+        backups = {p: p.read_bytes() if p.exists() else None
+                   for p in (profile_home / "config.yaml", profile_home / ".env")}
     env_backup = activate_runtime_profile(profile)
-    validate_env()
     try:
+        validate_env()
         start_ninfer(read_env())
-    except StackError as selected_error:
+        if resolved is not None:
+            configure_native_hermes(*resolved, read_env(), preserve_execution=True)
+            print("Hermes was updated too. Restart Hermes Desktop to use the new context profile.")
+        else:
+            print("Hermes was not found. Run 'python ninfer.py install-hermes' after installing it.")
+    except (StackError, OSError) as selected_error:
+        for path, contents in backups.items():
+            if contents is None:
+                path.unlink(missing_ok=True)
+            else:
+                path.write_bytes(contents)
         if env_backup is not None:
             print("The selected runtime did not pass startup. Restoring the previous profile...")
             failed_env = ENV_FILE.with_name(
@@ -1270,7 +1289,7 @@ def launch_windows_hermes_desktop() -> bool:
     return True
 
 
-def configure_native_hermes(command: list[str], process_env: dict[str, str], values: dict[str, str]) -> None:
+def configure_native_hermes(command: list[str], process_env: dict[str, str], values: dict[str, str], *, preserve_execution: bool = False) -> None:
     model_id = values["NINFER_MODEL_ID"]
     context = values["NINFER_CONTEXT_LENGTH"]
     profile_home = Path(process_env["HERMES_HOME"]).expanduser().resolve()
@@ -1302,9 +1321,9 @@ def configure_native_hermes(command: list[str], process_env: dict[str, str], val
             values["HERMES_COMPRESSION_THRESHOLD_TOKENS"],
         ),
         ("agent.max_turns", values["HERMES_MAX_TURNS"]),
-        ("terminal.backend", "local"),
-        ("approvals.mode", "manual"),
     ]
+    if not preserve_execution:
+        settings += [("terminal.backend", "local"), ("approvals.mode", "manual")]
 
     # Hermes stores uppercase secret keys in its private .env. Capture and
     # redact this invocation so the bearer key never appears in setup output.
@@ -1319,14 +1338,15 @@ def configure_native_hermes(command: list[str], process_env: dict[str, str], val
     # directory and CLI sessions use the directory from which Hermes launches.
     # Current Hermes returns a non-zero status when the key is already absent.
     # Absence is the desired idempotent state, so do not turn that into failure.
-    run(
-        [*command, "config", "unset", "terminal.cwd"],
-        check=False,
-        capture=True,
-        env=process_env,
-    )
-    remove_private_env_value(profile_home / ".env", "HERMES_WRITE_SAFE_ROOT")
-    process_env.pop("HERMES_WRITE_SAFE_ROOT", None)
+    if not preserve_execution:
+        run(
+            [*command, "config", "unset", "terminal.cwd"],
+            check=False,
+            capture=True,
+            env=process_env,
+        )
+        remove_private_env_value(profile_home / ".env", "HERMES_WRITE_SAFE_ROOT")
+        process_env.pop("HERMES_WRITE_SAFE_ROOT", None)
     for key, value in settings:
         run([*command, "config", "set", key, value], env=process_env)
     run([*command, "config", "check"], env=process_env)
@@ -1339,9 +1359,9 @@ def configure_native_hermes(command: list[str], process_env: dict[str, str], val
         "model.supports_vision": "false",
         "compression.threshold": "0.9",
         "compression.threshold_tokens": values["HERMES_COMPRESSION_THRESHOLD_TOKENS"],
-        "terminal.backend": "local",
-        "approvals.mode": "manual",
     }
+    if not preserve_execution:
+        expected.update({"terminal.backend": "local", "approvals.mode": "manual"})
     for key, wanted in expected.items():
         actual = run(
             [*command, "config", "get", key],
@@ -1582,13 +1602,6 @@ def select_runtime(args: argparse.Namespace) -> None:
     merge_env()
     activate_and_start_runtime(profile)
     values = read_env()
-    resolved = native_hermes_command()
-    if resolved is not None:
-        command, process_env = resolved
-        configure_native_hermes(command, process_env, values)
-        print("Hermes was updated too. Restart Hermes Desktop to use the new context profile.")
-    else:
-        print("Hermes was not found. Run 'python ninfer.py install-hermes' after installing it.")
     print(f"ACTIVE: {profile.label} is serving {values['NINFER_MODEL_ID']}.")
 
 

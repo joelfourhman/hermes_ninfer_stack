@@ -107,9 +107,7 @@ class Workspace:
         failed = False
         try:
             if name == "list_files":
-                result = "\n".join(
-                    sorted(p.name for p in self.root.iterdir() if p.is_file())
-                )
+                result = "\n".join(sorted(p.name for p in self.root.iterdir() if p.is_file()))
             elif name == "read_file":
                 result = self.path(arguments["path"]).read_text(encoding="utf-8")
             elif name == "write_file":
@@ -125,9 +123,7 @@ class Workspace:
                 path.write_text(text, encoding="utf-8", newline="\n")
                 result = "File written"
             elif name == "run_tests":
-                validate_fixture_code(
-                    (self.root / "ledger.py").read_text(encoding="utf-8")
-                )
+                validate_fixture_code((self.root / "ledger.py").read_text(encoding="utf-8"))
                 result = self.test()
                 failed = not result["passed"]
                 result = json.dumps(result)
@@ -147,9 +143,7 @@ class Workspace:
 
     def test(self) -> dict:
         # Restore the immutable acceptance test before every validation, including Hermes mode.
-        (self.root / "test_ledger.py").write_text(
-            FILES["test_ledger.py"], encoding="utf-8"
-        )
+        (self.root / "test_ledger.py").write_text(FILES["test_ledger.py"], encoding="utf-8")
         result = subprocess.run(
             [
                 sys.executable,

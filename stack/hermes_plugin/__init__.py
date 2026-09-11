@@ -55,9 +55,7 @@ def record(kind, **kwargs):
                 row["duration_seconds"] = now - started
         if kind == "pre_api_request":
             row["system_prompt_sha256"] = hashlib.sha256(
-                json.dumps(
-                    kwargs.get("system_prompt"), sort_keys=True, default=str
-                ).encode()
+                json.dumps(kwargs.get("system_prompt"), sort_keys=True, default=str).encode()
             ).hexdigest()
             for key in (
                 "api_request_id",
@@ -71,9 +69,7 @@ def record(kind, **kwargs):
             row["duration_seconds"] = kwargs.get("api_duration")
             first = kwargs.get("first_chunk_at")
             start = kwargs.get("started_at")
-            row["ttfb_seconds"] = (
-                first - start if first is not None and start is not None else None
-            )
+            row["ttfb_seconds"] = first - start if first is not None and start is not None else None
             # Hermes exposes first stream chunk, not necessarily first output token.
             response = kwargs.get("response") or {}
             if isinstance(response, dict):
@@ -118,6 +114,4 @@ def register(ctx):
         "on_session_start",
         "on_session_end",
     ):
-        ctx.register_hook(
-            event, lambda _event=event, **kwargs: record(_event, **kwargs)
-        )
+        ctx.register_hook(event, lambda _event=event, **kwargs: record(_event, **kwargs))

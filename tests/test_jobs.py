@@ -9,12 +9,36 @@ from pathlib import Path
 from unittest.mock import patch
 
 from stack.execution import execution_argv, terminal_settings
-from stack.jobs import init_job, load_state, manage_job, record_failure, resume_job
+from stack.jobs import apply_report, init_job, load_state, manage_job, record_failure, resume_job
 from stack.storage import atomic_json, checked_json, exclusive
 from stack.supervisor import DisabledSupervisor, packet_for
 
 
 class JobTests(unittest.TestCase):
+    def test_invalid_report_cannot_partially_change_handoff(self):
+        state = {"completed_tasks": ["retained"], "important_findings": []}
+        report = {
+            "goal_complete": True,
+            "completed_tasks": ["new"],
+            "important_findings": "invalid",
+        }
+        with self.assertRaises(ValueError):
+            apply_report(state, report)
+        self.assertEqual(state, {"completed_tasks": ["retained"], "important_findings": []})
+
+    def test_recovery_refuses_live_worker(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = self.init(Path(d))
+            state = load_state(path)
+            snapshot = next((Path(state["job_dir"]) / "checkpoints").glob("*.json"))
+            with patch("stack.jobs.worker_alive", return_value=True):
+                with self.assertRaisesRegex(ValueError, "still active"):
+                    manage_job(
+                        argparse.Namespace(
+                            state=str(path), action="recover", snapshot=str(snapshot)
+                        )
+                    )
+
     def init(self, root):
         subprocess.run(["git", "init", str(root)], check=True, capture_output=True)
         (root / "README.md").write_text("fixture")
@@ -64,9 +88,7 @@ class JobTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "corrupt"):
                 load_state(path)
             manage_job(
-                argparse.Namespace(
-                    state=str(path), action="recover", snapshot=str(snapshot)
-                )
+                argparse.Namespace(state=str(path), action="recover", snapshot=str(snapshot))
             )
             self.assertEqual(load_state(path)["goal"], "Complete fixture")
             self.assertTrue(list(path.parent.glob("PROJECT_STATE.json.corrupt-*")))
@@ -96,9 +118,7 @@ class JobTests(unittest.TestCase):
                     "session_id": "hermes-session-1",
                 }
 
-            args = argparse.Namespace(
-                state=str(path), epochs=1, max_turns=2, timeout=30
-            )
+            args = argparse.Namespace(state=str(path), epochs=1, max_turns=2, timeout=30)
             with (
                 patch("stack.jobs.prepare_home", return_value=(["hermes"], {})),
                 patch("stack.jobs.run_epoch", side_effect=run),

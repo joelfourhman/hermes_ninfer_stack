@@ -21,6 +21,50 @@ from stack.provenance import verify_cli_help, verify_image, verify_model
 
 
 class ConfigurationTests(unittest.TestCase):
+    def test_runtime_rolls_back_backend_and_hermes_on_sync_failure(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            env = root / ".env"
+            config = root / "hermes/config.yaml"
+            config.parent.mkdir()
+            config.write_text("old config")
+            env.write_text("NINFER_RUNTIME_PROFILE=balanced\n")
+
+            def failed_sync(*args, **kwargs):
+                self.assertTrue(kwargs["preserve_execution"])
+                config.write_text("partial config")
+                raise ninfer.StackError("failed sync")
+
+            with (
+                patch.object(ninfer, "ENV_FILE", env),
+                patch.object(
+                    ninfer,
+                    "native_hermes_command",
+                    return_value=(["hermes"], {"HERMES_HOME": str(config.parent)}),
+                ),
+                patch.object(ninfer, "validate_env"),
+                patch.object(ninfer, "start_ninfer") as start,
+                patch.object(ninfer, "configure_native_hermes", side_effect=failed_sync),
+            ):
+                with self.assertRaisesRegex(ninfer.StackError, "restored"):
+                    ninfer.activate_and_start_runtime(RUNTIME_PROFILES["coding"])
+            self.assertEqual(config.read_text(), "old config")
+            self.assertEqual(env.read_text(), "NINFER_RUNTIME_PROFILE=balanced\n")
+            self.assertEqual(start.call_count, 2)
+
+    def test_explicit_model_fallback_resets_incompatible_decoder(self):
+        with tempfile.TemporaryDirectory() as d:
+            env = Path(d) / ".env"
+            env.write_text("NINFER_SPEC_BACKEND=dflash2\nNINFER_DRAFT_TOKENS=11\n")
+            with (
+                patch.object(ninfer, "ENV_FILE", env),
+                patch.object(ninfer, "require_model_artifact"),
+            ):
+                ninfer.activate_model_profile(MODEL_PROFILES["stock"])
+                values = ninfer.read_env()
+            self.assertEqual(values["NINFER_SPEC_BACKEND"], "mtp")
+            self.assertEqual(values["NINFER_DRAFT_TOKENS"], "3")
+
     def test_manifest_profiles_context_and_generated_docs(self):
         validate_manifest()
         generate(check=True)
@@ -49,9 +93,7 @@ class ConfigurationTests(unittest.TestCase):
                 spec_values(backend, count)
 
     def test_cli_flag_disappearance_and_image_drift(self):
-        help_text = (
-            " ".join(MANIFEST["ninfer"]["required_cli_flags"]) + " mtp dflash2 fp8"
-        )
+        help_text = " ".join(MANIFEST["ninfer"]["required_cli_flags"]) + " mtp dflash2 fp8"
         verify_cli_help(help_text)
         with self.assertRaisesRegex(ValueError, "host-kv-mib"):
             verify_cli_help(help_text.replace("--host-kv-mib", "--old-host-kv"))

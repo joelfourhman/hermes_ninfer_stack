@@ -58,9 +58,7 @@ def run_workload(
                 max_tokens=512,
             )
             requests.append(dict(summary.metrics, kind="compression"))
-            compressions.append(
-                {"turn": turn, "input_tokens": summary.metrics["input_tokens"]}
-            )
+            compressions.append({"turn": turn, "input_tokens": summary.metrics["input_tokens"]})
             messages = [
                 messages[0],
                 {
@@ -90,9 +88,7 @@ def run_workload(
                 except (ValueError, KeyError, TypeError):
                     result = json.dumps({"error": "Invalid tool arguments"})
                     failures.append({"turn": turn, "type": "invalid_tool_arguments"})
-                messages.append(
-                    {"role": "tool", "tool_call_id": call["id"], "content": result}
-                )
+                messages.append({"role": "tool", "tool_call_id": call["id"], "content": result})
             continue
         answer = response.message.get("content") or ""
         if response.finish_reason == "length":
@@ -155,14 +151,60 @@ def run_workload(
 def summary(result: dict) -> str:
     runs = result["runs"]
     successful = [r["wall_seconds"] for r in runs if r["success"]]
-    return (
-        "# Agent benchmark\n\n"
-        f"Workload: {result['workload']}; driver: {result['driver']}; fixture version: {WORKLOAD_VERSION}.\n\n"
-        f"Successful workloads: {len(successful)}/{len(runs)}. Failures remain in the denominator.\n\n"
-        f"Median successful completion: {statistics.median(successful):.3f} seconds.\n"
+    rows = [lane for run in runs for lane in run.get("lanes", [run])]
+    requests = [r for row in rows for r in row.get("requests", [])]
+
+    def aggregate(items, key, operation):
+        values = [r[key] for r in items if r.get(key) is not None]
+        return f"{operation(values):.3f}" if values else "unavailable"
+
+    lines = [
+        "# Agent benchmark",
+        "",
+        f"Workload: {result['workload']}; driver: {result['driver']}; fixture version: {result['fixture_version']}.",
+        "",
+        f"Successful workloads: {len(successful)}/{len(runs)}. Failures remain in the denominator.",
+        "",
+        f"Median successful completion: {statistics.median(successful):.3f} seconds."
         if successful
-        else f"# Agent benchmark\n\nNo successful workloads ({len(runs)} attempts). Do not rank this configuration by speed.\n"
-    )
+        else "No successful workloads; do not rank this configuration by speed.",
+        "",
+        "| Metric | Value |",
+        "|---|---:|",
+    ]
+    for label, items, key, operation in (
+        ("Model request seconds (sum; parallel overlaps)", rows, "model_request_seconds", sum),
+        ("Tool seconds (sum)", rows, "tool_seconds", sum),
+        ("Client TTFT seconds (median)", requests, "ttft_seconds_client", statistics.median),
+        (
+            "Native prefill tok/s (median)",
+            requests,
+            "prefill_tokens_per_second_native",
+            statistics.median,
+        ),
+        (
+            "Native decode tok/s (median)",
+            requests,
+            "decode_tokens_per_second_native",
+            statistics.median,
+        ),
+        ("Input tokens (sum)", requests, "input_tokens", sum),
+        ("Generated tokens (sum)", requests, "generated_tokens", sum),
+        ("Cached prefix tokens (sum)", requests, "cached_prefix_tokens", sum),
+        ("Fresh prefill tokens (sum, derived)", requests, "fresh_prefill_tokens", sum),
+        ("Maximum request context tokens", requests, "context_tokens", max),
+        ("Peak GPU memory MiB (whole device)", result["resource_samples"], "vram_used_mib", max),
+        ("Peak used RAM MiB (whole host)", result["resource_samples"], "system_ram_used_mib", max),
+    ):
+        lines.append(f"| {label} | {aggregate(items, key, operation)} |")
+    lines += [
+        "",
+        "See results.json for per-request timing, tool durations, context growth, compression events, failures, retries, Hermes hooks and unaggregated native cache/state/speculative records.",
+        "",
+        "Server is warmed by startup validation; repetitions reuse one persistent server and may share prefixes. This is not a controlled cold-cache test. Native interval metrics include any other client traffic.",
+        "",
+    ]
+    return "\n".join(lines)
 
 
 def benchmark(args) -> None:
@@ -207,22 +249,19 @@ def benchmark(args) -> None:
         "fixture_version": WORKLOAD_VERSION,
         "workload": args.workload,
         "driver": "mock" if args.smoke else args.driver,
-        "parameters": {
-            k: v for k, v in vars(args).items() if k not in {"func", "command"}
-        },
+        "parameters": {k: v for k, v in vars(args).items() if k not in {"func", "command"}},
         "environment": metadata,
         "runs": [],
         "resource_samples": [],
         "native_records": [],
         "started_at_unix": time.time(),
         "metric_scope": "Model request time includes transport/queueing; parallel sums overlap. Native interval cache counters are not attributed to a single request.",
+        "cache_protocol": "Startup validation warms the server; repetitions share its cache. No cold-cache reset. Pause other inference clients before comparing.",
     }
     started = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
     def one(index, lane=0):
-        workspace = Workspace(
-            result_dir / f"run-{index}-lane-{lane}", context_kib=args.context_kib
-        )
+        workspace = Workspace(result_dir / f"run-{index}-lane-{lane}", context_kib=args.context_kib)
         kind = "long-session" if args.workload == "parallel" else args.workload
         if args.driver == "hermes" and not args.smoke:
             from stack.hermes_runner import benchmark_hermes
@@ -288,22 +327,15 @@ def benchmark(args) -> None:
 
 
 def compare(args) -> None:
-    results = [
-        json.loads(Path(path).read_text(encoding="utf-8")) for path in args.results
-    ]
+    results = [json.loads(Path(path).read_text(encoding="utf-8")) for path in args.results]
     first = results[0]
     for result in results:
         if result["driver"] == "mock":
-            raise ValueError(
-                "Mock smoke measurements cannot be compared for performance"
-            )
+            raise ValueError("Mock smoke measurements cannot be compared for performance")
         if any(
-            result.get(key) != first.get(key)
-            for key in ("fixture_version", "workload", "driver")
+            result.get(key) != first.get(key) for key in ("fixture_version", "workload", "driver")
         ):
-            raise ValueError(
-                "Comparison requires identical fixture version, workload and driver"
-            )
+            raise ValueError("Comparison requires identical fixture version, workload and driver")
         for key in (
             "max_turns",
             "max_tokens",
@@ -313,12 +345,15 @@ def compare(args) -> None:
         ):
             if result["parameters"].get(key) != first["parameters"].get(key):
                 raise ValueError(f"Comparison workload parameter differs: {key}")
-    print("| Profile / speculation | Success | Median successful wall seconds |")
+    artifacts = {r["environment"].get("model_sha256_verified") for r in results}
+    if len(artifacts) > 1:
+        print("Artifacts differ: this comparison cannot isolate the decoder's effect.")
+    print("| Model / profile / speculation | Success | Median successful wall seconds |")
     print("|---|---:|---:|")
     for result in results:
         config = result["environment"]["config"]
         passed = [r["wall_seconds"] for r in result["runs"] if r["success"]]
         median = f"{statistics.median(passed):.3f}" if passed else "unranked"
         print(
-            f"| {config['NINFER_RUNTIME_PROFILE']} / {config.get('NINFER_SPEC_BACKEND', 'mtp')}-{config.get('NINFER_DRAFT_TOKENS', '3')} | {len(passed)}/{len(result['runs'])} | {median} |"
+            f"| {config['NINFER_MODEL_PROFILE']} / {config['NINFER_RUNTIME_PROFILE']} / {config.get('NINFER_SPEC_BACKEND', 'mtp')}-{config.get('NINFER_DRAFT_TOKENS', '3')} | {len(passed)}/{len(result['runs'])} | {median} |"
         )

@@ -14,9 +14,7 @@ def verify_cli_help(help_text: str) -> None:
     flags = set(re.findall(r"--[a-z][a-z0-9-]*", help_text))
     missing = set(MANIFEST["ninfer"]["required_cli_flags"]) - flags
     if missing:
-        raise ValueError(
-            "NInfer CLI contract changed; missing: " + ", ".join(sorted(missing))
-        )
+        raise ValueError("NInfer CLI contract changed; missing: " + ", ".join(sorted(missing)))
     for choice in ("mtp", "dflash2", "fp8"):
         if choice not in help_text:
             raise ValueError(f"NInfer CLI no longer advertises {choice}")
@@ -43,21 +41,14 @@ def verify_source(root: Path, *, check_index: bool = False) -> str:
                 "NInfer gitlink differs from manifest; stage the audited submodule update"
             )
     # Fast offline contract check; the built binary's --help is also checked live.
-    verify_cli_help(
-        (source / "src/serve/serve_options.cpp").read_text(encoding="utf-8")
-    )
+    verify_cli_help((source / "src/serve/serve_options.cpp").read_text(encoding="utf-8"))
     return actual
 
 
 def verify_image(labels: dict[str, str]) -> None:
     if labels.get("org.opencontainers.image.revision") != NINFER_COMMIT:
-        raise ValueError(
-            "Image source revision differs from manifest; rebuild and recreate NInfer"
-        )
-    if (
-        labels.get("org.opencontainers.image.base.name")
-        != MANIFEST["ninfer"]["cuda_base"]
-    ):
+        raise ValueError("Image source revision differs from manifest; rebuild and recreate NInfer")
+    if labels.get("org.opencontainers.image.base.name") != MANIFEST["ninfer"]["cuda_base"]:
         raise ValueError("Image CUDA base differs from manifest")
 
 

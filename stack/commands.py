@@ -39,9 +39,7 @@ def show_profiles(_: argparse.Namespace) -> None:
     from stack.documentation import profile_table
 
     print(profile_table())
-    print(
-        "\nProfiles are memory/workload candidates; balanced + MTP3 remains the default."
-    )
+    print("\nProfiles are memory/workload candidates; balanced + MTP3 remains the default.")
 
 
 def docs(args: argparse.Namespace) -> None:
@@ -52,23 +50,15 @@ def docs(args: argparse.Namespace) -> None:
 
 
 def register_commands(sub) -> None:
-    profile = sub.add_parser(
-        "profile", help="select a workload profile and synchronize Hermes"
-    )
+    profile = sub.add_parser("profile", help="select a workload profile and synchronize Hermes")
     profile.add_argument("profile", choices=tuple(RUNTIME_PROFILES))
     profile.set_defaults(func=lambda args: _helper().select_runtime(args))
-    sub.add_parser("profiles", help="show profile capacities").set_defaults(
-        func=show_profiles
-    )
-    spec = sub.add_parser(
-        "spec", help="safely switch MTP/DFlash2 on a compatible artifact"
-    )
+    sub.add_parser("profiles", help="show profile capacities").set_defaults(func=show_profiles)
+    spec = sub.add_parser("spec", help="safely switch MTP/DFlash2 on a compatible artifact")
     spec.add_argument("mode", help="mtp3, dflash2-7, dflash2-11, mtp or dflash2")
     spec.add_argument("--draft-tokens", type=int)
     spec.set_defaults(func=change_spec)
-    doc = sub.add_parser(
-        "docs", help="generate/check mechanical configuration documentation"
-    )
+    doc = sub.add_parser("docs", help="generate/check mechanical configuration documentation")
     doc.add_argument("--check", action="store_true")
     doc.set_defaults(func=docs)
     from stack.bench_agent import benchmark, compare
@@ -76,12 +66,8 @@ def register_commands(sub) -> None:
     bench = sub.add_parser(
         "bench-agent", help="run repeatable coding/research/session agent workloads"
     )
-    bench.add_argument(
-        "workload", choices=("coding", "research", "long-session", "parallel")
-    )
-    bench.add_argument(
-        "--driver", choices=("bounded-agent", "hermes"), default="bounded-agent"
-    )
+    bench.add_argument("workload", choices=("coding", "research", "long-session", "parallel"))
+    bench.add_argument("--driver", choices=("bounded-agent", "hermes"), default="bounded-agent")
     bench.add_argument("--runs", type=int, default=3)
     bench.add_argument("--max-turns", type=int, default=24)
     bench.add_argument("--max-tokens", type=int, default=2048)
@@ -106,9 +92,7 @@ def register_commands(sub) -> None:
     )
     bench.add_argument("--output")
     bench.set_defaults(func=benchmark)
-    comparison = sub.add_parser(
-        "bench-compare", help="compare compatible agent result JSON files"
-    )
+    comparison = sub.add_parser("bench-compare", help="compare compatible agent result JSON files")
     comparison.add_argument("results", nargs="+")
     comparison.set_defaults(func=compare)
     from stack.metrics import observe
@@ -118,9 +102,7 @@ def register_commands(sub) -> None:
     )
     metrics.add_argument("--lines", type=int, default=300)
     metrics.add_argument("--output")
-    metrics.add_argument(
-        "--state", help="optional PROJECT_STATE.json for active epoch/milestone"
-    )
+    metrics.add_argument("--state", help="optional PROJECT_STATE.json for active epoch/milestone")
     metrics.add_argument("--baseline", action="store_true")
     metrics.set_defaults(func=observe)
     from stack.jobs import register_jobs

@@ -16,9 +16,7 @@ def fake_client():
                     "write_file",
                     {
                         "path": "ledger.py",
-                        "content": FILES["ledger.py"].replace(
-                            "+ sum(refunds)", "- sum(refunds)"
-                        ),
+                        "content": FILES["ledger.py"].replace("+ sum(refunds)", "- sum(refunds)"),
                     },
                 ),
                 ("run_tests", {}),

@@ -71,7 +71,7 @@ def main() -> None:
         print(f"{artifact.filename} already exists; verifying it instead of downloading again.")
     else:
         print(
-            f"Downloading {artifact.repository}/{artifact.filename}@{artifact.revision}"
+            f"Downloading {artifact.repository}/{_models[args.profile]['source_filename']}@{artifact.revision} to {artifact.filename}"
         )
         downloaded = Path(hf_hub_download(
             repo_id=artifact.repository,

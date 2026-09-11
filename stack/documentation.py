@@ -72,9 +72,7 @@ def generate(check: bool = False) -> None:
     existing = next((line for line in lines if line.startswith(marker)), None)
     wanted = marker + NINFER_COMMIT
     if check and existing != wanted:
-        raise ValueError(
-            ".env.example source revision is stale; run python ninfer.py docs"
-        )
+        raise ValueError(".env.example source revision is stale; run python ninfer.py docs")
     if not check:
         if existing:
             text = text.replace(existing, wanted)

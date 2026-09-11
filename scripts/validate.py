@@ -415,6 +415,8 @@ if not submodule_stage.stdout.strip():
     error("ninfer is not recorded in the Git index")
 elif not submodule_stage.stdout.startswith("160000 "):
     error("ninfer must be recorded as a Git submodule (mode 160000)")
+elif submodule_stage.stdout.split()[1] != EXPECTED_NINFER_COMMIT:
+    error("Staged NInfer gitlink differs from stack/manifest.json")
 
 
 if errors:

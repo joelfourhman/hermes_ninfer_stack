@@ -5,7 +5,9 @@ from __future__ import annotations
 import os
 import re
 import shlex
+import signal
 import subprocess
+import uuid
 from pathlib import Path
 
 
@@ -101,17 +103,55 @@ def execution_argv(config: dict, workspace: Path, argv: list[str]) -> list[str]:
     ]
 
 
+def stop_tree(process: subprocess.Popen) -> None:
+    if process.poll() is not None:
+        return
+    if os.name == "nt":
+        subprocess.run(
+            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+    else:
+        os.killpg(process.pid, signal.SIGTERM)
+    try:
+        process.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        if os.name != "nt":
+            os.killpg(process.pid, signal.SIGKILL)
+        else:
+            process.kill()
+        process.wait(timeout=10)
+
+
 def execute(
     config: dict, workspace: Path, argv: list[str], timeout: int = 120
 ) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        execution_argv(config, workspace, argv),
+    command = execution_argv(config, workspace, argv)
+    container_name = None
+    if config["mode"] == "container":
+        container_name = "ninfer-validation-" + uuid.uuid4().hex
+        command[2:2] = ["--name", container_name]
+    process = subprocess.Popen(
+        command,
         cwd=workspace,
         text=True,
-        capture_output=True,
-        timeout=timeout,
-        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        start_new_session=os.name != "nt",
+        creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
     )
+    try:
+        stdout, stderr = process.communicate(timeout=timeout)
+        return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+    except BaseException:
+        stop_tree(process)
+        if container_name:
+            subprocess.run(
+                ["docker", "rm", "-f", container_name], capture_output=True, timeout=30, check=False
+            )
+        raise
 
 
 def repo_snapshot(config: dict, workspace: Path) -> dict:

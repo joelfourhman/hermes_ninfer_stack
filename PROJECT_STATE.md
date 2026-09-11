@@ -1,48 +1,30 @@
 # Implementation state
 
-Goal: purpose-built Windows/RTX 5090 NInfer platform for stock Hermes agents.
-
-- Audit complete; see AUDIT.md. Baseline: 35 tests and repository validation pass.
-- User's pre-existing HERMES_LONG_RUN_RULES.md is preserved without alteration.
-- Source upgrade target: d492968; original source/artifacts and MTP3 remain recoverable.
-- New artifact selection must be explicit; no silent model/security changes.
-- Config authority implemented in stack/manifest.json; source checkout upgraded.
-- Added explicit stock-dflash2 artifact, legal draft counts, five candidate workload
-  profiles and generated reference. Existing 35 + five new tests pass.
-- Config milestone committed as f115cc1. Upgraded NInfer image builds successfully.
-- Benchmark/API modules implemented; 44 tests pass, including real bounded fixture
-  edits/tests and mocked streaming reasoning/tool/usage round trip. Baseline GPU
-  coding measurement is in progress; preserve baseline container until it finishes.
-- Durable epochs implemented, including checksummed snapshots, lock/recovery,
-  per-approach retry bounds, private Hermes home and native tool checkpoints.
-  Six new job tests pass (50 total). Real Hermes CLI fixture passed in 43.56s
-  with 21 observed hook events and persisted session ID.
-- Optional supervisor is disabled, sends only by explicit command after enabling.
-  Container/SSH mappings added; full-agent isolation is not claimed.
-- Current live environment: stock original NVFP4, coding profile, upgraded image.
-  Original active environment was uncensored/max-context/MTP3 (not default stock).
-- Measured original active baseline: benchmarks/baseline-mtp3-coding (35.02s,
-  1 successful sample). New source uncensored/coding: coding-uncensored-mtp3
-  (7.88s, 1 successful sample). Different contexts and possible external traffic:
-  do not claim a controlled speedup.
-- New stock-dflash2 artifact downloaded and checksum verified, originals retained.
-- Baseline image tag: hermes-ninfer:baseline-mtp3. No processes currently building.
-- User explicitly authorized stopping the external Hermes job for clean benchmarks.
-  Identified its TCP owner PID 39548, parent 10060, launcher 30092; only that chat
-  process chain is being stopped. Desktop and gateway remain running.
-- Four real GPU protocol tests pass on stock NVFP4 (chat/stream/prefix/tools/reasoning).
-- Ruff 0.15.6 installed under ignored out/lint; formatter + all lint checks passed
-  after five unused-import fixes. 54 unittest cases pass with four live tests skipped
-  in the ordinary suite; the four live tests were also run separately and passed.
-- Real durable demo: out/run_job_demo.py launches one epoch per invocation,
-  first currently running (process session 90961). This ignored fixture needs a
-  per-process safe.directory exception due sandbox/user ownership difference.
-- Remaining: real durable two-epoch smoke; lint (out/lint/bin/ruff.exe requires
-  escalation due installed-file permissions); API live tests; benchmark matrix
-  stock/new artifact; docs/CI consistency and self-review; milestone commits.
-- Subsystem changes since 0aa7480 are not committed yet. Temporary code-generation
-  scripts and upstream Hermes audit clone live ignored under out/.
-- Following milestones: protocol metrics/agent benchmarks; durable Hermes epochs,
-  optional supervisor and native backend integration; docs/CI/live validation.
-- GPU and baseline container are available. No new performance results yet.
-- Audit-only upstream Hermes checkout is ignored under out/.
+- Audit, config/provenance, benchmark/API and durable jobs committed through
+  0c0b8cc. Original baseline: 37d57b2; audit checkpoint: 3104b6e.
+- Single authority: stack/manifest.json. NInfer ad0f3d3 -> d492968. Baseline
+  image preserved as hermes-ninfer:baseline-mtp3; original artifacts retained.
+- Defaults remain stock/balanced/MTP3. Original user active selection was
+  uncensored/max-context/MTP3: restore after benchmarks.
+- Self-review fixes: transactional profile/Hermes rollback, explicit MTP
+  fallback, atomic report validation, live-worker recovery guard, process-tree
+  timeout cleanup, artifact export and richer benchmark summaries. 58 tests
+  pass (4 GPU skips); four GPU protocol tests separately passed. Ruff and
+  repository validation pass. Commit fixes before documentation milestone.
+- Real Hermes coding fixture passed in43.56s. Durable demo completed epoch2
+  in a separate process, resumed saved session and passed independent tests.
+- Clean stock/coding MTP3:3/3 median5.56s; stock/balanced:3/3 median4.05s.
+  Original uncensored/max-context baseline35.02s vs newuncensored/coding7.88s
+  are single confounded samples: do not claim controlled speedup.
+- Companion artifact downloaded and SHA256 verified, balanced/MTP3 starts.
+  Coding startup in session80173, log out/profile-dflash-coding.log. Next
+  companion codingMTP3/D7/D11, research, growing and parallel benchmarks.
+- User authorized stopping competing Hermes chat; stopped only identified
+  TCP-owner39548, parent10060, launcher30092. Sessions intact; Desktop/gateway
+  preserved. No builds/downloads currently active.
+- Next: generated README/reference, docs/CI, results/final report, full checks,
+  self-review, cleanup and final logical commits.
+- HERMES_LONG_RUN_RULES.md is pre-existing user content: do not edit/commit.
+- Temporary audit/demo code is ignored under out/. Do not delete all out/.
+- Supervisor disabled; no remote calls. Local durable execution tested;
+  container/SSH integrations still need qualification.
