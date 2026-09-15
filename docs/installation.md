@@ -355,7 +355,7 @@ It does not change the host firewall. Then run
 On the remote client, use that endpoint and key with model `qwen-local`.
 
 Install Hermes Desktop and clone this repository on the other host. Preserve its
-existing default profile for Bedrock and create the NInfer profile without making
+existing default provider profile and create the NInfer profile without making
 it sticky:
 
 ```text
@@ -368,7 +368,7 @@ The command prompts for the bearer key without putting it in shell history and
 validates the authenticated endpoint before writing anything. Only
 `profiles/ninfer-autonomous` receives the NInfer provider, 196,608-token context,
 80,000-token compression cap and local-summary settings. The default profile's
-Bedrock provider, model, compression policy, sessions, memory and credentials are
+provider, model, compression policy, sessions, memory and credentials are
 unchanged. Plain `hermes` and new Desktop sessions remain on that default when
 `--no-activate` is used. If needed, run `hermes profile use default`.
 

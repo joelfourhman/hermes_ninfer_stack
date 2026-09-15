@@ -37,9 +37,8 @@ compression threshold and turn limit. They preserve terminal/approval settings,
 back up local config and restore both sides when startup or synchronization fails.
 `configure-client PRESET --endpoint URL --no-activate` applies the same mapping
 to an isolated profile on another trusted LAN computer while leaving its active
-default profile unchanged. This is the recommended setup when the default uses
-frontier models through Bedrock. Invoke NInfer with `hermes -p ninfer-PRESET` and
-Bedrock with plain `hermes`, or explicitly with `hermes -p default`.
+default profile unchanged. Invoke NInfer with `hermes -p ninfer-PRESET` and use
+the existing provider with plain `hermes`, or explicitly with `hermes -p default`.
 Restart Desktop after profile changes. The initial `install-hermes` setup retains
 the existing project behavior: native local tools and manual approvals, removing
 obsolete project-imposed working-directory overrides.

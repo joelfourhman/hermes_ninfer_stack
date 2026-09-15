@@ -168,7 +168,7 @@ def configure_client(args: argparse.Namespace) -> None:
     else:
         state = "configured and activated" if not args.no_activate else "configured"
         print(f"Hermes profile {configured_profiles[0]} is {state} for {endpoint}.")
-    print("Your default/Bedrock profile was not modified. Restart Hermes Desktop to load profiles.")
+    print("Your default Hermes profile was not modified. Restart Hermes Desktop to load profiles.")
 
 
 def docs(args: argparse.Namespace) -> None:

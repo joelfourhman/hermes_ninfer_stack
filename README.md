@@ -230,7 +230,7 @@ restarts, rebuilds, model changes and runtime-profile changes. Rotate it only
 when intended with `scripts/rotate-ninfer-key.ps1`; rotation recreates NInfer,
 updates a local Hermes installation and invalidates every remote client.
 
-To configure a second Hermes host without changing its default Bedrock profile,
+To configure a second Hermes host without changing its default provider profile,
 clone this repository there and run:
 
 ```text
@@ -240,7 +240,7 @@ hermes -p ninfer-autonomous chat
 
 The first command securely prompts for the NInfer key, verifies the endpoint and
 writes only the isolated `ninfer-autonomous` profile. Plain `hermes` continues to
-use the existing default profile and its Bedrock model. Use
+use the existing default profile and model. Use
 `hermes profile use default` if a NInfer profile was previously made sticky.
 
 ## Maintain and troubleshoot

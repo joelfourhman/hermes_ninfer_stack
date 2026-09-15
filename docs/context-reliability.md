@@ -116,9 +116,9 @@ approval settings remain in force, so a task needing approval can pause. Context
 compression cannot guarantee autonomous task quality or protect against unlimited
 single-message input, hardware failure, application updates or power loss.
 
-## Use from another Hermes host alongside Bedrock
+## Use from another Hermes host alongside its default profile
 
-Keep frontier models in the other host's `default` Hermes profile. Create NInfer
+Keep the other host's existing provider and models in its `default` Hermes profile. Create NInfer
 as a separate profile and do not activate it globally:
 
 ```text
@@ -126,7 +126,7 @@ python ninfer.py configure-client autonomous --endpoint http://HOST_LAN_IP:8080/
 hermes -p ninfer-autonomous chat
 ```
 
-Use plain `hermes` or `hermes -p default` for Bedrock. Profile isolation means the
+Use plain `hermes` or `hermes -p default` for the existing provider. Profile isolation means the
 80K NInfer compression cap, local summary route, context length, conversation
-database and memory do not apply to the default Bedrock profile. If Desktop was
+database and memory do not apply to the default profile. If Desktop was
 previously switched to NInfer, run `hermes profile use default` and restart it.

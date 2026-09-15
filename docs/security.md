@@ -61,7 +61,7 @@ TLS, so the endpoint and key should be used only on a trusted private network.
 ending in `/v1`. It reads the key from the requested environment variable or a
 hidden prompt, authenticates against `/models`, then stores it in the selected
 native `ninfer-*` profile's private `.env`. The default profile remains separate,
-so Bedrock settings and sessions are not rewritten. Do not pass the key as a
+so its settings and sessions are not rewritten. Do not pass the key as a
 command-line argument or copy `network --show-key` output into logs.
 
 Do not configure router port forwarding. The project does not modify the host

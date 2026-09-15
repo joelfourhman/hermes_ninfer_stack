@@ -28,7 +28,7 @@
   workloads have finished.
 - Restored the existing managed `ninfer-*` profile and `configure-client`
   integration while retaining the context fixes. The documented second-host
-  setup uses `--no-activate`, so a default Bedrock/frontier profile is untouched
+  setup uses `--no-activate`, so the existing default provider profile is untouched
   and NInfer is selected explicitly with `hermes -p ninfer-autonomous`.
 
 ## Earlier implementation record
