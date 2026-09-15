@@ -93,12 +93,10 @@ python ninfer.py use uncensored
 ```
 
 Each command selects the model artifact, runtime capacity and decoder together,
-then starts the service once and creates or updates the matching native Hermes
-profile. The profiles are named `ninfer-default`, `ninfer-coding`,
+then starts the service once and creates or updates the matching isolated native
+Hermes profile. Profiles are named `ninfer-default`, `ninfer-coding`,
 `ninfer-coding-fast`, `ninfer-research`, `ninfer-autonomous`,
-`ninfer-low-vram` and `ninfer-uncensored`. The selected profile becomes Hermes'
-sticky active profile, so Desktop sessions and settings stay separate between
-workloads. `coding` uses DFlash2-7;
+`ninfer-low-vram` and `ninfer-uncensored`. `coding` uses DFlash2-7;
 `coding-fast` uses the slightly faster but more aggressive DFlash2-11. A preset
 prints its complete mapping before it changes configuration. Run
 `python ninfer.py presets` to display the mappings. If its artifact is absent,
@@ -128,14 +126,14 @@ Restart Desktop after changing context so existing processes reload their settin
 
 | Profile | Context tokens | Shared KV tokens | Lanes | Device / host cache slots | Host KV MiB | Compression tokens | Turns |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| `balanced` | 131,072 | 196,608 | 2 | 2 / 8 | 8,192 | 90,000 | 100000 |
-| `single-session` | 131,072 | 131,072 | 1 | 1 / 4 | 4,096 | 100,000 | 100000 |
-| `max-context` | 240,000 | 240,000 | 2 | 2 / 8 | 8,192 | 200,000 | 100000 |
-| `interactive` | 131,072 | 196,608 | 2 | 2 / 8 | 8,192 | 90,000 | 100000 |
-| `coding` | 196,608 | 196,608 | 2 | 2 / 8 | 8,192 | 150,000 | 100000 |
-| `research` | 240,000 | 240,000 | 2 | 2 / 8 | 8,192 | 200,000 | 100000 |
-| `autonomous` | 196,608 | 196,608 | 2 | 2 / 8 | 8,192 | 150,000 | 100000 |
-| `low-vram` | 65,536 | 65,536 | 1 | 1 / 2 | 2,048 | 48,000 | 100000 |
+| `balanced` | 131,072 | 196,608 | 2 | 2 / 8 | 8,192 | 55,000 | 100000 |
+| `single-session` | 131,072 | 131,072 | 1 | 1 / 4 | 4,096 | 55,000 | 100000 |
+| `max-context` | 240,000 | 240,000 | 2 | 2 / 8 | 8,192 | 100,000 | 100000 |
+| `interactive` | 131,072 | 196,608 | 2 | 2 / 8 | 8,192 | 55,000 | 100000 |
+| `coding` | 196,608 | 196,608 | 2 | 2 / 8 | 8,192 | 80,000 | 100000 |
+| `research` | 240,000 | 240,000 | 2 | 2 / 8 | 8,192 | 100,000 | 100000 |
+| `autonomous` | 196,608 | 196,608 | 2 | 2 / 8 | 8,192 | 80,000 | 100000 |
+| `low-vram` | 65,536 | 65,536 | 1 | 1 / 2 | 2,048 | 24,000 | 100000 |
 
 <!-- END GENERATED PROFILES -->
 
@@ -222,32 +220,28 @@ compact packet and invoke `job supervise --send` to make a remote request. No
 credentials or full conversation histories belong in Git.
 
 The API binds to loopback by default. `python ninfer.py network --mode lan` is an
-explicit opt-in to authenticated private-LAN HTTP, without TLS. Use only a
-trusted network. `network --mode local` returns to loopback.
+explicit opt-in that publishes the authenticated HTTP API on every host
+interface, so both localhost and the host's LAN address work. It does not use
+TLS or configure a firewall; use only a trusted network and never add a router
+port forward. `network --mode local` returns to loopback.
 
-To provision another computer on that LAN, install Hermes Desktop and copy or
-clone this repository there. On the NInfer host, select the server preset, enable
-LAN mode and display the connection details:
+The bearer key is generated once into the ignored host `.env` and is reused by
+restarts, rebuilds, model changes and runtime-profile changes. Rotate it only
+when intended with `scripts/rotate-ninfer-key.ps1`; rotation recreates NInfer,
+updates a local Hermes installation and invalidates every remote client.
 
-```text
-python ninfer.py use autonomous
-python ninfer.py network --mode lan
-python ninfer.py network
-python ninfer.py network --show-key
-```
-
-Then run this on each client, substituting the endpoint printed by the host:
+To configure a second Hermes host without changing its default Bedrock profile,
+clone this repository there and run:
 
 ```text
-python ninfer.py configure-client all --endpoint http://192.168.1.20:8080/v1 --activate autonomous
+python ninfer.py configure-client autonomous --endpoint http://192.168.1.20:8080/v1 --no-activate
+hermes -p ninfer-autonomous chat
 ```
 
-The command securely prompts for the key once, verifies the authenticated
-endpoint, creates or updates every `ninfer-*` profile and activates
-`ninfer-autonomous` in that client's Hermes Desktop. Omit `--activate` to keep
-the client's current profile active. A specific preset name still configures and
-activates only that profile. Restart Desktop afterward. The host loads one backend
-preset at a time, so use the same preset on the host and every active client.
+The first command securely prompts for the NInfer key, verifies the endpoint and
+writes only the isolated `ninfer-autonomous` profile. Plain `hermes` continues to
+use the existing default profile and its Bedrock model. Use
+`hermes profile use default` if a NInfer profile was previously made sticky.
 
 ## Maintain and troubleshoot
 

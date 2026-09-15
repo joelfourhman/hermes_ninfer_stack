@@ -500,11 +500,21 @@ def network_env_values(mode: str, address: str | None = None) -> dict[str, str]:
         raise StackError("Network mode must be local or lan")
     if not address or not is_private_lan_ipv4(address):
         raise StackError("LAN mode requires an RFC1918 IPv4 address on this computer")
-    return {"NINFER_ACCESS_MODE": "lan", "NINFER_BIND_ADDRESS": address}
+    return {"NINFER_ACCESS_MODE": "lan", "NINFER_BIND_ADDRESS": "0.0.0.0"}
 
 
 def endpoint_host(values: dict[str, str]) -> str:
-    return values.get("NINFER_BIND_ADDRESS", "127.0.0.1")
+    bind_address = values.get("NINFER_BIND_ADDRESS", "127.0.0.1")
+    return "127.0.0.1" if bind_address == "0.0.0.0" else bind_address
+
+
+def lan_endpoint(values: dict[str, str], address: str | None = None) -> str | None:
+    if values.get("NINFER_ACCESS_MODE") != "lan":
+        return None
+    lan_address = address or default_route_lan_ipv4()
+    if not lan_address or not is_private_lan_ipv4(lan_address):
+        return None
+    return f"http://{lan_address}:{values['NINFER_HOST_PORT']}/v1"
 
 
 def remove_private_env_value(path: Path, key: str) -> None:
@@ -583,8 +593,8 @@ def merge_env(detected_gpu_device: str | None = None) -> None:
     forced["NINFER_SOURCE_REVISION"] = NINFER_COMMIT
     configured_access = original_values.get("NINFER_ACCESS_MODE", "")
     configured_bind = original_values.get("NINFER_BIND_ADDRESS", "")
-    if configured_access == "lan" and is_private_lan_ipv4(configured_bind):
-        forced.update(network_env_values("lan", configured_bind))
+    if configured_access == "lan" and configured_bind == "0.0.0.0":
+        forced.update({"NINFER_ACCESS_MODE": "lan", "NINFER_BIND_ADDRESS": "0.0.0.0"})
     elif configured_access not in {"local", "lan"} or configured_bind != "127.0.0.1":
         forced.update(network_env_values("local"))
     if detected_gpu_device is not None and not original_values.get("NINFER_GPU_DEVICE"):
@@ -656,8 +666,8 @@ def validate_env() -> None:
     bind_address = values["NINFER_BIND_ADDRESS"]
     if access_mode == "local" and bind_address != "127.0.0.1":
         raise StackError("Local network mode must bind NInfer to 127.0.0.1")
-    if access_mode == "lan" and not is_private_lan_ipv4(bind_address):
-        raise StackError("LAN network mode must bind NInfer to an RFC1918 IPv4 address")
+    if access_mode == "lan" and bind_address != "0.0.0.0":
+        raise StackError("LAN network mode must bind NInfer to 0.0.0.0")
     if access_mode not in {"local", "lan"}:
         raise StackError("NINFER_ACCESS_MODE must be local or lan")
     host_port = values["NINFER_HOST_PORT"]
@@ -950,6 +960,11 @@ def replace_env_values(replacements: dict[str, str]) -> Path | None:
     return backup
 
 
+def api_key_fingerprint(secret: str) -> str:
+    """Return a short, non-secret identifier for comparing configured API keys."""
+    return hashlib.sha256(secret.encode("utf-8")).hexdigest()[:16]
+
+
 def activate_model_profile(profile: ModelProfile) -> Path | None:
     require_model_artifact(profile)
     speculation = {}
@@ -1021,11 +1036,16 @@ def choose_lan_address(requested: str | None = None) -> str:
         print(f"Enter a number from 1 through {len(candidates)}.")
 
 
-def print_network_info(values: dict[str, str], *, show_key: bool = False) -> None:
+def print_network_info(
+    values: dict[str, str], *, show_key: bool = False, lan_address: str | None = None
+) -> None:
     mode = values["NINFER_ACCESS_MODE"]
     print("NInfer network access")
     print(f"  Mode: {mode}")
-    print(f"  Endpoint: {ninfer_endpoint(values)}")
+    print(f"  Local endpoint: {ninfer_endpoint(values)}")
+    remote_endpoint = lan_endpoint(values, lan_address)
+    if remote_endpoint:
+        print(f"  LAN endpoint: {remote_endpoint}")
     print(f"  Model: {values['NINFER_MODEL_ID']}")
     print(f"  Context: {values['NINFER_CONTEXT_LENGTH']} tokens")
     if show_key:
@@ -1194,12 +1214,22 @@ def require_ninfer_endpoint(endpoint: str, api_key: str, model_id: str = "qwen-l
 
 def require_ninfer_api(values: dict[str, str]) -> None:
     endpoint = ninfer_endpoint(values)
+    request = urllib.request.Request(
+        f"{endpoint}/models",
+        headers={"Authorization": f"Bearer {values['NINFER_API_KEY']}"},
+    )
     try:
-        require_ninfer_endpoint(endpoint, values["NINFER_API_KEY"], values["NINFER_MODEL_ID"])
-    except StackError as exc:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            payload = json.loads(response.read())
+    except (urllib.error.URLError, json.JSONDecodeError) as exc:
         raise StackError(
-            f"NInfer is not ready at {endpoint}. Run 'python ninfer.py up' and try again: {exc}"
+            f"NInfer is not reachable at {endpoint}. Run 'python ninfer.py up' and try again: {exc}"
         ) from exc
+    advertised = [item.get("id") for item in payload.get("data", [])]
+    if values["NINFER_MODEL_ID"] not in advertised:
+        raise StackError(
+            f"NInfer does not advertise the configured model {values['NINFER_MODEL_ID']!r}"
+        )
 
 
 def require_ninfer_generation(values: dict[str, str]) -> None:
@@ -1311,7 +1341,7 @@ def configure_hermes_preset_profile(
     api_key: str | None = None,
     activate: bool = True,
 ) -> str:
-    """Create/update one native Hermes profile and optionally make it sticky-active."""
+    """Create/update one isolated native Hermes profile and optionally activate it."""
     preset = DEPLOYMENT_PRESETS[preset_key]
     profile_name = hermes_profile_name(preset_key)
     base_home = Path(base_env["HERMES_HOME"]).expanduser().resolve()
@@ -1423,6 +1453,8 @@ def configure_native_hermes(
     preserve_execution: bool = False,
     endpoint_override: str | None = None,
 ) -> None:
+    from stack.config import hermes_context_settings
+
     model_id = values["NINFER_MODEL_ID"]
     context = values["NINFER_CONTEXT_LENGTH"]
     profile_home = Path(process_env["HERMES_HOME"]).expanduser().resolve()
@@ -1448,15 +1480,17 @@ def configure_native_hermes(
         ("model.default", model_id),
         ("model.context_length", context),
         ("model.supports_vision", "false"),
-        ("compression.enabled", values["HERMES_COMPRESSION_ENABLED"]),
-        ("compression.threshold", "0.9"),
-        (
-            "compression.threshold_tokens",
-            values["HERMES_COMPRESSION_THRESHOLD_TOKENS"],
-        ),
         ("agent.max_turns", values["HERMES_MAX_TURNS"]),
         ("goals.max_turns", str(DEFAULT_GOAL_MAX_TURNS)),
     ]
+    policy = hermes_context_settings(values)
+    for key, value in policy["compression"].items():
+        settings.append((f"compression.{key}", str(value).lower()))
+    for key, value in policy["auxiliary"]["compression"].items():
+        settings.append((
+            f"auxiliary.compression.{key}",
+            json.dumps(value) if isinstance(value, dict) else str(value),
+        ))
     if not preserve_execution:
         settings += [("terminal.backend", "local"), ("approvals.mode", "manual")]
 
@@ -1492,7 +1526,7 @@ def configure_native_hermes(
         "model.default": model_id,
         "model.context_length": context,
         "model.supports_vision": "false",
-        "compression.threshold": "0.9",
+        "compression.threshold": "0.5",
         "compression.threshold_tokens": values["HERMES_COMPRESSION_THRESHOLD_TOKENS"],
     }
     if not preserve_execution:
@@ -1788,13 +1822,68 @@ def network(args: argparse.Namespace) -> None:
         command, process_env = resolved
         configure_native_hermes(command, process_env, values)
         print("Local Hermes was updated. Restart Hermes Desktop to reload the endpoint.")
-    print_network_info(values, show_key=args.show_key)
+    print_network_info(values, show_key=args.show_key, lan_address=address)
     if args.mode == "lan":
         print("If a remote connection is blocked, allow this TCP port only on Private networks")
         print(
             "and only from the local subnet in the host firewall. Never create "
             "a router port forward."
         )
+
+
+def rotate_key(args: argparse.Namespace) -> None:
+    """Deliberately rotate the persistent host-side NInfer bearer key."""
+    if not ENV_FILE.is_file():
+        raise StackError(f"Setup has not been completed. Start with '{SETUP_COMMAND}'.")
+    merge_env()
+    validate_env()
+    previous_values = read_env()
+    previous_key = previous_values["NINFER_API_KEY"]
+    print(f"Current key fingerprint: {api_key_fingerprint(previous_key)}")
+    if not args.yes and not confirm(
+        "Rotate the NInfer API key and invalidate every existing client?", default=False
+    ):
+        print("The API key was not changed.")
+        return
+
+    new_key = secrets.token_hex(32)
+    backup = replace_env_values({"NINFER_API_KEY": new_key})
+    updated_values = read_env()
+    try:
+        validate_env()
+        start_ninfer(updated_values)
+        resolved = native_hermes_command()
+        if resolved is not None:
+            command, process_env = resolved
+            configure_native_hermes(
+                command, process_env, updated_values, preserve_execution=True
+            )
+    except (OSError, StackError) as rotation_error:
+        if backup is not None:
+            shutil.copy2(backup, ENV_FILE)
+        try:
+            start_ninfer(previous_values)
+            resolved = native_hermes_command()
+            if resolved is not None:
+                command, process_env = resolved
+                configure_native_hermes(
+                    command, process_env, previous_values, preserve_execution=True
+                )
+        except (OSError, StackError) as rollback_error:
+            raise StackError(
+                "API-key rotation failed and rollback also needs attention. "
+                "Restore the newest .env.backup-before-* file, then run 'python ninfer.py up'."
+            ) from rollback_error
+        raise StackError(
+            "API-key rotation failed; the previous key and service were restored."
+        ) from rotation_error
+
+    print("NInfer API key rotated successfully.")
+    print(f"New key fingerprint: {api_key_fingerprint(new_key)}")
+    print(f"New API key (shown once): {new_key}")
+    print("Update every remote LAN client now; the previous key no longer works.")
+    if native_hermes_command() is not None:
+        print("Restart Hermes Desktop and its gateway so they reload the new key.")
 
 
 def shell(_: argparse.Namespace) -> None:
@@ -2059,6 +2148,14 @@ def main() -> int:
         "--yes", action="store_true", help="skip the LAN exposure confirmation"
     )
     network_parser.set_defaults(func=network)
+    rotate_parser = sub.add_parser(
+        "rotate-key",
+        help="explicitly rotate the persistent NInfer API key and recreate the service",
+    )
+    rotate_parser.add_argument(
+        "--yes", action="store_true", help="skip the destructive client-invalidation confirmation"
+    )
+    rotate_parser.set_defaults(func=rotate_key)
     sub.add_parser("build", help="build the verified NInfer source").set_defaults(func=build)
     sub.add_parser("up", help="start NInfer and wait until the model is ready").set_defaults(func=up)
     sub.add_parser("down", help="stop NInfer while preserving the model").set_defaults(

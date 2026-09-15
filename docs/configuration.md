@@ -19,12 +19,11 @@ Compose requires the source revision interpolation and the helper always supplie
 the authoritative revision to builds. `validate` checks the staged gitlink and
 actual clean submodule HEAD; `verify` checks image metadata and binary flags.
 
-For normal use, `use default|coding|coding-fast|research|low-vram|uncensored`
+For normal use, `use default|coding|coding-fast|research|autonomous|low-vram|uncensored`
 applies a complete manifest-defined model/runtime/decoder preset with one service
 restart. It prints the mapping, retains download confirmation, creates or updates
-the matching native `ninfer-*` Hermes profile, activates that profile and rolls
-the whole selection back on failure. The profiles keep Desktop sessions and
-settings separate between workloads. `presets` lists the exact mappings.
+the matching isolated native `ninfer-*` Hermes profile and rolls the whole
+selection back on failure. `presets` lists the exact mappings.
 
 Lower-level workload selection uses `profile NAME` or `select-runtime --profile NAME`.
 Model selection uses `select-model --model NAME`. Decoder selection uses
@@ -36,14 +35,22 @@ manifest profile for reproducible custom settings instead.
 Profile changes update the backend and native Hermes provider context,
 compression threshold and turn limit. They preserve terminal/approval settings,
 back up local config and restore both sides when startup or synchronization fails.
-`configure-client PRESET --endpoint URL` applies the same profile mapping to a
-Hermes Desktop on another trusted LAN computer. It securely prompts for the key,
-tests the endpoint before writing the profile and supports `--no-activate`.
-Use `configure-client all --endpoint URL` to create or update every profile in one
-run, with optional `--activate PRESET` to select the profile Desktop should load.
+`configure-client PRESET --endpoint URL --no-activate` applies the same mapping
+to an isolated profile on another trusted LAN computer while leaving its active
+default profile unchanged. This is the recommended setup when the default uses
+frontier models through Bedrock. Invoke NInfer with `hermes -p ninfer-PRESET` and
+Bedrock with plain `hermes`, or explicitly with `hermes -p default`.
 Restart Desktop after profile changes. The initial `install-hermes` setup retains
 the existing project behavior: native local tools and manual approvals, removing
 obsolete project-imposed working-directory overrides.
+
+Desktop and isolated jobs share a compression policy from `stack/config.py`:
+compress by 50% of the window, with the earlier absolute cap in the manifest;
+keep a lean recent tail; summarize on the active local model with a 600-second
+timeout and summary-only thinking disabled. This leaves room for tool results,
+token-estimation differences and overflow recovery. Main-agent reasoning is unchanged.
+See [context reliability](context-reliability.md) for the native Hermes fix,
+repeatable stress test and overnight operation.
 
 Ordinary Desktop data stays in the standard Hermes home. Durable jobs alone
 create `.ninfer-jobs/JOB/hermes/`, with private provider configuration, session
@@ -52,6 +59,7 @@ from the active backend configuration. Its explicit backend is job-scoped.
 
 Network inputs remain `NINFER_ACCESS_MODE`, `NINFER_BIND_ADDRESS`, host port,
 GPU selection and API key. `network --mode local` uses loopback; `network --mode lan` verifies
-an assigned RFC1918 address and tests the authenticated endpoint before accepting
+an assigned RFC1918 address, publishes on `0.0.0.0` for LAN plus localhost access,
+and tests the authenticated endpoint before accepting
 the change. `network --show-key` deliberately reveals the credential; do not
 paste that output into issues or benchmark reports.

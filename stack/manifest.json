@@ -157,7 +157,7 @@
       "host_state_slots": 8,
       "host_kv_mib": 8192,
       "preserve_thinking": true,
-      "compression_threshold_tokens": 90000,
+      "compression_threshold_tokens": 55000,
       "max_turns": 100000,
       "qualification": "legacy configuration; remeasure on new source"
     },
@@ -174,7 +174,7 @@
       "host_state_slots": 4,
       "host_kv_mib": 4096,
       "preserve_thinking": true,
-      "compression_threshold_tokens": 100000,
+      "compression_threshold_tokens": 55000,
       "max_turns": 100000,
       "qualification": "legacy configuration; remeasure on new source"
     },
@@ -191,7 +191,7 @@
       "host_state_slots": 8,
       "host_kv_mib": 8192,
       "preserve_thinking": true,
-      "compression_threshold_tokens": 200000,
+      "compression_threshold_tokens": 100000,
       "max_turns": 100000,
       "qualification": "legacy configuration; remeasure on new source"
     },
@@ -208,7 +208,7 @@
       "host_state_slots": 8,
       "host_kv_mib": 8192,
       "preserve_thinking": true,
-      "compression_threshold_tokens": 90000,
+      "compression_threshold_tokens": 55000,
       "max_turns": 100000,
       "qualification": "candidate; validate VRAM and workload on target GPU"
     },
@@ -225,7 +225,7 @@
       "host_state_slots": 8,
       "host_kv_mib": 8192,
       "preserve_thinking": true,
-      "compression_threshold_tokens": 150000,
+      "compression_threshold_tokens": 80000,
       "max_turns": 100000,
       "qualification": "196608 shared KV selected after DFlash2-7 failed the 240000 reservation on RTX 5090; see BENCHMARK_RESULTS.md"
     },
@@ -242,7 +242,7 @@
       "host_state_slots": 8,
       "host_kv_mib": 8192,
       "preserve_thinking": true,
-      "compression_threshold_tokens": 200000,
+      "compression_threshold_tokens": 100000,
       "max_turns": 100000,
       "qualification": "candidate; validate VRAM and workload on target GPU"
     },
@@ -259,7 +259,7 @@
       "host_state_slots": 8,
       "host_kv_mib": 8192,
       "preserve_thinking": true,
-      "compression_threshold_tokens": 150000,
+      "compression_threshold_tokens": 80000,
       "max_turns": 100000,
       "qualification": "shares the reduced coding KV budget; multi-hour stability remains unqualified"
     },
@@ -276,7 +276,7 @@
       "host_state_slots": 2,
       "host_kv_mib": 2048,
       "preserve_thinking": true,
-      "compression_threshold_tokens": 48000,
+      "compression_threshold_tokens": 24000,
       "max_turns": 100000,
       "qualification": "candidate; validate VRAM and workload on target GPU"
     }

@@ -114,7 +114,7 @@ def use_preset(args: argparse.Namespace) -> None:
 
 
 def configure_client(args: argparse.Namespace) -> None:
-    """Configure a native Hermes profile on a LAN client without a local NInfer checkout."""
+    """Configure isolated native Hermes profiles for a trusted LAN NInfer host."""
     helper = _helper()
     selected_activation = getattr(args, "activate", None)
     if args.preset != "all" and selected_activation is not None:
@@ -160,7 +160,7 @@ def configure_client(args: argparse.Namespace) -> None:
         configured_profiles.append(profile_name)
 
     if args.preset == "all":
-        print(f"Configured {len(configured_profiles)} Hermes profiles for {endpoint}.")
+        print(f"Configured {len(configured_profiles)} isolated Hermes profiles for {endpoint}.")
         if selected_activation is not None:
             print(f"Hermes profile ninfer-{selected_activation} is active.")
         else:
@@ -168,7 +168,7 @@ def configure_client(args: argparse.Namespace) -> None:
     else:
         state = "configured and activated" if not args.no_activate else "configured"
         print(f"Hermes profile {configured_profiles[0]} is {state} for {endpoint}.")
-    print("Restart Hermes Desktop to load it.")
+    print("Your default/Bedrock profile was not modified. Restart Hermes Desktop to load profiles.")
 
 
 def docs(args: argparse.Namespace) -> None:
@@ -189,7 +189,7 @@ def register_commands(sub) -> None:
     use.set_defaults(func=use_preset)
     client = sub.add_parser(
         "configure-client",
-        help="create a native Hermes profile for this NInfer host or a trusted LAN host",
+        help="create isolated Hermes profiles for this NInfer host or a trusted LAN host",
     )
     client.add_argument("preset", choices=(*DEPLOYMENT_PRESETS, "all"))
     client.add_argument(

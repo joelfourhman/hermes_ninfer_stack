@@ -10,6 +10,7 @@ import subprocess
 import time
 from pathlib import Path
 
+from stack.config import hermes_context_settings
 from stack.execution import stop_tree, terminal_settings
 from stack.storage import atomic_json
 from stack.workloads import CODING_PROMPT
@@ -60,11 +61,7 @@ def prepare_home(helper, directory: Path, workspace: Path, backend: dict) -> tup
                 "models": {model: {"context_length": context, "supports_vision": False}},
             }
         },
-        "compression": {
-            "enabled": True,
-            "threshold": 0.9,
-            "threshold_tokens": int(values["HERMES_COMPRESSION_THRESHOLD_TOKENS"]),
-        },
+        **hermes_context_settings(values),
         "agent": {"max_turns": int(values["HERMES_MAX_TURNS"])},
         "approvals": {"mode": "manual"},
         "terminal": terminal_settings(backend, workspace),

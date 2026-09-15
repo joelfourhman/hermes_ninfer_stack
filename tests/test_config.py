@@ -12,6 +12,7 @@ from stack.config import (
     MANIFEST,
     MODEL_PROFILES,
     RUNTIME_PROFILES,
+    hermes_context_settings,
     runtime_env_values,
     spec_values,
     validate_manifest,
@@ -22,6 +23,17 @@ from stack.provenance import verify_cli_help, verify_image, verify_model
 
 
 class ConfigurationTests(unittest.TestCase):
+    def test_context_policy_reserves_half_window_and_uses_local_summary(self):
+        for profile in RUNTIME_PROFILES.values():
+            policy = hermes_context_settings(runtime_env_values(profile))
+            compression = policy["compression"]
+            self.assertTrue(compression["enabled"])
+            self.assertLessEqual(compression["threshold_tokens"], profile.context_length // 2)
+            self.assertEqual(compression["threshold"], 0.5)
+            self.assertEqual(policy["auxiliary"]["compression"]["provider"], "main")
+            self.assertGreaterEqual(policy["auxiliary"]["compression"]["timeout"], 300)
+            self.assertFalse(policy["auxiliary"]["compression"]["extra_body"]["enable_thinking"])
+
     def test_deployment_presets_are_complete_and_compatible(self):
         self.assertEqual(
             set(DEPLOYMENT_PRESETS),

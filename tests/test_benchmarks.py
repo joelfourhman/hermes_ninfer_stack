@@ -192,6 +192,32 @@ class BenchmarkTests(unittest.TestCase):
             ["autonomous"],
         )
 
+    def test_lan_client_no_activate_leaves_default_profile_selected(self):
+        helper = Mock()
+        helper.normalize_ninfer_client_endpoint.return_value = "http://192.168.1.20:8080/v1"
+        helper.native_hermes_command.return_value = (
+            ["hermes"],
+            {"HERMES_HOME": "hermes-home"},
+        )
+        helper.model_profile.side_effect = lambda key: MODEL_PROFILES[key]
+        helper.runtime_profile.side_effect = lambda key: RUNTIME_PROFILES[key]
+        helper.configure_hermes_preset_profile.return_value = "ninfer-autonomous"
+        args = argparse.Namespace(
+            preset="autonomous",
+            endpoint="http://192.168.1.20:8080/v1",
+            key_env="TEST_NINFER_KEY",
+            no_activate=True,
+        )
+
+        with (
+            patch("stack.commands._helper", return_value=helper),
+            patch.dict("os.environ", {"TEST_NINFER_KEY": "secret-key"}),
+        ):
+            configure_client(args)
+
+        call = helper.configure_hermes_preset_profile.call_args
+        self.assertFalse(call.kwargs["activate"])
+
     def test_compression_failure_retains_completed_request_evidence(self):
         class FailingSummary:
             calls = 0

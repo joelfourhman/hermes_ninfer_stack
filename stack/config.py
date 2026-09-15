@@ -16,6 +16,27 @@ DEFAULT_RUNTIME_PROFILE = MANIFEST["defaults"]["runtime"]
 DEFAULT_GOAL_MAX_TURNS = MANIFEST["defaults"]["goal_max_turns"]
 
 
+def hermes_context_settings(values: dict[str, str]) -> dict:
+    """Shared policy for Desktop and isolated jobs, including local summaries."""
+    return {
+        "compression": {
+            "enabled": values["HERMES_COMPRESSION_ENABLED"].lower() == "true",
+            "threshold": 0.5,
+            "threshold_tokens": int(values["HERMES_COMPRESSION_THRESHOLD_TOKENS"]),
+            "tail_mode": "lean",
+            "protect_last_n": 4,
+            "min_tail_user_messages": 1,
+        },
+        "auxiliary": {
+            "compression": {
+                "provider": "main",
+                "timeout": 600,
+                "extra_body": {"enable_thinking": False},
+            }
+        },
+    }
+
+
 @dataclass(frozen=True)
 class ModelProfile:
     key: str
@@ -137,7 +158,7 @@ def validate_manifest() -> None:
             raise ValueError(f"Invalid profile shared KV: {key}")
         if not 1 <= p.max_concurrency <= 8 or not 1 <= p.max_turns <= 100000:
             raise ValueError(f"Invalid profile limits: {key}")
-        if not 1024 <= p.compression_threshold_tokens <= p.context_length - 8192:
+        if not 1024 <= p.compression_threshold_tokens <= p.context_length // 2:
             raise ValueError(f"Profile lacks output/context headroom: {key}")
         if p.kv_dtype not in {"bf16", "int8", "fp8", "nvfp4", "k8v4"}:
             raise ValueError(f"Invalid KV dtype: {key}")

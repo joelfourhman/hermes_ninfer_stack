@@ -347,38 +347,50 @@ After setup is healthy, run:
 python ninfer.py network --mode lan
 ```
 
-Choose the host's private IPv4 interface and confirm the warning. Then run
+Choose the host's private IPv4 interface and confirm the warning. LAN mode
+publishes Docker on `0.0.0.0`, so both `127.0.0.1` and that LAN address work.
+It does not change the host firewall. Then run
 `python ninfer.py network` to show the endpoint and
 `python ninfer.py network --show-key` to reveal the bearer key deliberately.
+On the remote client, use that endpoint and key with model `qwen-local`.
 
-Install Hermes Desktop and copy or clone this repository on each client. Select
-the backend preset on the NInfer host first, then configure the same named preset
-on the client:
+Install Hermes Desktop and clone this repository on the other host. Preserve its
+existing default profile for Bedrock and create the NInfer profile without making
+it sticky:
 
 ```text
-# NInfer host
-python ninfer.py use autonomous
-python ninfer.py network --mode lan
-python ninfer.py network --show-key
-
-# LAN client; use the endpoint printed by `network`
-python ninfer.py configure-client all --endpoint http://192.168.1.20:8080/v1 --activate autonomous
+python ninfer.py configure-client autonomous --endpoint http://192.168.1.20:8080/v1 --no-activate
+hermes -p ninfer-autonomous doctor
+hermes -p ninfer-autonomous chat
 ```
 
-The client command prompts for the bearer key without placing it in shell
-history, verifies the authenticated `qwen-local` endpoint once, creates or updates
-all seven native `ninfer-*` Hermes profiles and makes `ninfer-autonomous` active.
-Omit `--activate` to preserve the currently active profile. A specific preset name
-configures and activates only that profile; pass `--no-activate` to prepare it
-without switching. Restart Hermes Desktop afterward.
+The command prompts for the bearer key without putting it in shell history and
+validates the authenticated endpoint before writing anything. Only
+`profiles/ninfer-autonomous` receives the NInfer provider, 196,608-token context,
+80,000-token compression cap and local-summary settings. The default profile's
+Bedrock provider, model, compression policy, sessions, memory and credentials are
+unchanged. Plain `hermes` and new Desktop sessions remain on that default when
+`--no-activate` is used. If needed, run `hermes profile use default`.
 
-One NInfer host serves one backend preset at a time. The preset selected with
-`use` on the host and the active `ninfer-*` profile on every client must match.
+Use `configure-client all --endpoint URL` without `--activate` to prepare every
+NInfer preset while keeping the current profile active. One NInfer host serves
+one backend preset at a time, so explicitly selected clients should match the
+host's active preset.
+
+The key remains in the ignored host `.env` across container and image
+replacement. Deliberately rotate it from PowerShell with:
+
+```powershell
+.\scripts\rotate-ninfer-key.ps1
+```
+
+Rotation is never part of setup, startup, upgrade or profile/model selection.
+It creates a backup, replaces only `NINFER_API_KEY`, recreates the service,
+updates local Hermes configuration and tells you to update remote clients.
 
 LAN mode is intended only for a trusted private network. Do not configure a
-router port forward. If required, create a host firewall allowance limited to
-the Private profile, the selected TCP port, and the local subnet. Restore the
-default with `python ninfer.py network --mode local`.
+router port forward. Restore the default with
+`python ninfer.py network --mode local`.
 
 The official Windows Hermes installation normally keeps its runtime under
 `%LOCALAPPDATA%\hermes`. Its current stock installer internally invokes its own

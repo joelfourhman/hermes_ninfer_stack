@@ -21,11 +21,10 @@ See [architecture](docs/architecture.md) and [audit](AUDIT.md).
 
 A follow-up adds `use` presets so daily switching takes one command. These
 manifest-defined presets apply model, runtime and decoder together, start NInfer
-once, create and activate a matching native `ninfer-*` Hermes profile, retain
-download confirmation and roll the whole selection back if startup fails.
-`configure-client` provisions the same profiles on trusted LAN computers after
-authenticating to the selected host endpoint. Granular controls remain for
-experiments.
+once, synchronize Hermes, retain download confirmation and roll the whole
+selection back if startup fails. Native `ninfer-*` profiles isolate these local
+settings from other providers, and `configure-client` provisions the same
+profiles on a trusted LAN host. Granular controls remain for experiments.
 
 ## Exact provenance and profiles
 
@@ -43,9 +42,8 @@ Original balanced/single-session/max-context names remain. Added interactive,
 coding, research, autonomous and low-vram profiles. The final coding/autonomous
 KV pool was reduced to 196,608 after a reproduced DFlash2 memory reservation
 failure at 240,000; the per-request limit stays 196,608. Research/max-context stay
-240,000. Profile changes synchronize Hermes context/compression/turns in separate
-native profiles while preserving execution/approval preferences, and restore
-both configs on failure.
+240,000. Profile changes synchronize Hermes context/compression/turns while
+preserving execution/approval preferences, and restore both configs on failure.
 
 MTP1–5 (including MTP3) and DFlash2-1–15 (including 7 and 11) are configurable;
 DFlash2 is capability-gated to the companion artifact. `--lm-head-draft` and

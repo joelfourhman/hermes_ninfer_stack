@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import hashlib
-import ipaddress
 import json
 import os
 import re
@@ -216,6 +215,9 @@ def verify_optional_hermes(
         return
     command, process_env = resolved
 
+    if Path(command[0]).stem.lower().startswith("python"):
+        run([command[0], str(ROOT / "scripts/check_hermes_context.py")], env=process_env)
+
     config_check = run([*command, "config", "check"], check=False, env=process_env)
     if config_check.returncode != 0:
         raise Failure(
@@ -230,8 +232,11 @@ def verify_optional_hermes(
         "model.supports_vision": "false",
         "providers.ninfer.api": endpoint,
         "compression.enabled": compression,
-        "compression.threshold": "0.9",
+        "compression.threshold": "0.5",
         "compression.threshold_tokens": compression_threshold,
+        "auxiliary.compression.provider": "main",
+        "auxiliary.compression.timeout": "600",
+        "auxiliary.compression.extra_body.enable_thinking": "false",
         "agent.max_turns": max_turns,
         "terminal.backend": "local",
         "approvals.mode": "manual",
@@ -308,17 +313,9 @@ def main() -> int:
     begin("Prerequisites and configuration")
     if not re.fullmatch(r"[0-9a-fA-F]{64}", api_key):
         raise Failure("NINFER_API_KEY must be a 64-character hexadecimal secret", "python ninfer.py setup")
-    try:
-        parsed_bind = ipaddress.ip_address(bind_address)
-    except ValueError as exc:
-        raise Failure("NINFER_BIND_ADDRESS must be a valid IPv4 address", "python ninfer.py network") from exc
-    private_lan = parsed_bind.version == 4 and any(
-        parsed_bind in ipaddress.ip_network(cidr)
-        for cidr in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16")
-    )
     if not (
         (access_mode == "local" and bind_address == "127.0.0.1")
-        or (access_mode == "lan" and private_lan)
+        or (access_mode == "lan" and bind_address == "0.0.0.0")
     ):
         raise Failure(
             "NInfer network mode and bind address are inconsistent",
@@ -354,7 +351,7 @@ def main() -> int:
         or not max_turns.isdigit()
     ):
         raise Failure("Hermes compression or maximum turns is invalid", "compare .env with .env.example")
-    endpoint = f"http://{bind_address}:{host_port}/v1"
+    endpoint = f"http://127.0.0.1:{host_port}/v1"
     passed(
         f"model={model_id} runtime={runtime_key} access={access_mode} "
         f"context={context} KV={kv_capacity} concurrency={concurrency} GPU={gpu}"

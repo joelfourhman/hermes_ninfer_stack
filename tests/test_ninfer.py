@@ -33,7 +33,7 @@ def sample_values() -> dict[str, str]:
         "NINFER_HOST_KV_MIB": "8192",
         "NINFER_PRESERVE_THINKING": "true",
         "HERMES_COMPRESSION_ENABLED": "true",
-        "HERMES_COMPRESSION_THRESHOLD_TOKENS": "90000",
+        "HERMES_COMPRESSION_THRESHOLD_TOKENS": "55000",
         "HERMES_MAX_TURNS": "100000",
     }
 
@@ -289,7 +289,9 @@ class HermesDesktopConfigurationTests(unittest.TestCase):
 
         self.assertEqual(name, "ninfer-autonomous")
         create_call, create_kwargs = calls[0]
-        self.assertEqual(create_call[1:5], ["profile", "create", "ninfer-autonomous", "--clone-from"])
+        self.assertEqual(
+            create_call[1:5], ["profile", "create", "ninfer-autonomous", "--clone-from"]
+        )
         self.assertIn("--no-alias", create_call)
         self.assertEqual(create_kwargs["env"]["HERMES_HOME"], str(root))
         self.assertEqual(calls[-1][0], ["hermes", "profile", "use", "ninfer-autonomous"])
@@ -317,8 +319,8 @@ class HermesDesktopConfigurationTests(unittest.TestCase):
                 "model.default": "qwen-local",
                 "model.context_length": "131072",
                 "model.supports_vision": "false",
-                "compression.threshold": "0.9",
-                "compression.threshold_tokens": "90000",
+                "compression.threshold": "0.5",
+                "compression.threshold_tokens": "55000",
                 "terminal.backend": "local",
                 "approvals.mode": "manual",
             }
@@ -372,7 +374,7 @@ class HermesDesktopConfigurationTests(unittest.TestCase):
             [command for command, _ in calls],
         )
         self.assertIn(
-            ["hermes", "config", "set", "compression.threshold_tokens", "90000"],
+            ["hermes", "config", "set", "compression.threshold_tokens", "55000"],
             [command for command, _ in calls],
         )
         self.assertIn(
@@ -414,6 +416,38 @@ class HermesDesktopConfigurationTests(unittest.TestCase):
 
 
 class EnvironmentValidationTests(unittest.TestCase):
+    def test_api_key_fingerprint_is_short_and_does_not_reveal_key(self) -> None:
+        secret = "a" * 64
+        fingerprint = ninfer.api_key_fingerprint(secret)
+        self.assertEqual(len(fingerprint), 16)
+        self.assertNotIn(secret, fingerprint)
+
+    def test_explicit_key_rotation_replaces_only_key_and_restarts_service(self) -> None:
+        values = sample_values()
+        values["UNRELATED_SETTING"] = "keep-me"
+        with tempfile.TemporaryDirectory() as temporary:
+            env_file = Path(temporary) / ".env"
+            env_file.write_text(
+                "".join(f"{key}={value}\n" for key, value in values.items()),
+                encoding="utf-8",
+            )
+            with (
+                mock.patch.object(ninfer, "ENV_FILE", env_file),
+                mock.patch.object(ninfer, "merge_env"),
+                mock.patch.object(ninfer, "validate_env"),
+                mock.patch.object(ninfer.secrets, "token_hex", return_value="b" * 64),
+                mock.patch.object(ninfer, "start_ninfer") as start,
+                mock.patch.object(ninfer, "native_hermes_command", return_value=None),
+                redirect_stdout(StringIO()) as output,
+            ):
+                ninfer.rotate_key(mock.Mock(yes=True))
+            updated = ninfer.read_env(env_file)
+
+        self.assertEqual(updated["NINFER_API_KEY"], "b" * 64)
+        self.assertEqual(updated["UNRELATED_SETTING"], "keep-me")
+        start.assert_called_once()
+        self.assertIn("Update every remote LAN client", output.getvalue())
+
     def test_lan_selection_prefers_default_route_over_virtual_adapters(self) -> None:
         with (
             mock.patch.object(ninfer, "default_route_lan_ipv4", return_value="192.168.50.115"),
@@ -428,8 +462,12 @@ class EnvironmentValidationTests(unittest.TestCase):
 
     def test_lan_endpoint_uses_selected_private_address(self) -> None:
         values = sample_values()
-        values.update({"NINFER_ACCESS_MODE": "lan", "NINFER_BIND_ADDRESS": "192.168.50.9"})
-        self.assertEqual(ninfer.ninfer_endpoint(values), "http://192.168.50.9:18080/v1")
+        values.update({"NINFER_ACCESS_MODE": "lan", "NINFER_BIND_ADDRESS": "0.0.0.0"})
+        self.assertEqual(ninfer.ninfer_endpoint(values), "http://127.0.0.1:18080/v1")
+        self.assertEqual(
+            ninfer.lan_endpoint(values, "192.168.50.9"),
+            "http://192.168.50.9:18080/v1",
+        )
 
     def test_lan_mode_rejects_public_bind_address(self) -> None:
         values = sample_values()
@@ -449,12 +487,12 @@ class EnvironmentValidationTests(unittest.TestCase):
                 encoding="utf-8",
             )
             with mock.patch.object(ninfer, "ENV_FILE", env_file):
-                with self.assertRaisesRegex(ninfer.StackError, "RFC1918"):
+                with self.assertRaisesRegex(ninfer.StackError, "0.0.0.0"):
                     ninfer.validate_env()
 
     def test_network_info_hides_key_unless_explicitly_requested(self) -> None:
         values = sample_values()
-        values.update({"NINFER_ACCESS_MODE": "lan", "NINFER_BIND_ADDRESS": "192.168.50.9"})
+        values.update({"NINFER_ACCESS_MODE": "lan", "NINFER_BIND_ADDRESS": "0.0.0.0"})
         with redirect_stdout(StringIO()) as hidden_output:
             ninfer.print_network_info(values)
         with redirect_stdout(StringIO()) as revealed_output:
