@@ -1,4 +1,57 @@
-# RTX 5090 measured results — 2026-09-11
+# RTX 5090 measured results
+
+## Current v3 runtime — 2026-09-23
+
+NInfer `594930e` and reproducibly upgraded artifacts ran on Windows, RTX 5090
+(32,607 MiB), NVIDIA 617.14 and CUDA 13.1.2. All seven presets passed three
+bounded fixture runs; DFlash2-7 also passed one actual Hermes CLI coding task
+with independent acceptance. Original uncensored/autonomous passed three more
+coding fixtures. Results and raw-file hashes are preserved in
+[measured-v3-summary.json](benchmarks/measured-v3-summary.json).
+
+| Preset / workload | Accepted | Median completion s | Peak GPU MiB |
+|---|---:|---:|---:|
+| default / coding | 3/3 | 3.468 | 29,143 |
+| low-vram / coding | 3/3 | 3.719 | 24,448 |
+| autonomous / coding | 3/3 | 4.765 | 29,085 |
+| coding, DFlash2-7 / coding | 3/3 | 3.916 | 30,638 |
+| coding-fast, DFlash2-11 / coding | 3/3 | 3.455 | 30,657 |
+| research / 256 KiB fixture | 3/3 | 30.878 | 30,536 |
+| uncensored, 240K / coding | 3/3 | 5.502 | 27,373 |
+| original uncensored/autonomous / coding | 3/3 | 4.306 | 26,012 |
+| coding, DFlash2-7 / actual Hermes | 1/1 | 34.401 | 30,644 |
+| original uncensored/autonomous / two lanes | 1/1 | 19.539 | 25,949 |
+
+DFlash2-11 was faster than DFlash2-7 on the same companion/coding configuration
+in this short sample; both remain explicit choices. Stock/balanced/MTP3 remains
+the general default. Different artifacts and capacity profiles do not isolate
+decoder performance. Actual Hermes includes its process/tool overhead and uses
+its native defaults; its wall time should not be ranked with the bounded harness.
+The two-lane fixture passed concurrent independent work, with acceptance checked
+for both lanes; it does not establish two simultaneous maximum-sized contexts.
+
+The server was warmed by startup validation; repeated workloads shared caches.
+Presets ran sequentially without randomized order or locked GPU clocks. These
+are small samples, with no same-day v2 baseline, so they establish readiness and
+observed workload behavior rather than an overall upgrade speedup. Whole-device
+memory was sampled once per second. Startup does not establish two simultaneous
+full-sized sessions or multi-hour stability.
+
+Research reached 86,058 input tokens, not the 240,000-token ceiling. Its three
+runs each recomputed the large document prefix: cached input was 1,031,784 of
+1,287,651 cumulative input tokens. The host-state cache reached all eight slots.
+Historical September 11 results used different templates, cache behavior and
+driver; the lower historical research wall time is retained below and is not
+represented as a like-for-like comparison.
+
+A configuration comparison changed only research's host-state slots from 8 to
+16, keeping model, decoder, context, KV and fixture parameters fixed. All three
+runs passed, but median completion was 31.524 s and cached tokens were identical.
+The larger cache did not improve this fixture, so **research retains 8 slots**.
+Both the candidate and baseline remain in the v3 summary. Other working sets may
+behave differently.
+
+## Historical v2 runtime — 2026-09-11
 
 **Keep stock/balanced/MTP3 as the default.** DFlash2 is a useful opt-in candidate
 with a verified companion artifact. Short, warmed coding fixtures do not establish

@@ -70,19 +70,27 @@ def main() -> None:
     if model_file.exists():
         print(f"{artifact.filename} already exists; verifying it instead of downloading again.")
     else:
+        migration = _models[args.profile].get("migration")
+        source_file = MODELS / (migration["filename"] if migration else artifact.filename)
+        source_size = migration["expected_bytes"] if migration else artifact.expected_bytes
+        source_sha = migration["sha256"] if migration else artifact.expected_sha256
         print(
-            f"Downloading {artifact.repository}/{_models[args.profile]['source_filename']}@{artifact.revision} to {artifact.filename}"
+            f"Preparing {artifact.repository}/{_models[args.profile]['source_filename']}@{artifact.revision} as {artifact.filename}"
         )
-        downloaded = Path(hf_hub_download(
-            repo_id=artifact.repository,
-            filename=_models[args.profile]["source_filename"],
-            revision=artifact.revision,
-            local_dir=MODELS / ".downloads" / args.profile,
-            token=os.environ.get("HF_TOKEN") or None,
-        ))
-        if downloaded.stat().st_size != artifact.expected_bytes or digest(downloaded) != artifact.expected_sha256:
+        downloaded = source_file if source_file.exists() else Path(hf_hub_download(
+                repo_id=artifact.repository,
+                filename=_models[args.profile]["source_filename"],
+                revision=artifact.revision,
+                local_dir=MODELS / ".downloads" / args.profile,
+                token=os.environ.get("HF_TOKEN") or None,
+            ))
+        if downloaded.stat().st_size != source_size or digest(downloaded) != source_sha:
             raise SystemExit("Downloaded artifact failed manifest size/checksum verification")
-        downloaded.replace(model_file)
+        if downloaded != source_file:
+            downloaded.replace(source_file)
+        if migration:
+            from artifacts import upgrade
+            upgrade(source_file, model_file, Path(__file__).parent / "tools", source_sha)
 
     actual = verify(artifact)
     print(f"{args.profile.capitalize()} model checksum verified: {actual}")

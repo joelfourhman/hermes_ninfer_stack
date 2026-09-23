@@ -23,6 +23,54 @@ from stack.provenance import verify_cli_help, verify_image, verify_model
 
 
 class ConfigurationTests(unittest.TestCase):
+    def test_current_image_keeps_cache_and_stale_image_rebuilds(self):
+        import json
+        from subprocess import CompletedProcess
+
+        labels = {
+            "org.opencontainers.image.revision": MANIFEST["ninfer"]["commit"],
+            "org.opencontainers.image.base.name": MANIFEST["ninfer"]["cuda_base"],
+        }
+        with (
+            patch("stack.provenance.verify_source"),
+            patch.object(ninfer, "compose", return_value=CompletedProcess([], 0, "image-name\n")) as compose,
+            patch.object(ninfer, "run", return_value=CompletedProcess([], 0, json.dumps(labels))) as run,
+        ):
+            ninfer.ensure_runtime_image()
+            self.assertEqual(compose.call_count, 1)
+            run.return_value = CompletedProcess([], 0, "{}")
+            ninfer.ensure_runtime_image()
+            self.assertEqual(compose.call_args.args, ("build", "ninfer"))
+
+    def test_model_switch_rolls_back_hermes_if_sync_fails(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            env = root / ".env"
+            env.write_text("NINFER_MODEL_PROFILE=stock\nNINFER_CONTEXT_LENGTH=65536\n")
+            home = root / "hermes"
+            home.mkdir()
+            config = home / "config.yaml"
+            config.write_text("original settings")
+
+            def failed_sync(*args, **kwargs):
+                config.write_text("partial settings")
+                raise ninfer.StackError("failed")
+
+            with (
+                patch.object(ninfer, "ENV_FILE", env),
+                patch.object(ninfer, "native_hermes_command", return_value=(["hermes"], {"HERMES_HOME": str(home)})),
+                patch.object(ninfer, "require_model_artifact"),
+                patch.object(ninfer, "model_artifact_candidate_ready", return_value=True),
+                patch.object(ninfer, "validate_env"),
+                patch.object(ninfer, "start_ninfer") as start,
+                patch.object(ninfer, "configure_native_hermes", side_effect=failed_sync),
+            ):
+                with self.assertRaisesRegex(ninfer.StackError, "restored"):
+                    ninfer.activate_and_start_profile(MODEL_PROFILES["uncensored"], build_runtime=False)
+            self.assertEqual(config.read_text(), "original settings")
+            self.assertIn("NINFER_MODEL_PROFILE=stock", env.read_text())
+            self.assertEqual(start.call_count, 2)
+
     def test_context_policy_reserves_half_window_and_uses_local_summary(self):
         for profile in RUNTIME_PROFILES.values():
             policy = hermes_context_settings(runtime_env_values(profile))

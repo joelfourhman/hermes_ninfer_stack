@@ -24,13 +24,15 @@ You need:
 - an NVIDIA GeForce RTX 5090;
 - a supported 64-bit Windows installation;
 - a working internet connection for the first setup;
-- at least 24 GiB free for the recommended stock profile, or 21 GiB for the
+- at least 48 GiB free for the recommended stock profile, or 42 GiB for the
   optional uncensored profile;
 - additional free space in Docker Desktop's storage for the Linux image and
   temporary build files.
 
 The stock NInfer artifact is approximately 20.02 GiB and the uncensored
-artifact is approximately 16.96 GiB. Docker image storage is separate. Close
+artifact is approximately 16.96 GiB. The v3 upgrade retains the original and
+creates a second model-sized file; the DFlash2 companion needs 54 GiB free on
+fresh setup. Docker image storage is separate. Close
 games and other GPU-heavy programs before loading the model.
 
 ## 1. Install the four prerequisites
@@ -205,7 +207,7 @@ Then:
    those three steps are finished**, press Enter.
 
 The helper now stores a randomly generated local connection key in Hermes's
-normal private settings and selects the local `qwen-local` model. It does not
+normal private settings and selects the model ID advertised by this stack. It does not
 show the key, ask you to copy it, or change unrelated Hermes providers and
 preferences. It also selects Hermes's `manual` command-approval mode so flagged
 commands are shown to you instead of being automatically approved by the
@@ -352,7 +354,10 @@ publishes Docker on `0.0.0.0`, so both `127.0.0.1` and that LAN address work.
 It does not change the host firewall. Then run
 `python ninfer.py network` to show the endpoint and
 `python ninfer.py network --show-key` to reveal the bearer key deliberately.
-On the remote client, use that endpoint and key with model `qwen-local`.
+On the remote client, use `python ninfer.py configure-client autonomous --endpoint URL --no-activate`
+with that endpoint and key to discover the resident model and context limit.
+Use `python ninfer.py connect autonomous --endpoint URL` to refresh and launch
+a CLI chat. A remote preset sets client policy; it cannot switch server weights.
 
 Install Hermes Desktop and clone this repository on the other host. Preserve its
 existing default provider profile and create the NInfer profile without making

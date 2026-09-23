@@ -1,5 +1,9 @@
 # Pre-change audit — 2026-09-11
 
+The active September 23 v3 pin and migration review are recorded in
+[the upstream review](docs/upstream-review-2026-09.md). The sections below retain
+the earlier deployment audit; their older pins and artifact formats are historical.
+
 ## Baseline and evidence
 
 Stack HEAD: `37d57b2` (opt-in authenticated LAN access). The tracked checkout was

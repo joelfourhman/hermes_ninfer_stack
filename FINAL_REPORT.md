@@ -1,5 +1,9 @@
 # Implementation report
 
+This report records the September 11 implementation. See the
+[September 23 upgrade review](docs/upstream-review-2026-09.md) for the active v3
+runtime/artifact migration and live network discovery changes.
+
 The stack now has authoritative provenance, explicit DFlash2 support, coherent
 workload profiles, actual agent-work measurements and durable bounded Hermes
 jobs. Stock/balanced/MTP3 remains the recommended default. No remote supervisor

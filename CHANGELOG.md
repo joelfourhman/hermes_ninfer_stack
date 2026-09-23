@@ -8,6 +8,11 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- NInfer September 23 v3 runtime pin, deterministic offline upgrades of all three
+  model artifacts, preserved v2 originals, and maintained Qwen3.8 chat templates.
+- Authenticated live model/context discovery for LAN Hermes; context-aware model
+  IDs, safe compression clamping, and `connect` to refresh before each CLI chat.
+
 - One-command `use` presets for complete model/runtime/decoder selection with a
   single restart, download confirmation, Hermes synchronization and rollback.
 - Authoritative source/model/profile manifest with image, binary CLI, SHA-256,

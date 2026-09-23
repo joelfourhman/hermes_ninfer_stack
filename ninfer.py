@@ -32,7 +32,7 @@ from stack.config import (  # noqa: E402 - keep public compatibility exports bes
     DEPLOYMENT_PRESETS, MODEL_PROFILES, RUNTIME_PROFILES, ModelProfile, RuntimeProfile,
     NINFER_COMMIT, NINFER_URL, DEFAULT_MODEL_PROFILE, DEFAULT_RUNTIME_PROFILE,
     DEFAULT_GOAL_MAX_TURNS,
-    runtime_env_values, validate_spec,
+    runtime_env_values, validate_spec, public_model_id,
 )
 
 STOCK_MODEL_FILE = MODEL_PROFILES["stock"].filename
@@ -105,6 +105,7 @@ def run(
     capture: bool = False,
     env: dict[str, str] | None = None,
     redact: set[int] | None = None,
+    cwd: Path | None = None,
 ) -> subprocess.CompletedProcess[str]:
     display_command = list(command)
     for index in redact or set():
@@ -113,7 +114,7 @@ def run(
     try:
         return subprocess.run(
             command,
-            cwd=ROOT,
+            cwd=cwd or ROOT,
             check=check,
             text=True,
             env=env,
@@ -232,7 +233,9 @@ def configured_model_profile_key() -> str:
         return configured
     filename = values.get("NINFER_MODEL_FILE", "")
     for profile in MODEL_PROFILES.values():
-        if filename == profile.filename:
+        if filename == profile.filename or (
+            profile.migration and filename == profile.migration["filename"]
+        ):
             return profile.key
     return DEFAULT_MODEL_PROFILE
 
@@ -305,15 +308,18 @@ def check_setup_prerequisites(profile: ModelProfile | None = None) -> str:
     else:
         free = shutil.disk_usage(ROOT).free
         free_gib = free / 1024**3
-        if free < profile.required_free_gib * 1024**3:
+        required_gib = profile.required_free_gib
+        if profile.migration and (ROOT / "models" / profile.migration["filename"]).is_file():
+            required_gib = (profile.expected_bytes + 1024**3 - 1) // 1024**3 + 2
+        if free < required_gib * 1024**3:
             raise StackError(
                 f"The drive containing this project has {free_gib:.1f} GiB free; setup needs at "
-                f"least {profile.required_free_gib} GiB for {profile.label}. "
+                f"least {required_gib} GiB for {profile.label}. "
                 f"Free some space, then rerun '{SETUP_COMMAND}'."
             )
         print(
             f"Disk space is ready ({free_gib:.1f} GiB free; "
-            f"{profile.required_free_gib} GiB required for this model profile)."
+            f"{required_gib} GiB required for this model profile)."
         )
 
     if shutil.which("git.exe" if os.name == "nt" else "git") is None:
@@ -579,6 +585,7 @@ def merge_env(detected_gpu_device: str | None = None) -> None:
                 profile.key
                 for profile in MODEL_PROFILES.values()
                 if profile.filename == existing_filename
+                or (profile.migration and profile.migration["filename"] == existing_filename)
             ),
             DEFAULT_MODEL_PROFILE,
         )
@@ -590,6 +597,13 @@ def merge_env(detected_gpu_device: str | None = None) -> None:
         else DEFAULT_RUNTIME_PROFILE
     )
     forced.update(runtime_env_values(runtime_profile(selected_runtime)))
+    selected_model = model_profile(forced.get(
+        "NINFER_MODEL_PROFILE", original_values.get("NINFER_MODEL_PROFILE", DEFAULT_MODEL_PROFILE)
+    ))
+    forced["NINFER_MODEL_FILE"] = selected_model.filename
+    forced["NINFER_MODEL_ID"] = public_model_id(
+        selected_model.key, forced["NINFER_CONTEXT_LENGTH"]
+    )
     forced["NINFER_SOURCE_REVISION"] = NINFER_COMMIT
     configured_access = original_values.get("NINFER_ACCESS_MODE", "")
     configured_bind = original_values.get("NINFER_BIND_ADDRESS", "")
@@ -906,7 +920,8 @@ def require_model_artifact(profile: ModelProfile) -> dict[str, object]:
         "bytes": profile.expected_bytes,
         "sha256": actual,
         "profile": profile.key,
-        "verified_published_artifact": True,
+        "verified_published_artifact": profile.migration is None,
+        "verified_derived_artifact": profile.migration is not None,
     }
 
 
@@ -922,6 +937,17 @@ def prepare_model(args: argparse.Namespace) -> bool:
         manifest = require_model_artifact(profile)
         print(f"Verified {profile.filename}: {manifest['sha256']}")
         return True
+    if profile.migration:
+        source = ROOT / "models" / profile.migration["filename"]
+        if source.is_file():
+            from stack.artifacts import upgrade
+            from stack.provenance import verify_source
+            verify_source(ROOT)
+            print(f"Upgrading {source.name} to v3; keeping the original weights file.")
+            upgrade(source, ROOT / "models" / profile.filename,
+                    ROOT / "ninfer/tools", profile.migration["sha256"])
+            require_model_artifact(profile)
+            return True
     if not args.yes and not confirm_model_download(profile):
         print("Model preparation cancelled. Existing models and partial downloads were preserved.")
         return False
@@ -975,14 +1001,21 @@ def activate_model_profile(profile: ModelProfile) -> Path | None:
         {
             "NINFER_MODEL_PROFILE": profile.key,
             "NINFER_MODEL_FILE": profile.filename,
-            "NINFER_MODEL_ID": "qwen-local",
+            "NINFER_MODEL_ID": public_model_id(
+                profile.key, read_env().get("NINFER_CONTEXT_LENGTH", "131072")
+            ),
             **speculation,
         }
     )
 
 
 def activate_runtime_profile(profile: RuntimeProfile) -> Path | None:
-    return replace_env_values(runtime_env_values(profile))
+    return replace_env_values({
+        **runtime_env_values(profile),
+        "NINFER_MODEL_ID": public_model_id(
+            read_env().get("NINFER_MODEL_PROFILE", DEFAULT_MODEL_PROFILE), profile.context_length
+        ),
+    })
 
 
 def address_is_assigned_locally(address: str) -> bool:
@@ -1087,6 +1120,12 @@ def activate_and_start_network(mode: str, address: str | None) -> None:
 
 def activate_and_start_profile(profile: ModelProfile, *, build_runtime: bool) -> None:
     previous_profile = model_profile(configured_model_profile_key())
+    resolved = native_hermes_command()
+    backups = {}
+    if resolved is not None:
+        profile_home = Path(resolved[1]["HERMES_HOME"]).expanduser().resolve()
+        backups = {p: p.read_bytes() if p.exists() else None
+                   for p in (profile_home / "config.yaml", profile_home / ".env")}
     env_backup = activate_model_profile(profile)
     try:
         validate_env()
@@ -1094,7 +1133,14 @@ def activate_and_start_profile(profile: ModelProfile, *, build_runtime: bool) ->
             print("Building the local AI service. The first build can take several minutes...")
             compose("build", "ninfer")
         start_ninfer(read_env())
-    except StackError as selected_error:
+        if resolved is not None:
+            configure_native_hermes(*resolved, read_env(), preserve_execution=True)
+    except (StackError, OSError) as selected_error:
+        for path, contents in backups.items():
+            if contents is None:
+                path.unlink(missing_ok=True)
+            else:
+                path.write_bytes(contents)
         if env_backup is not None and model_artifact_candidate_ready(previous_profile):
             print("The selected model did not pass startup. Restoring the previous profile...")
             failed_env = ENV_FILE.with_name(
@@ -1193,43 +1239,25 @@ def normalize_ninfer_client_endpoint(value: str) -> str:
     return candidate
 
 
-def require_ninfer_endpoint(endpoint: str, api_key: str, model_id: str = "qwen-local") -> None:
-    request = urllib.request.Request(
-        f"{endpoint}/models",
-        headers={"Authorization": f"Bearer {api_key}"},
-    )
+def require_ninfer_endpoint(endpoint: str, api_key: str, model_id: str | None = None):
+    from stack.discovery import discover
+
     try:
-        with urllib.request.urlopen(request, timeout=30) as response:
-            payload = json.loads(response.read())
+        return discover(endpoint, api_key, model_id)
     except urllib.error.HTTPError as exc:
         if exc.code in {401, 403}:
-            raise StackError("NInfer rejected the supplied LAN client key") from exc
+            raise StackError("NInfer rejected the supplied client key") from exc
         raise StackError(f"NInfer returned HTTP {exc.code} at {endpoint}") from exc
-    except (urllib.error.URLError, json.JSONDecodeError) as exc:
-        raise StackError(f"NInfer is not reachable at {endpoint}: {exc}") from exc
-    advertised = [item.get("id") for item in payload.get("data", [])]
-    if model_id not in advertised:
-        raise StackError(f"NInfer does not advertise the configured model {model_id!r}")
+    except (urllib.error.URLError, ValueError, TimeoutError) as exc:
+        raise StackError(f"Cannot discover NInfer at {endpoint}: {exc}") from exc
 
 
 def require_ninfer_api(values: dict[str, str]) -> None:
-    endpoint = ninfer_endpoint(values)
-    request = urllib.request.Request(
-        f"{endpoint}/models",
-        headers={"Authorization": f"Bearer {values['NINFER_API_KEY']}"},
+    model = require_ninfer_endpoint(
+        ninfer_endpoint(values), values["NINFER_API_KEY"], values["NINFER_MODEL_ID"]
     )
-    try:
-        with urllib.request.urlopen(request, timeout=30) as response:
-            payload = json.loads(response.read())
-    except (urllib.error.URLError, json.JSONDecodeError) as exc:
-        raise StackError(
-            f"NInfer is not reachable at {endpoint}. Run 'python ninfer.py up' and try again: {exc}"
-        ) from exc
-    advertised = [item.get("id") for item in payload.get("data", [])]
-    if values["NINFER_MODEL_ID"] not in advertised:
-        raise StackError(
-            f"NInfer does not advertise the configured model {values['NINFER_MODEL_ID']!r}"
-        )
+    if model.context_length != int(values["NINFER_CONTEXT_LENGTH"]):
+        raise StackError("Running NInfer context differs from configuration; recreate the service")
 
 
 def require_ninfer_generation(values: dict[str, str]) -> None:
@@ -1354,7 +1382,10 @@ def configure_hermes_preset_profile(
     if profile_home.parent != profiles_root:
         raise StackError("Resolved Hermes profile outside the profiles directory")
 
-    created = not profile_home.is_dir()
+    # A deleted Hermes profile can leave a directory behind. Its tombstone is
+    # authoritative; let the official create command handle residual directories.
+    created = not profile_home.is_dir() or (profiles_root / ".deleted" / profile_name).exists()
+    created_here = False
     backups: dict[Path, bytes | None] = {}
     if not created:
         backups = {
@@ -1379,6 +1410,7 @@ def configure_hermes_preset_profile(
             )
             if not profile_home.is_dir():
                 raise StackError(f"Hermes did not create profile {profile_name}")
+            created_here = True
 
         profile_env = dict(base_env)
         profile_env["HERMES_HOME"] = str(profile_home)
@@ -1396,7 +1428,7 @@ def configure_hermes_preset_profile(
             run([*command, "profile", "use", profile_name], env=profile_cli_env)
         return profile_name
     except Exception:
-        if created and profile_home.is_dir():
+        if created_here and profile_home.is_dir():
             run(
                 [*command, "profile", "delete", "-y", profile_name],
                 check=False,
@@ -1685,7 +1717,32 @@ def setup(args: argparse.Namespace) -> None:
         print("Hermes Desktop was skipped. Install it later with: python ninfer.py install-hermes")
 
 
+def ensure_runtime_image() -> None:
+    """Upgrade stale images while keeping an unchanged service/cache resident."""
+    from stack.provenance import verify_image, verify_source
+    verify_source(ROOT)
+    image_names = compose("config", "--images", "ninfer", capture=True).stdout.splitlines()
+    if len(image_names) != 1 or not image_names[0].strip():
+        raise StackError("Compose did not resolve exactly one NInfer image")
+    result = run(
+        [docker_executable() or "docker", "image", "inspect", image_names[0].strip(),
+         "--format", "{{json .Config.Labels}}"],
+        check=False, capture=True,
+    )
+    if result.returncode == 0:
+        try:
+            labels = json.loads(result.stdout)
+            if isinstance(labels, dict):
+                verify_image(labels)
+                return
+        except ValueError:
+            pass
+    print("Building the image for the reviewed source/CUDA pin...")
+    compose("build", "ninfer")
+
+
 def start_ninfer(values: dict[str, str]) -> None:
+    ensure_runtime_image()
     print("Starting the model. This can take several minutes the first time...")
     up_command = (
         "up",
@@ -1752,10 +1809,18 @@ def up(_: argparse.Namespace) -> None:
     check_setup_prerequisites()
     if not ENV_FILE.is_file():
         raise StackError(f"Setup has not been completed. Start with '{SETUP_COMMAND}'.")
+    initialize_ninfer_source()
     merge_env()
     validate_env()
+    selected = model_profile(configured_model_profile_key())
+    if not model_artifact_candidate_ready(selected):
+        if not prepare_model(argparse.Namespace(model=selected.key, yes=False)):
+            return
     values = read_env()
     start_ninfer(values)
+    resolved = native_hermes_command()
+    if resolved is not None:
+        configure_native_hermes(*resolved, values, preserve_execution=True)
     print("READY: the model is loaded and Hermes Desktop can use it now.")
 
 

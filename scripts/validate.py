@@ -18,7 +18,7 @@ from stack.provenance import verify_source
 EXPECTED_NINFER_COMMIT = MANIFEST["ninfer"]["commit"]
 EXPECTED_STOCK_MODEL_FILE = MODEL_PROFILES["stock"].filename
 EXPECTED_UNCENSORED_MODEL_FILE = MODEL_PROFILES["uncensored"].filename
-EXPECTED_MODEL_ID = "qwen-local"
+EXPECTED_MODEL_ID = "qwen3.8-27b-stock-ctx131072"
 DEFAULT_RUNTIME = runtime_env_values(RUNTIME_PROFILES[MANIFEST["defaults"]["runtime"]])
 
 errors: list[str] = []

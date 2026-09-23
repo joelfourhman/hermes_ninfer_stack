@@ -429,7 +429,7 @@ def main() -> int:
     actual_sha = checksum.hexdigest()
     if actual_sha != profile["sha256"]:
         raise Failure(f"{profile_key.capitalize()} model checksum does not match the pin")
-    detail = "pinned published artifact"
+    detail = "pinned derived v3 artifact" if MODELS[profile_key].migration else "pinned published artifact"
     passed(f"{profile['label']} checksum matches ({detail})")
 
     begin("NInfer container health")
@@ -465,9 +465,14 @@ def main() -> int:
 
     begin("NInfer authenticated API")
     models = request_json(models_url, token=api_key, timeout=30)
-    if model_id not in [item.get("id") for item in models.get("data", [])]:
-        raise Failure(f"NInfer does not advertise model ID {model_id}")
-    passed(f"GET /v1/models advertises {model_id}")
+    from stack.discovery import parse_model
+    try:
+        served = parse_model(models, model_id)
+    except ValueError as exc:
+        raise Failure(str(exc)) from exc
+    if served.context_length != int(context):
+        raise Failure("Advertised context does not match the active runtime")
+    passed(f"GET /v1/models advertises {model_id}, context {served.context_length:,}")
 
     begin("Direct NInfer generation")
     direct = request_json(

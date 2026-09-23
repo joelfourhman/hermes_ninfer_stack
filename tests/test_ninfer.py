@@ -303,6 +303,29 @@ class HermesDesktopConfigurationTests(unittest.TestCase):
             "http://192.168.1.20:8080/v1",
         )
 
+    def test_deleted_profile_residual_directory_uses_official_create(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            profile = root / "profiles/ninfer-autonomous"
+            profile.mkdir(parents=True)
+            deleted = root / "profiles/.deleted/ninfer-autonomous"
+            deleted.parent.mkdir()
+            deleted.write_text("deleted")
+            config = profile / "config.yaml"
+            config.write_text("retained identity")
+            with (
+                mock.patch.object(ninfer, "run", side_effect=ninfer.StackError("create refused")) as run,
+                mock.patch.object(ninfer, "configure_native_hermes") as configure,
+            ):
+                with self.assertRaisesRegex(ninfer.StackError, "create refused"):
+                    ninfer.configure_hermes_preset_profile(
+                        ["hermes"], {"HERMES_HOME": str(root)}, "autonomous", sample_values()
+                    )
+            self.assertEqual(run.call_count, 1)
+            self.assertEqual(run.call_args.args[0][1:3], ["profile", "create"])
+            self.assertEqual(config.read_text(), "retained identity")
+            configure.assert_not_called()
+
     def test_native_configuration_uses_named_authenticated_provider(self) -> None:
         calls: list[tuple[list[str], dict[str, object]]] = []
         with tempfile.TemporaryDirectory() as temporary:
@@ -977,6 +1000,10 @@ class BeginnerRecoveryTests(unittest.TestCase):
             env_file = Path(temporary) / ".env"
             env_file.write_text("configured=true\n", encoding="utf-8")
             with (
+                mock.patch.object(ninfer, "initialize_ninfer_source"),
+                mock.patch.object(ninfer, "model_artifact_candidate_ready", return_value=True),
+                mock.patch.object(ninfer, "ensure_runtime_image"),
+                mock.patch.object(ninfer, "native_hermes_command", return_value=None),
                 mock.patch.object(ninfer, "ENV_FILE", env_file),
                 mock.patch.object(
                     ninfer,
@@ -1016,6 +1043,7 @@ class BeginnerRecoveryTests(unittest.TestCase):
 
         api_check = mock.Mock(side_effect=[ninfer.StackError("connection refused"), None])
         with (
+            mock.patch.object(ninfer, "ensure_runtime_image"),
             mock.patch.object(ninfer, "compose", side_effect=fake_compose),
             mock.patch.object(ninfer, "require_ninfer_api", api_check),
             mock.patch.object(ninfer, "require_ninfer_generation") as generation,

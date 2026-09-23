@@ -52,6 +52,14 @@ class ModelProfile:
     source_filename: str
     quantization: str
     capabilities: list[str]
+    migration: dict | None = None
+
+
+def public_model_id(model_key: str, context: int | str) -> str:
+    """Changing weights or context invalidates stale remote Hermes profiles."""
+    if model_key not in MODEL_PROFILES:
+        raise ValueError(f"Unknown model profile: {model_key}")
+    return f"qwen3.8-27b-{model_key}-ctx{int(context)}"
 
 
 @dataclass(frozen=True)
@@ -145,6 +153,15 @@ def validate_manifest() -> None:
             raise ValueError(f"Invalid model identity/checksum: {key}")
         if not re.fullmatch(r"[0-9a-f]{40}", model.revision) or model.expected_bytes <= 0:
             raise ValueError(f"Invalid model revision/size: {key}")
+        if model.migration:
+            source = model.migration
+            if (
+                not re.fullmatch(r"[0-9a-f]{64}", source["sha256"])
+                or source["expected_bytes"] <= 0
+                or not re.fullmatch(r"[A-Za-z0-9_.-]+", source["filename"])
+                or source["filename"] == model.filename
+            ):
+                raise ValueError(f"Invalid migration source: {key}")
         if (
             Path(model.filename).name != model.filename
             or "/" in model.filename

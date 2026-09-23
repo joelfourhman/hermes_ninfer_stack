@@ -76,6 +76,8 @@ SHA-256 checksums are generated in the [configuration reference](docs/generated-
 from [stack/manifest.json](stack/manifest.json). NInfer is pinned to an audited
 upstream master commit; it is not represented as a tagged stable release.
 `build`, `verify` and `validate` check source/image/artifact/CLI provenance.
+[The September upgrade review](docs/upstream-review-2026-09.md) covers the v3
+artifact migration, maintained chat templates and new Qwen kernel routes.
 [AUDIT.md](AUDIT.md) records the previous deployment and verified upstream behavior.
 
 ## Choose a workload
@@ -239,11 +241,26 @@ hermes -p ninfer-autonomous chat
 ```
 
 The first command securely prompts for the NInfer key, verifies the endpoint and
-writes only the isolated `ninfer-autonomous` profile. Plain `hermes` continues to
+writes only the isolated `ninfer-autonomous` profile using the **server's actual
+model and context limit**. The client preset does not switch the server model.
+For discovery on every new CLI connection, use:
+
+```text
+python ninfer.py connect autonomous --endpoint http://192.168.1.20:8080/v1
+```
+
+When the server changes models or context, refresh saved Desktop profiles with
+`configure-client` and restart Desktop. Model IDs include the artifact profile
+and context ceiling, making outdated configurations detectable. Plain `hermes` continues to
 use the existing default profile and model. Use
 `hermes profile use default` if a NInfer profile was previously made sticky.
 
 ## Maintain and troubleshoot
+
+After pulling this upgrade, `python ninfer.py up` checks out the reviewed pin,
+migrates an existing selected v2 artifact to a separate verified v3 file when
+needed, builds the matching runtime, and synchronizes native Hermes. Keep room
+for both model files. Restart Desktop to reload its provider configuration.
 
 ```text
 python ninfer.py up

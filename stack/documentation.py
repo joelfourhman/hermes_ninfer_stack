@@ -72,6 +72,14 @@ def generated_reference() -> str:
             f"- Speculative capabilities: {', '.join(m.capabilities)}",
             "",
         ]
+        if m.migration:
+            rows += [
+                "Derived reproducibly with the pinned upstream v3 upgrader; original weights retained.",
+                f"- Published v2 source: `{m.migration['filename']}`",
+                f"- Source bytes: {m.migration['expected_bytes']}",
+                f"- Source SHA-256: `{m.migration['sha256']}`",
+                "",
+            ]
     return "\n".join(rows)
 
 

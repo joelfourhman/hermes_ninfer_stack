@@ -14,5 +14,8 @@ RUN uv sync --no-dev --no-install-project
 
 COPY model-downloader/download_model.py /app/download_model.py
 COPY stack/manifest.json /app/manifest.json
+COPY stack/artifacts.py /app/artifacts.py
+COPY ninfer/tools/upgrade_ninfer_v2_to_v3.py /app/tools/upgrade_ninfer_v2_to_v3.py
+COPY ninfer/tools/chat_templates /app/tools/chat_templates
 
 ENTRYPOINT ["/opt/downloader/bin/python", "/app/download_model.py"]

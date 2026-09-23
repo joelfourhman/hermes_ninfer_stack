@@ -19,6 +19,31 @@ class LiveApiTests(unittest.TestCase):
             ninfer.ninfer_endpoint(values), values["NINFER_API_KEY"], values["NINFER_MODEL_ID"]
         )
 
+    def test_model_and_context_discovery_local_and_lan(self):
+        from stack.discovery import discover
+        values = ninfer.read_env()
+        endpoints = [ninfer.ninfer_endpoint(values)]
+        if values.get("NINFER_ACCESS_MODE") == "lan":
+            address = ninfer.lan_endpoint(values)
+            self.assertIsNotNone(address)
+            endpoints.append(address)
+        for endpoint in endpoints:
+            with self.subTest(endpoint=endpoint):
+                model = discover(endpoint, values["NINFER_API_KEY"])
+                self.assertEqual(model.id, values["NINFER_MODEL_ID"])
+                self.assertEqual(model.context_length, int(values["NINFER_CONTEXT_LENGTH"]))
+
+    def test_stale_model_is_rejected(self):
+        from urllib.error import HTTPError
+        with self.assertRaises(HTTPError) as caught:
+            self.client.json("/chat/completions", {
+                "model": "stale-profile-model",
+                "messages": [{"role": "user", "content": "Hello"}],
+                "max_tokens": 8,
+            })
+        self.assertEqual(caught.exception.code, 404)
+        caught.exception.close()
+
     def test_aggregate_chat(self):
         result = self.client.json(
             "/chat/completions",

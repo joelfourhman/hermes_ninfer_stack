@@ -95,8 +95,8 @@ already configured in Hermes. Never post the key in an issue.
 ## Setup pauses before the model download
 
 This is expected after declining the explicit transfer prompt. No model data is
-downloaded and later stages do not run. Ensure at least 24 GiB is free for
-stock or 21 GiB for uncensored, then rerun:
+downloaded and later stages do not run. Ensure at least 48 GiB is free for
+stock or 42 GiB for uncensored (original plus upgraded artifact), then rerun:
 
 ```text
 python ninfer.py setup

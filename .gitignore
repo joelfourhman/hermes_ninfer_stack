@@ -34,6 +34,7 @@ workspace/
 benchmarks/*
 !benchmarks/README.md
 !benchmarks/measured-summary.json
+!benchmarks/measured-v3-summary.json
 
 # Local build, test, and runtime output
 build/

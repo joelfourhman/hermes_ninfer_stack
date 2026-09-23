@@ -35,13 +35,24 @@ manifest profile for reproducible custom settings instead.
 Profile changes update the backend and native Hermes provider context,
 compression threshold and turn limit. They preserve terminal/approval settings,
 back up local config and restore both sides when startup or synchronization fails.
-`configure-client PRESET --endpoint URL --no-activate` applies the same mapping
-to an isolated profile on another trusted LAN computer while leaving its active
-default profile unchanged. Invoke NInfer with `hermes -p ninfer-PRESET` and use
+`configure-client PRESET --endpoint URL --no-activate` discovers the actual model
+ID and `max_model_len` from the authenticated server. The client preset selects
+compression/turn policy; it cannot switch the remote model, decoder or capacity.
+Compression is clamped to half the server's window. Missing or ambiguous metadata
+fails without changing Hermes. The active default profile remains unchanged.
+Use `connect PRESET --endpoint URL` to refresh discovery before each CLI chat.
+For a saved configuration, invoke NInfer with `hermes -p ninfer-PRESET` and use
 the existing provider with plain `hermes`, or explicitly with `hermes -p default`.
 Restart Desktop after profile changes. The initial `install-hermes` setup retains
 the existing project behavior: native local tools and manual approvals, removing
 obsolete project-imposed working-directory overrides.
+
+The server advertises IDs such as `qwen3.8-27b-stock-ctx131072`. Changing model or
+context changes the ID, so stale clients fail instead of silently using an old
+context budget. Rerun `configure-client` and restart Desktop after a server switch.
+The advertised context is the total **prompt plus output limit**, not a global
+conversation occupancy: each Hermes session has its own history. Native `usage`
+and `timings` report the tokens consumed by each individual request.
 
 Desktop and isolated jobs share a compression policy from `stack/config.py`:
 compress by 50% of the window, with the earlier absolute cap in the manifest;

@@ -30,7 +30,7 @@ services:
         org.opencontainers.image.base.name: docker.io/nvidia/cuda:13.1.2-runtime-ubuntu24.04
     command:
       - ninfer-serve
-      - /models/${NINFER_MODEL_FILE:-qwen3_8_27b_nvfp4.ninfer}
+      - /models/${NINFER_MODEL_FILE:-qwen3_8_27b_nvfp4.v3.ninfer}
       - --host
       - 0.0.0.0
       - --port
@@ -38,7 +38,7 @@ services:
       - --api-key
       - ${NINFER_API_KEY:?Run python ninfer.py setup to create .env}
       - --model-id
-      - ${NINFER_MODEL_ID:-qwen-local}
+      - ${NINFER_MODEL_ID:-qwen3.8-27b-stock-ctx131072}
       - --max-context
       - ${NINFER_CONTEXT_LENGTH:-131072}
       - --kv-capacity

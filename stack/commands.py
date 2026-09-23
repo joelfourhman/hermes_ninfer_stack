@@ -5,11 +5,13 @@ from __future__ import annotations
 import argparse
 import getpass
 import os
+from pathlib import Path
 
 from stack.config import (
     DEPLOYMENT_PRESETS,
     RUNTIME_PROFILES,
     runtime_env_values,
+    public_model_id,
     spec_values,
     validate_spec,
 )
@@ -76,7 +78,7 @@ def use_preset(args: argparse.Namespace) -> None:
     replacements = {
         "NINFER_MODEL_PROFILE": model.key,
         "NINFER_MODEL_FILE": model.filename,
-        "NINFER_MODEL_ID": "qwen-local",
+        "NINFER_MODEL_ID": public_model_id(model.key, runtime.context_length),
         **runtime_env_values(runtime),
         **spec_values(preset.spec),
     }
@@ -122,28 +124,25 @@ def configure_client(args: argparse.Namespace) -> None:
     endpoint = helper.normalize_ninfer_client_endpoint(args.endpoint)
     key = os.environ.get(args.key_env, "").strip()
     if not key:
-        key = getpass.getpass("NInfer LAN API key: ").strip()
+        key = getpass.getpass("NInfer API key: ").strip()
     if not key:
-        raise ValueError(f"Set {args.key_env} or enter the NInfer LAN API key")
+        raise ValueError(f"Set {args.key_env} or enter the NInfer API key")
     resolved = helper.native_hermes_command()
     if resolved is None:
         raise ValueError("Hermes Desktop is not installed on this computer")
 
-    helper.require_ninfer_endpoint(endpoint, key, "qwen-local")
+    server = helper.require_ninfer_endpoint(endpoint, key)
+    print(f"Connected: {server.id}; context {server.context_length:,} tokens (prompt + output).")
+    print("Client profiles use the resident server model; they do not switch remote weights or decoder.")
     preset_keys = tuple(DEPLOYMENT_PRESETS) if args.preset == "all" else (args.preset,)
     configured_profiles = []
     for preset_key in preset_keys:
         preset = DEPLOYMENT_PRESETS[preset_key]
-        model = helper.model_profile(preset.model)
         runtime = helper.runtime_profile(preset.runtime)
-        values = {
+        values = server.client_values({
             "NINFER_API_KEY": key,
-            "NINFER_MODEL_ID": "qwen-local",
-            "NINFER_MODEL_PROFILE": model.key,
-            "NINFER_MODEL_FILE": model.filename,
             **runtime_env_values(runtime),
-            **spec_values(preset.spec),
-        }
+        })
         activate = (
             selected_activation == preset_key
             if args.preset == "all"
@@ -169,6 +168,17 @@ def configure_client(args: argparse.Namespace) -> None:
         state = "configured and activated" if not args.no_activate else "configured"
         print(f"Hermes profile {configured_profiles[0]} is {state} for {endpoint}.")
     print("Your default Hermes profile was not modified. Restart Hermes Desktop to load profiles.")
+
+
+def connect(args: argparse.Namespace) -> None:
+    """Refresh discovery on each connection before launching an isolated chat."""
+    args.no_activate = True
+    args.activate = None
+    configure_client(args)
+    helper = _helper()
+    command, env = helper.native_hermes_command()
+    helper.run([*command, "-p", helper.hermes_profile_name(args.preset), "chat"],
+               env=env, cwd=Path.cwd())
 
 
 def docs(args: argparse.Namespace) -> None:
@@ -214,6 +224,11 @@ def register_commands(sub) -> None:
         help="with 'all', activate this profile after configuring every profile",
     )
     client.set_defaults(func=configure_client)
+    chat = sub.add_parser("connect", help="discover current server model/context and launch Hermes")
+    chat.add_argument("preset", choices=tuple(DEPLOYMENT_PRESETS))
+    chat.add_argument("--endpoint", required=True, help="local or LAN NInfer /v1 URL")
+    chat.add_argument("--key-env", default="NINFER_API_KEY")
+    chat.set_defaults(func=connect)
     sub.add_parser("presets", help="show one-command deployment presets").set_defaults(
         func=show_presets
     )

@@ -1,5 +1,35 @@
 # Implementation state
 
+## Upstream v3 and network discovery — September 23, 2026
+
+- Reviewed 44 upstream commits and selected `594930e7b609efa4bcea3ae4f24cd9d66b5f224f`;
+  submodule gitlink is staged, other implementation edits remain uncommitted.
+- All three existing published artifacts are retained and migrated to reproducible
+  `.v3.ninfer` files. Manifest pins both source and derived hashes. Converter/template
+  text is normalized to LF for Windows/Linux parity; weight bytes are copied unchanged.
+- Authenticated `/v1/models` supplies the actual model/context to network clients.
+  Served IDs include model profile and context; `connect` discovers before each CLI
+  launch, clamps compression and leaves default profile activation unchanged.
+- Source/CUDA image checks rebuild only stale images. `up` migrates the selected
+  artifact when needed and synchronizes local Hermes. Model switches now synchronize
+  Hermes and roll its configuration back if synchronization fails.
+- CUDA runtime and downloader images built. Six real GPU API tests passed, including
+  localhost/LAN discovery, stale-model rejection, tools, reasoning and exact-prefix reuse.
+  Offline suite: 81 tests, 75 passing and 6 live-only skips; lint/docs/repository checks pass.
+- All seven presets passed 3/3 bounded workload runs, plus original
+  uncensored/autonomous 3/3, an actual Hermes coding task, and a two-lane task.
+  DFlash2-11 was faster than DFlash2-7 in this short coding sample; both remain
+  explicit choices. Research's 16-slot candidate had no measured benefit, so
+  the profile retains 8 slots. See `BENCHMARK_RESULTS.md` and the hashed summary.
+- All 11 live verification layers passed, including native Hermes generation.
+  Original uncensored/autonomous/MTP3 is restored at 196,608 context/shared KV;
+  the API key and LAN configuration are unchanged. Repeated startup preserves
+  the resident container/cache. The isolated LAN profile was refreshed without
+  activation; Desktop must restart to load its updated configuration.
+- Docker startup was repaired by preserving its stopped IPC directory as
+  `%LOCALAPPDATA%/Docker/run.before-ninfer-20260923`; no engine data was reset.
+- Existing untracked `HERMES_LONG_RUN_RULES.md` remains untouched.
+
 ## Context reliability follow-up — September 14, 2026
 
 - Active selection is now **uncensored / autonomous / MTP3**: 196,608 context and

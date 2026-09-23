@@ -2,7 +2,7 @@
   "schema_version": 1,
   "ninfer": {
     "repository": "https://github.com/Neroued/ninfer.git",
-    "commit": "d49296868dcc17bd478ec185f0d3a801bcc0bf56",
+    "commit": "594930e7b609efa4bcea3ae4f24cd9d66b5f224f",
     "baseline_commit": "ad0f3d384b5cbcec4a48a3951c287b4e9831443e",
     "cuda_base": "docker.io/nvidia/cuda:13.1.2-runtime-ubuntu24.04",
     "required_cli_flags": [
@@ -43,7 +43,7 @@
     "coding": {
       "key": "coding",
       "label": "Fast coding",
-      "description": "Measured DFlash2 coding setup with the best TTFT",
+      "description": "Conservative DFlash2 coding setup with a 7-token draft window",
       "model": "stock-dflash2",
       "runtime": "coding",
       "spec": "dflash2-7"
@@ -51,7 +51,7 @@
     "coding-fast": {
       "key": "coding-fast",
       "label": "Fastest measured coding",
-      "description": "DFlash2-11; use while the RTX 5090 is otherwise idle",
+      "description": "DFlash2-11, faster in the latest short coding sample; use on an otherwise idle RTX 5090",
       "model": "stock-dflash2",
       "runtime": "coding",
       "spec": "dflash2-11"
@@ -59,7 +59,7 @@
     "research": {
       "key": "research",
       "label": "Large-context research",
-      "description": "240K stock/MTP3 path qualified for growing sessions",
+      "description": "240K stock/MTP3 ceiling for repository and document work",
       "model": "stock",
       "runtime": "research",
       "spec": "mtp3"
@@ -93,54 +93,69 @@
     "stock": {
       "key": "stock",
       "label": "Stock Qwen3.8-27B NVFP4",
-      "filename": "qwen3_8_27b_nvfp4.ninfer",
-      "sha256": "bb3360522a06e136e0367f5703414d26272b7285c8a6ab6194135c17dbd81b32",
-      "expected_bytes": 21492695040,
-      "required_free_gib": 24,
-      "transfer_description": "20.02 GiB verified artifact download",
+      "filename": "qwen3_8_27b_nvfp4.v3.ninfer",
+      "sha256": "05e5674ee561d443acae167e4e9b3b06cc67ce429c341beacbfacb057391e1ca",
+      "expected_bytes": 21492938224,
+      "required_free_gib": 48,
+      "transfer_description": "20.02 GiB verified artifact download; v3 upgrade retains source and requires a second artifact-sized allocation",
       "final_size_gib": "20.02",
       "repository": "neroued/Qwen3.8-27B-nvfp4-NInfer",
       "revision": "204e3d92c30d9d05f3300d2f52e443ad1edf6ddf",
       "source_filename": "qwen3_8_27b_nvfp4.ninfer",
-      "quantization": "NInfer NVFP4",
+      "quantization": "NInfer NVFP4 (v3 framing, original weight bytes)",
       "capabilities": [
         "mtp"
-      ]
+      ],
+      "migration": {
+        "filename": "qwen3_8_27b_nvfp4.ninfer",
+        "sha256": "bb3360522a06e136e0367f5703414d26272b7285c8a6ab6194135c17dbd81b32",
+        "expected_bytes": 21492695040
+      }
     },
     "uncensored": {
       "key": "uncensored",
       "label": "Qwen3.8-27B Uncensored",
-      "filename": "qwen3_8_27b_uncensored.ninfer",
-      "sha256": "714565ed29db4415322e9bc13a3464dc1fd8fcc911234740a79af67934e49969",
-      "expected_bytes": 18210531328,
-      "required_free_gib": 21,
-      "transfer_description": "16.96 GiB verified artifact download",
+      "filename": "qwen3_8_27b_uncensored.v3.ninfer",
+      "sha256": "c7eeed95e359bdd2da22cc685525047c32a78ca7c0b00798243a3a40b2b768e7",
+      "expected_bytes": 18210749936,
+      "required_free_gib": 42,
+      "transfer_description": "16.96 GiB verified artifact download; v3 upgrade retains source and requires a second artifact-sized allocation",
       "final_size_gib": "16.96",
       "repository": "DogOnKeyboard/Qwen3.8-27B-Uncensored-NInfer",
       "revision": "1e15b5919b796bcd96621f13572ad92b5555b641",
       "source_filename": "qwen3_8_27b_uncensored.ninfer",
-      "quantization": "NInfer qwen3_8_27b-v1 groupwise-int",
+      "quantization": "NInfer qwen3_8_27b-v1 groupwise-int (v3 framing, original weight bytes)",
       "capabilities": [
         "mtp"
-      ]
+      ],
+      "migration": {
+        "filename": "qwen3_8_27b_uncensored.ninfer",
+        "sha256": "714565ed29db4415322e9bc13a3464dc1fd8fcc911234740a79af67934e49969",
+        "expected_bytes": 18210531328
+      }
     },
     "stock-dflash2": {
       "key": "stock-dflash2",
-      "label": "Stock Qwen3.8 NVFP4 v2 with DFlash2 (opt-in)",
-      "filename": "qwen3_8_27b_nvfp4_dflash2.ninfer",
-      "sha256": "552c374c685dce302603b95fbe940fb04243c0cd44c083efc644ad3d980d462c",
-      "expected_bytes": 23719496192,
-      "required_free_gib": 27,
-      "transfer_description": "22.09 GiB verified companion artifact download",
+      "label": "Stock Qwen3.8 NVFP4 with DFlash2 (opt-in)",
+      "filename": "qwen3_8_27b_nvfp4_dflash2.v3.ninfer",
+      "sha256": "579c0f33d14513c9f0b58b58fb692c00ec4c8922523120a8b465a29de83361c5",
+      "expected_bytes": 23719759856,
+      "required_free_gib": 54,
+      "transfer_description": "22.09 GiB verified companion artifact download; v3 upgrade retains source and requires a second artifact-sized allocation",
       "final_size_gib": "22.09",
       "repository": "neroued/Qwen3.8-27B-nvfp4-NInfer",
       "revision": "11dbbbbbc33db198afe2f02c9232c771ff7031be",
       "source_filename": "qwen3_8_27b_nvfp4.ninfer",
-      "quantization": "NInfer NVFP4",
+      "quantization": "NInfer NVFP4 (v3 framing, original weight bytes)",
       "capabilities": [
         "mtp",
         "dflash2"
-      ]
+      ],
+      "migration": {
+        "filename": "qwen3_8_27b_nvfp4_dflash2.ninfer",
+        "sha256": "552c374c685dce302603b95fbe940fb04243c0cd44c083efc644ad3d980d462c",
+        "expected_bytes": 23719496192
+      }
     }
   },
   "profiles": {
@@ -159,7 +174,7 @@
       "preserve_thinking": true,
       "compression_threshold_tokens": 55000,
       "max_turns": 100000,
-      "qualification": "legacy configuration; remeasure on new source"
+      "qualification": "v3 RTX 5090 startup and 3/3 coding fixtures passed on 2026-09-23; not a long-session soak"
     },
     "single-session": {
       "key": "single-session",
@@ -176,7 +191,7 @@
       "preserve_thinking": true,
       "compression_threshold_tokens": 55000,
       "max_turns": 100000,
-      "qualification": "legacy configuration; remeasure on new source"
+      "qualification": "candidate; this capacity was not separately measured on v3"
     },
     "max-context": {
       "key": "max-context",
@@ -193,7 +208,7 @@
       "preserve_thinking": true,
       "compression_threshold_tokens": 100000,
       "max_turns": 100000,
-      "qualification": "legacy configuration; remeasure on new source"
+      "qualification": "v3 uncensored/240K startup and 3/3 short coding fixtures passed; full-window quality unqualified"
     },
     "interactive": {
       "key": "interactive",
@@ -210,7 +225,7 @@
       "preserve_thinking": true,
       "compression_threshold_tokens": 55000,
       "max_turns": 100000,
-      "qualification": "candidate; validate VRAM and workload on target GPU"
+      "qualification": "same capacities as measured balanced; not separately workload-tested on v3"
     },
     "coding": {
       "key": "coding",
@@ -227,7 +242,7 @@
       "preserve_thinking": true,
       "compression_threshold_tokens": 80000,
       "max_turns": 100000,
-      "qualification": "196608 shared KV selected after DFlash2-7 failed the 240000 reservation on RTX 5090; see BENCHMARK_RESULTS.md"
+      "qualification": "v3 DFlash2-7 and -11 each passed 3/3 coding fixtures at 196608 KV; one native Hermes DFlash2-7 task passed; 240K DFlash2 remains unqualified"
     },
     "research": {
       "key": "research",
@@ -244,7 +259,7 @@
       "preserve_thinking": true,
       "compression_threshold_tokens": 100000,
       "max_turns": 100000,
-      "qualification": "candidate; validate VRAM and workload on target GPU"
+      "qualification": "v3 stock/240K startup and 3/3 research fixtures passed, reaching 86058 input tokens; full-window quality unqualified"
     },
     "autonomous": {
       "key": "autonomous",
@@ -261,7 +276,7 @@
       "preserve_thinking": true,
       "compression_threshold_tokens": 80000,
       "max_turns": 100000,
-      "qualification": "shares the reduced coding KV budget; multi-hour stability remains unqualified"
+      "qualification": "v3 stock and uncensored each passed 3/3 short coding fixtures; multi-hour stability remains unqualified"
     },
     "low-vram": {
       "key": "low-vram",
@@ -278,7 +293,7 @@
       "preserve_thinking": true,
       "compression_threshold_tokens": 24000,
       "max_turns": 100000,
-      "qualification": "candidate; validate VRAM and workload on target GPU"
+      "qualification": "v3 stock/64K startup and 3/3 coding fixtures passed; sampled peak 24448 MiB on RTX 5090"
     }
   }
 }

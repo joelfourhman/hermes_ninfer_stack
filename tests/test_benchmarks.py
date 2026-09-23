@@ -12,13 +12,32 @@ from unittest.mock import Mock, patch
 from stack.api import Client, Completion
 from stack.bench_agent import run_workload
 from stack.config import DEPLOYMENT_PRESETS, MODEL_PROFILES, RUNTIME_PROFILES
-from stack.commands import configure_client, use_preset
+from stack.commands import configure_client, connect, use_preset
+from stack.discovery import ServerModel
 from stack.metrics import parse_native_logs
 from stack.testing import fake_client
 from stack.workloads import Workspace, validate_fixture_code
 
 
 class BenchmarkTests(unittest.TestCase):
+    def test_connect_refreshes_before_launch_without_changing_active_profile(self):
+        helper = Mock()
+        helper.native_hermes_command.return_value = (["hermes"], {"HERMES_HOME": "home"})
+        helper.hermes_profile_name.return_value = "ninfer-coding"
+        args = argparse.Namespace(preset="coding", endpoint="http://127.0.0.1:8080/v1")
+        with patch("stack.commands._helper", return_value=helper), patch("stack.commands.configure_client") as refresh:
+            connect(args)
+            refresh.assert_called_once_with(args)
+            self.assertTrue(args.no_activate)
+            helper.run.assert_called_once_with(
+                ["hermes", "-p", "ninfer-coding", "chat"], env={"HERMES_HOME": "home"}, cwd=Path.cwd()
+            )
+            helper.run.reset_mock()
+            refresh.side_effect = ValueError("missing server context")
+            with self.assertRaises(ValueError):
+                connect(args)
+            helper.run.assert_not_called()
+
     def test_complete_preset_uses_one_service_restart(self):
         class Helper:
             ENV_FILE = Path("configured")
@@ -126,6 +145,7 @@ class BenchmarkTests(unittest.TestCase):
 
     def test_lan_client_configures_matching_profile_with_environment_key(self):
         helper = Mock()
+        helper.require_ninfer_endpoint.return_value = ServerModel("qwen3.8-27b-uncensored-ctx65536", 65536)
         helper.normalize_ninfer_client_endpoint.return_value = "http://192.168.1.20:8080/v1"
         helper.native_hermes_command.return_value = (
             ["hermes"],
@@ -150,16 +170,20 @@ class BenchmarkTests(unittest.TestCase):
         helper.require_ninfer_endpoint.assert_called_once_with(
             "http://192.168.1.20:8080/v1",
             "secret-key",
-            "qwen-local",
         )
         call = helper.configure_hermes_preset_profile.call_args
         self.assertEqual(call.args[2], "coding")
         self.assertEqual(call.kwargs["endpoint"], "http://192.168.1.20:8080/v1")
         self.assertEqual(call.kwargs["api_key"], "secret-key")
         self.assertTrue(call.kwargs["activate"])
+        self.assertEqual(call.args[3]["NINFER_CONTEXT_LENGTH"], "65536")
+        self.assertEqual(call.args[3]["HERMES_COMPRESSION_THRESHOLD_TOKENS"], "32768")
+        self.assertEqual(call.args[3]["NINFER_MODEL_ID"], "qwen3.8-27b-uncensored-ctx65536")
+        self.assertNotIn("NINFER_SPEC_BACKEND", call.args[3])
 
     def test_lan_client_configures_all_profiles_and_activates_selected_one(self):
         helper = Mock()
+        helper.require_ninfer_endpoint.return_value = ServerModel("served-model", 65536)
         helper.normalize_ninfer_client_endpoint.return_value = "http://192.168.1.20:8080/v1"
         helper.native_hermes_command.return_value = (
             ["hermes"],
@@ -194,6 +218,7 @@ class BenchmarkTests(unittest.TestCase):
 
     def test_lan_client_no_activate_leaves_default_profile_selected(self):
         helper = Mock()
+        helper.require_ninfer_endpoint.return_value = ServerModel("served-model", 131072)
         helper.normalize_ninfer_client_endpoint.return_value = "http://192.168.1.20:8080/v1"
         helper.native_hermes_command.return_value = (
             ["hermes"],
