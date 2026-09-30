@@ -1,9 +1,31 @@
 # Implementation state
 
+## September 30 upstream evaluation — pin retained
+
+- Reviewed 39 newer upstream commits through `d44ab58408aa389728cd8b1ee50179527e1f3e0d`.
+  Both it and parent `4201b5d2d0f6afe235f4ed8e70cd753800770eca` built and
+  ran with the existing v3 artifacts. No converter, API model/context contract,
+  or deployment profile change was required.
+- Same-host fixtures showed the parent improved DFlash2-11 coding (3.52 to 2.88 s
+  median) and a matched 85K-token prefill request (4,962 to 7,203 native tok/s),
+  but slowed uncensored/autonomous MTP3 coding (4.47 to 5.00 s) and stock/default
+  coding (3.71 to 3.89 s). `blocking` CUDA sync did not recover MTP3 performance.
+  The latest commit had a severe long-prefill regression. Retain the current
+  global pin; see `docs/upstream-review-2026-09-30.md` for scope and caveats.
+- Original `594930e` source, image, `.env`, and uncensored/autonomous/MTP3 server
+  have been restored with LAN access and the original key. Its startup generation
+  check and all 11 live verification layers passed. The installed Hermes update
+  had removed the NInfer overflow fix; `scripts/patch_hermes_context.py` restored
+  it with backups and the focused check passed. Offline suite: 75 passing, six
+  live-only skipped; lint, docs and repository checks pass.
+- Docker's recurring inaccessible IPC sockets were preserved in
+  dated backup directories, then Desktop started without an engine data reset.
+- Existing untracked `HERMES_LONG_RUN_RULES.md` remains untouched.
+
 ## Upstream v3 and network discovery — September 23, 2026
 
 - Reviewed 44 upstream commits and selected `594930e7b609efa4bcea3ae4f24cd9d66b5f224f`;
-  submodule gitlink is staged, other implementation edits remain uncommitted.
+  the upgrade landed in `9e4c222`.
 - All three existing published artifacts are retained and migrated to reproducible
   `.v3.ninfer` files. Manifest pins both source and derived hashes. Converter/template
   text is normalized to LF for Windows/Linux parity; weight bytes are copied unchanged.

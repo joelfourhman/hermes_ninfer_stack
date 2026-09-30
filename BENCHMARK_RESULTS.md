@@ -1,5 +1,14 @@
 # RTX 5090 measured results
 
+## September 30 candidate comparison
+
+The current `594930e` pin was compared on the same RTX 5090 with upstream
+`d44ab58` and its parent `4201b5d`. The parent was faster for DFlash2 coding and
+large prefill, but slower for the active uncensored/autonomous and stock/default
+MTP3 coding fixtures. The latest commit had a severe research prefill regression.
+The pin remains unchanged. See the [evaluation](docs/upstream-review-2026-09-30.md)
+for measured values, workload differences and limits.
+
 ## Current v3 runtime — 2026-09-23
 
 NInfer `594930e` and reproducibly upgraded artifacts ran on Windows, RTX 5090

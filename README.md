@@ -78,6 +78,8 @@ upstream master commit; it is not represented as a tagged stable release.
 `build`, `verify` and `validate` check source/image/artifact/CLI provenance.
 [The September upgrade review](docs/upstream-review-2026-09.md) covers the v3
 artifact migration, maintained chat templates and new Qwen kernel routes.
+[The September 30 evaluation](docs/upstream-review-2026-09-30.md) explains why
+the newer upstream commits were not adopted as the global runtime pin.
 [AUDIT.md](AUDIT.md) records the previous deployment and verified upstream behavior.
 
 ## Choose a workload
