@@ -2,8 +2,8 @@
   "schema_version": 1,
   "ninfer": {
     "repository": "https://github.com/Neroued/ninfer.git",
-    "commit": "594930e7b609efa4bcea3ae4f24cd9d66b5f224f",
-    "baseline_commit": "ad0f3d384b5cbcec4a48a3951c287b4e9831443e",
+    "commit": "81c8ce093b2c1646a87566a8e59d807fcf0ec95c",
+    "baseline_commit": "594930e7b609efa4bcea3ae4f24cd9d66b5f224f",
     "cuda_base": "docker.io/nvidia/cuda:13.1.2-runtime-ubuntu24.04",
     "required_cli_flags": [
       "--max-context",
@@ -13,8 +13,7 @@
       "--prefill-chunk",
       "--kv-dtype",
       "--device-state-slots",
-      "--host-state-slots",
-      "--host-kv-mib",
+      "--host-context-mib",
       "--spec",
       "--draft-tokens",
       "--lm-head-draft",
@@ -169,12 +168,11 @@
       "pending_timeout_ms": 120000,
       "kv_dtype": "fp8",
       "device_state_slots": 2,
-      "host_state_slots": 8,
-      "host_kv_mib": 8192,
+      "host_context_mib": 10240,
       "preserve_thinking": true,
       "compression_threshold_tokens": 55000,
       "max_turns": 100000,
-      "qualification": "v3 RTX 5090 startup and 3/3 coding fixtures passed on 2026-09-23; not a long-session soak"
+      "qualification": "81c8ce engine capacity shape covered by autonomous and two-lane runs on 2026-10-10; balanced workload not separately retested"
     },
     "single-session": {
       "key": "single-session",
@@ -186,8 +184,7 @@
       "pending_timeout_ms": 120000,
       "kv_dtype": "fp8",
       "device_state_slots": 1,
-      "host_state_slots": 4,
-      "host_kv_mib": 4096,
+      "host_context_mib": 5120,
       "preserve_thinking": true,
       "compression_threshold_tokens": 55000,
       "max_turns": 100000,
@@ -203,12 +200,11 @@
       "pending_timeout_ms": 120000,
       "kv_dtype": "fp8",
       "device_state_slots": 2,
-      "host_state_slots": 8,
-      "host_kv_mib": 8192,
+      "host_context_mib": 10240,
       "preserve_thinking": true,
       "compression_threshold_tokens": 100000,
       "max_turns": 100000,
-      "qualification": "v3 uncensored/240K startup and 3/3 short coding fixtures passed; full-window quality unqualified"
+      "qualification": "81c8ce stock/240K research and two-lane fixtures passed 3/3; uncensored/240K and the full window were not retested"
     },
     "interactive": {
       "key": "interactive",
@@ -220,8 +216,7 @@
       "pending_timeout_ms": 120000,
       "kv_dtype": "fp8",
       "device_state_slots": 2,
-      "host_state_slots": 8,
-      "host_kv_mib": 8192,
+      "host_context_mib": 10240,
       "preserve_thinking": true,
       "compression_threshold_tokens": 55000,
       "max_turns": 100000,
@@ -237,12 +232,11 @@
       "pending_timeout_ms": 120000,
       "kv_dtype": "fp8",
       "device_state_slots": 2,
-      "host_state_slots": 8,
-      "host_kv_mib": 8192,
+      "host_context_mib": 10240,
       "preserve_thinking": true,
       "compression_threshold_tokens": 80000,
       "max_turns": 100000,
-      "qualification": "v3 DFlash2-7 and -11 each passed 3/3 coding fixtures at 196608 KV; one native Hermes DFlash2-7 task passed; 240K DFlash2 remains unqualified"
+      "qualification": "81c8ce DFlash2-7 and -11 bounded coding passed 3/3; Hermes passed 3/3 on -11 and 2/3 on -7 with one repetition rejection; 240K DFlash2 remains unqualified"
     },
     "research": {
       "key": "research",
@@ -254,12 +248,11 @@
       "pending_timeout_ms": 120000,
       "kv_dtype": "fp8",
       "device_state_slots": 2,
-      "host_state_slots": 8,
-      "host_kv_mib": 8192,
+      "host_context_mib": 10240,
       "preserve_thinking": true,
       "compression_threshold_tokens": 100000,
       "max_turns": 100000,
-      "qualification": "v3 stock/240K startup and 3/3 research fixtures passed, reaching 86058 input tokens; full-window quality unqualified"
+      "qualification": "81c8ce stock/240K research and two-lane fixtures passed 3/3; growing session reached 129246 input tokens and passed 2/3 acceptance; full window unqualified"
     },
     "autonomous": {
       "key": "autonomous",
@@ -271,12 +264,11 @@
       "pending_timeout_ms": 120000,
       "kv_dtype": "fp8",
       "device_state_slots": 2,
-      "host_state_slots": 8,
-      "host_kv_mib": 8192,
+      "host_context_mib": 10240,
       "preserve_thinking": true,
       "compression_threshold_tokens": 80000,
       "max_turns": 100000,
-      "qualification": "v3 stock and uncensored each passed 3/3 short coding fixtures; multi-hour stability remains unqualified"
+      "qualification": "81c8ce uncensored/MTP3 passed 3/3 matched coding fixtures at 4.410 s median; multi-hour stability remains unqualified"
     },
     "low-vram": {
       "key": "low-vram",
@@ -288,8 +280,7 @@
       "pending_timeout_ms": 120000,
       "kv_dtype": "fp8",
       "device_state_slots": 1,
-      "host_state_slots": 2,
-      "host_kv_mib": 2048,
+      "host_context_mib": 2560,
       "preserve_thinking": true,
       "compression_threshold_tokens": 24000,
       "max_turns": 100000,

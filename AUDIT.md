@@ -1,6 +1,16 @@
+# Runtime audit record
+
+The active pin is now `81c8ce093b2c1646a87566a8e59d807fcf0ec95c`.
+Its review, compatibility decision and same-host evidence are in
+[the October 10 review](docs/upstream-review-2026-10.md). It adds unified host
+context, incremental allocation, preemptive scheduling, snapshot/replay,
+constrained generation and Prometheus metrics while retaining v3 artifact
+compatibility. The audit below is historical and preserves the reasoning that
+led to the earlier deployment.
+
 # Pre-change audit — 2026-09-11
 
-The active September 23 v3 pin and migration review are recorded in
+The former September 23 v3 pin and migration review are recorded in
 [the upstream review](docs/upstream-review-2026-09.md). The sections below retain
 the earlier deployment audit; their older pins and artifact formats are historical.
 

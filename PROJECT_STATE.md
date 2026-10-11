@@ -1,5 +1,30 @@
 # Implementation state
 
+## October 10 upstream upgrade — adopted
+
+- Reviewed 83 upstream commits from `594930e7b609` through
+  `81c8ce093b2c`. The adopted engine adds incremental context allocation,
+  admission/preemption with snapshot or replay restoration, constrained tool and
+  structured output generation, Prometheus metrics and expanded schema-25 logs.
+- Existing stock, uncensored and DFlash2 v3 artifacts loaded unchanged. Separate
+  host-state and host-KV settings were migrated to one 10 GiB host-context pool
+  for standard profiles; the old pin is retained as the rollback baseline.
+- The matched uncensored/autonomous/MTP3 coding median improved 4.514 to 4.410 s
+  with 3/3 success on both pins. On the companion artifact, bounded medians were
+  2.752 s for DFlash2-11, 2.913 s for DFlash2-7 and 3.667 s for MTP3.
+- Actual Hermes runs passed 3/3 for DFlash2-11 and MTP3. DFlash2-7 passed 2/3;
+  one otherwise validated run was discarded by Hermes's repetition detector.
+  The 256 KiB research fixture and two-lane fixture passed 3/3. The growing
+  session reached 129,246 input tokens and five compression cycles; 2/3 met the
+  edit-count acceptance rule, while the third passed tests but correctly made
+  no edit because the fixture already matched its specification.
+- All six live API tests passed, including tools, reasoning and exact-prefix
+  reuse. All 11 verification layers passed after restoring the repository's
+  narrow Hermes overflow-classification patch with timestamped backups.
+- Original uncensored/autonomous/MTP3 at 196,608 context is restored on the
+  default Hermes profile with LAN access and the existing key. The pre-existing
+  untracked `HERMES_LONG_RUN_RULES.md` remains untouched.
+
 ## September 30 upstream evaluation — pin retained
 
 - Reviewed 39 newer upstream commits through `d44ab58408aa389728cd8b1ee50179527e1f3e0d`.

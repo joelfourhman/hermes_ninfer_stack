@@ -1,12 +1,43 @@
 # RTX 5090 measured results
 
+## October 10 engine and profile qualification
+
+NInfer `594930e` was compared with adopted pin `81c8ce0` on the same RTX 5090,
+uncensored artifact, autonomous profile and MTP3 decoder. Both passed 3/3; the
+median fell from 4.514 to 4.410 seconds, a 2.3% improvement. This small matched
+speedup is not the main reason for the update: the new pin also adds incremental
+allocation, preemptive snapshot/replay scheduling and constrained generation.
+
+| Candidate / workload | Accepted | Median successful wall s | Notes |
+|---|---:|---:|---|
+| Uncensored/autonomous/MTP3 old pin | 3/3 | 4.514 | Matched baseline |
+| Uncensored/autonomous/MTP3 new pin | 3/3 | 4.410 | Matched candidate |
+| Companion/DFlash2-11 bounded coding | 3/3 | 2.752 | Fastest bounded decoder |
+| Companion/DFlash2-7 bounded coding | 3/3 | 2.913 | Conservative DFlash2 window |
+| Companion/MTP3 bounded coding | 3/3 | 3.667 | Same model/profile control |
+| Companion/DFlash2-11 actual Hermes | 3/3 | 56.445 | Full Hermes orchestration |
+| Companion/MTP3 actual Hermes | 3/3 | 56.265 | Effectively tied with DFlash2-11 |
+| Companion/DFlash2-7 actual Hermes | 2/3 | 59.070 | One repetition-detector rejection |
+| Stock/research 256 KiB fixture | 3/3 | 5.487 | First uncached run 18.04 s; max 85,346 input tokens |
+| Stock/research growing session | 2/3 | 191.310 | Max 129,246 input tokens; failed run passed tests but made no unnecessary edits |
+| Stock/research two lanes | 3/3 | 13.210 | Concurrent decode batch averaged up to 1.44 |
+
+The growing-session run filled the 10 GiB host-context arena, spilled retained
+pages to host and continued checkpoint reuse without OOM or corruption. Five
+compression cycles occurred in the acceptance-rejected run. Native scheduling
+reported no preemption in these fixtures, so snapshot/replay correctness is
+source- and startup-verified but not claimed as benchmark-exercised. DFlash2-11
+remains the speed preset; stock/balanced/MTP3 remains the general default.
+See the [October review](docs/upstream-review-2026-10.md) for commit scope and
+limitations.
+
 ## September 30 candidate comparison
 
-The current `594930e` pin was compared on the same RTX 5090 with upstream
+The then-current `594930e` pin was compared on the same RTX 5090 with upstream
 `d44ab58` and its parent `4201b5d`. The parent was faster for DFlash2 coding and
 large prefill, but slower for the active uncensored/autonomous and stock/default
 MTP3 coding fixtures. The latest commit had a severe research prefill regression.
-The pin remains unchanged. See the [evaluation](docs/upstream-review-2026-09-30.md)
+The pin remained unchanged at that review. See the [evaluation](docs/upstream-review-2026-09-30.md)
 for measured values, workload differences and limits.
 
 ## Current v3 runtime — 2026-09-23

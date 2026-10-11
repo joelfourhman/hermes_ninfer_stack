@@ -3,9 +3,9 @@
 The pinned source was inspected directly; see [AUDIT.md](../AUDIT.md). NInfer uses
 a shared KV pool across lanes, FP8 KV in these profiles, and retained recurrent,
 hidden and speculative continuation state. Device state slots avoid transfer;
-host state and pinned host KV extend retained histories with transfer costs.
-Eviction, admission and capacity planning affect whether a prefix can be reused.
-There is no enabled durable disk KV store, active swap or arbitrary preemption.
+one pinned host-context arena holds retained state, KV and snapshot/replay data.
+Allocation is incremental. Admission can pause and preempt work, then restore it
+from a snapshot or replay when capacity returns. There is no durable disk KV store.
 
 The profile's device slots are retained cache slots in addition to active lane
 state. Native total device-state capacity is `max_concurrency + device_state_slots`;
@@ -15,8 +15,8 @@ configured cache slots as the engine's entire state-memory footprint.
 
 `max-context` is the per-request total token ceiling; `kv-capacity` is shared pool
 capacity. Two lanes do not each reserve half the pool, and they do not guarantee
-two simultaneous maximum-context requests. Host KV is backing/retention capacity,
-not extra active GPU token capacity. Research/max-context have 240,000 tokens,
+two simultaneous maximum-context requests. Host context is backing/retention
+capacity, not extra active GPU token capacity. Research/max-context have 240,000 tokens,
 not 240 Ki tokens. Leave room for outputs, tools and compression before the ceiling.
 
 The initial coding/autonomous candidate used a 240,000-token KV pool. Actual
@@ -46,8 +46,8 @@ tool schemas that the hook does not expose.
 | Model request seconds | Client elapsed or actual Hermes API-hook durations, not whole-agent turn duration |
 | Tool seconds | Bounded tool events or Hermes pre/post-tool hooks |
 | Context/compression | Per-request input tokens; bounded-driver compression events; Hermes compression unknown unless exposed |
-| KV/state/host cache | Native throughput interval context_cache gauges/counters |
-| Restore path/time, speculation | Native request_done result/timings/speculative/materialization records when present |
+| KV/state/host context | Native throughput interval context_cache occupancy, transfer and pressure counters |
+| Restore path/time, speculation | Native request_done scheduling, snapshot/replay and speculative records when present |
 | VRAM/RAM | One-second whole-device/whole-host samples, not process-private allocations |
 
 Unavailable values stay null. Raw events preserve upstream fields rather than
@@ -58,7 +58,8 @@ counts are retained, not conflated with tokens/sec. Docker log retention is boun
 
 `observe` combines hardware, active verified configuration and recent native
 events. `observe --state PATH` adds job epoch, milestone, session and checkpoint
-plus the latest private hook event. No Prometheus/Grafana services are required.
+plus the latest private hook event. The server also exposes native Prometheus
+metrics; this stack does not require a Prometheus/Grafana service.
 
 ## Benchmark protocol
 

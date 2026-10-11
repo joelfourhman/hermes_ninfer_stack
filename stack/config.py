@@ -73,8 +73,7 @@ class RuntimeProfile:
     pending_timeout_ms: int
     kv_dtype: str
     device_state_slots: int
-    host_state_slots: int
-    host_kv_mib: int
+    host_context_mib: int
     preserve_thinking: bool
     compression_threshold_tokens: int
     max_turns: int
@@ -105,8 +104,7 @@ def runtime_env_values(profile: RuntimeProfile) -> dict[str, str]:
         "NINFER_PENDING_TIMEOUT_MS": profile.pending_timeout_ms,
         "NINFER_KV_DTYPE": profile.kv_dtype,
         "NINFER_DEVICE_STATE_SLOTS": profile.device_state_slots,
-        "NINFER_HOST_STATE_SLOTS": profile.host_state_slots,
-        "NINFER_HOST_KV_MIB": profile.host_kv_mib,
+        "NINFER_HOST_CONTEXT_MIB": profile.host_context_mib,
         "NINFER_PRESERVE_THINKING": "true" if profile.preserve_thinking else "false",
         "HERMES_COMPRESSION_ENABLED": "true",
         "HERMES_COMPRESSION_THRESHOLD_TOKENS": profile.compression_threshold_tokens,
@@ -179,7 +177,7 @@ def validate_manifest() -> None:
             raise ValueError(f"Profile lacks output/context headroom: {key}")
         if p.kv_dtype not in {"bf16", "int8", "fp8", "nvfp4", "k8v4"}:
             raise ValueError(f"Invalid KV dtype: {key}")
-        if min(p.device_state_slots, p.host_state_slots, p.host_kv_mib) < 0:
+        if min(p.device_state_slots, p.host_context_mib) < 0:
             raise ValueError(f"Invalid state capacity: {key}")
     for key, preset in DEPLOYMENT_PRESETS.items():
         if (

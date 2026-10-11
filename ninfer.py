@@ -45,7 +45,7 @@ PRIVATE_LAN_NETWORKS = tuple(
     for cidr in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16")
 )
 
-# These variables belonged to the removed all-container Hermes and local model-build paths.
+# These variables belonged to removed container paths or superseded NInfer resource controls.
 # Setup removes only this reviewed allowlist and preserves every unrelated user setting.
 OBSOLETE_ENV_KEYS = frozenset(
     {
@@ -66,6 +66,8 @@ OBSOLETE_ENV_KEYS = frozenset(
         "SANDBOX_PIDS",
         "MODEL_BUILD_UID",
         "MODEL_BUILD_GID",
+        "NINFER_HOST_STATE_SLOTS",
+        "NINFER_HOST_KV_MIB",
     }
 )
 HERMES_DESKTOP_URL = "https://hermes-agent.nousresearch.com/desktop"
@@ -664,8 +666,7 @@ def validate_env() -> None:
         "NINFER_PENDING_TIMEOUT_MS",
         "NINFER_KV_DTYPE",
         "NINFER_DEVICE_STATE_SLOTS",
-        "NINFER_HOST_STATE_SLOTS",
-        "NINFER_HOST_KV_MIB",
+        "NINFER_HOST_CONTEXT_MIB",
         "NINFER_PRESERVE_THINKING",
         "HERMES_COMPRESSION_ENABLED",
         "HERMES_COMPRESSION_THRESHOLD_TOKENS",

@@ -72,7 +72,7 @@ failure and report the limit rather than counting it as a fast completion.
 Repeat the same fitting fixture under balanced/coding/research to compare
 128K/192K/240K ceilings. For native Hermes compression/resume, repeat long-session
 with `--driver hermes`; note that its prompt/tool protocol differs from the
-bounded summary/reset simulation. Inspect actual cache/host-state paths.
+bounded summary/reset simulation. Inspect actual cache, host-context and scheduling paths.
 
 ## Validation commands
 

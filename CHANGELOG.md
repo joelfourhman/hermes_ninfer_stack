@@ -8,6 +8,11 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- NInfer October 7 runtime pin with incremental context allocation, preemptive
+  scheduling, snapshot/replay recovery, XGrammar-constrained tools and structured
+  outputs, Prometheus metrics and schema-25 native request telemetry.
+- October 10 same-host baseline/candidate, decoder, real-Hermes, 129K-token
+  growing-session and two-lane qualification evidence.
 - NInfer September 23 v3 runtime pin, deterministic offline upgrades of all three
   model artifacts, preserved v2 originals, and maintained Qwen3.8 chat templates.
 - Authenticated live model/context discovery for LAN Hermes; context-aware model
@@ -56,6 +61,12 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Replaced separate host-state-slot and host-KV controls with NInfer's unified
+  host-context pool: 10 GiB for standard profiles, 5 GiB for single-session and
+  2.5 GiB for low-VRAM. Existing `.env` files migrate automatically.
+- Advanced the audited source pin from `594930e` to `81c8ce0`; retained
+  `594930e` as the explicit rollback/baseline revision and kept all v3 artifact
+  hashes unchanged.
 - Simplified the runtime architecture so NInfer is the only long-running
   application container; stock Hermes Desktop or native Hermes now runs as the
   signed-in host user.

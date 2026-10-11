@@ -16,12 +16,12 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def profile_table() -> str:
     rows = [
-        "| Profile | Context tokens | Shared KV tokens | Lanes | Device / host cache slots | Host KV MiB | Compression tokens | Turns |",
+        "| Profile | Context tokens | Shared KV tokens | Lanes | Extra device state slots | Host context MiB | Compression tokens | Turns |",
         "|---|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for p in RUNTIME_PROFILES.values():
         rows.append(
-            f"| `{p.key}` | {p.context_length:,} | {p.kv_capacity:,} | {p.max_concurrency} | {p.device_state_slots} / {p.host_state_slots} | {p.host_kv_mib:,} | {p.compression_threshold_tokens:,} | {p.max_turns} |"
+            f"| `{p.key}` | {p.context_length:,} | {p.kv_capacity:,} | {p.max_concurrency} | {p.device_state_slots} | {p.host_context_mib:,} | {p.compression_threshold_tokens:,} | {p.max_turns} |"
         )
     return "\n".join(rows)
 

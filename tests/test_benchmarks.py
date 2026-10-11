@@ -288,8 +288,14 @@ class BenchmarkTests(unittest.TestCase):
             validate_fixture_code('import os\nos.remove("file")')
 
     def test_native_jsonl_ignores_pretty_text_and_partial_lines(self):
-        text = 'pretty log\nservice | {"event":"throughput","context_cache":{"occupancy":{}}}\n{"event":'
-        self.assertEqual(len(parse_native_logs(text)), 1)
+        text = (
+            'pretty log\nservice | {"event":"throughput","context_cache":{"occupancy":{}}}\n'
+            '{"event":"request_scheduling","transition":"paused"}\n{"event":'
+        )
+        self.assertEqual(
+            [record["event"] for record in parse_native_logs(text)],
+            ["throughput", "request_scheduling"],
+        )
 
     def test_stream_reasoning_tool_fragments_empty_usage_and_roundtrip(self):
         received = []

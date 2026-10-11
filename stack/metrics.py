@@ -50,8 +50,7 @@ def runtime_metadata(helper, *, baseline: bool = False, hash_model: bool = True)
         "--max-concurrency": "NINFER_MAX_CONCURRENCY",
         "--kv-dtype": "NINFER_KV_DTYPE",
         "--device-state-slots": "NINFER_DEVICE_STATE_SLOTS",
-        "--host-state-slots": "NINFER_HOST_STATE_SLOTS",
-        "--host-kv-mib": "NINFER_HOST_KV_MIB",
+        "--host-context-mib": "NINFER_HOST_CONTEXT_MIB",
         "--spec": "NINFER_SPEC_BACKEND",
         "--draft-tokens": "NINFER_DRAFT_TOKENS",
         "--model-id": "NINFER_MODEL_ID",
@@ -106,6 +105,7 @@ def parse_native_logs(text: str) -> list[dict]:
             "request_error",
             "request_rejected",
             "request_start",
+            "request_scheduling",
         }:
             records.append(record)
     return records

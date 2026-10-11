@@ -66,8 +66,9 @@ profiles and DFlash2 are selectable candidates. See the actual
 - RTX 5090, 32 GB VRAM; close other GPU-heavy applications.
 - Windows is the primary host. Docker Desktop needs Linux containers with GPU
   access. Python 3.10+ and Git are required; a host CUDA Toolkit is unnecessary.
-- Allow substantial system RAM for Docker, Hermes and pinned host KV. Profiles
-  can reserve 8 GiB of host KV in addition to model staging and other processes.
+- Allow substantial system RAM for Docker, Hermes and pinned host context.
+  Standard profiles reserve one 10 GiB pool for retained KV, recurrent state,
+  snapshots and replay data in addition to model staging and other processes.
 - Allow model storage plus Docker build space. Selecting the companion artifact
   retains the original files and adds another roughly 22 GiB.
 
@@ -79,7 +80,8 @@ upstream master commit; it is not represented as a tagged stable release.
 [The September upgrade review](docs/upstream-review-2026-09.md) covers the v3
 artifact migration, maintained chat templates and new Qwen kernel routes.
 [The September 30 evaluation](docs/upstream-review-2026-09-30.md) explains why
-the newer upstream commits were not adopted as the global runtime pin.
+those candidate commits were not adopted. [The October 10 review](docs/upstream-review-2026-10.md)
+records the later engine update, compatibility checks and same-host benchmarks.
 [AUDIT.md](AUDIT.md) records the previous deployment and verified upstream behavior.
 
 ## Choose a workload
@@ -128,16 +130,16 @@ Restart Desktop after changing context so existing processes reload their settin
 
 <!-- BEGIN GENERATED PROFILES -->
 
-| Profile | Context tokens | Shared KV tokens | Lanes | Device / host cache slots | Host KV MiB | Compression tokens | Turns |
+| Profile | Context tokens | Shared KV tokens | Lanes | Extra device state slots | Host context MiB | Compression tokens | Turns |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| `balanced` | 131,072 | 196,608 | 2 | 2 / 8 | 8,192 | 55,000 | 100000 |
-| `single-session` | 131,072 | 131,072 | 1 | 1 / 4 | 4,096 | 55,000 | 100000 |
-| `max-context` | 240,000 | 240,000 | 2 | 2 / 8 | 8,192 | 100,000 | 100000 |
-| `interactive` | 131,072 | 196,608 | 2 | 2 / 8 | 8,192 | 55,000 | 100000 |
-| `coding` | 196,608 | 196,608 | 2 | 2 / 8 | 8,192 | 80,000 | 100000 |
-| `research` | 240,000 | 240,000 | 2 | 2 / 8 | 8,192 | 100,000 | 100000 |
-| `autonomous` | 196,608 | 196,608 | 2 | 2 / 8 | 8,192 | 80,000 | 100000 |
-| `low-vram` | 65,536 | 65,536 | 1 | 1 / 2 | 2,048 | 24,000 | 100000 |
+| `balanced` | 131,072 | 196,608 | 2 | 2 | 10,240 | 55,000 | 100000 |
+| `single-session` | 131,072 | 131,072 | 1 | 1 | 5,120 | 55,000 | 100000 |
+| `max-context` | 240,000 | 240,000 | 2 | 2 | 10,240 | 100,000 | 100000 |
+| `interactive` | 131,072 | 196,608 | 2 | 2 | 10,240 | 55,000 | 100000 |
+| `coding` | 196,608 | 196,608 | 2 | 2 | 10,240 | 80,000 | 100000 |
+| `research` | 240,000 | 240,000 | 2 | 2 | 10,240 | 100,000 | 100000 |
+| `autonomous` | 196,608 | 196,608 | 2 | 2 | 10,240 | 80,000 | 100000 |
+| `low-vram` | 65,536 | 65,536 | 1 | 1 | 2,560 | 24,000 | 100000 |
 
 <!-- END GENERATED PROFILES -->
 

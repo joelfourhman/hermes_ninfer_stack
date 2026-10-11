@@ -29,8 +29,7 @@ def sample_values() -> dict[str, str]:
         "NINFER_PENDING_TIMEOUT_MS": "120000",
         "NINFER_KV_DTYPE": "fp8",
         "NINFER_DEVICE_STATE_SLOTS": "2",
-        "NINFER_HOST_STATE_SLOTS": "8",
-        "NINFER_HOST_KV_MIB": "8192",
+        "NINFER_HOST_CONTEXT_MIB": "10240",
         "NINFER_PRESERVE_THINKING": "true",
         "HERMES_COMPRESSION_ENABLED": "true",
         "HERMES_COMPRESSION_THRESHOLD_TOKENS": "55000",
@@ -635,6 +634,8 @@ class EnvironmentValidationTests(unittest.TestCase):
                 f"NINFER_API_KEY={'e' * 64}\n"
                 f"NINFER_MODEL_FILE={ninfer.STOCK_MODEL_FILE}\n"
                 "HERMES_DASHBOARD_PASSWORD=remove-me\n"
+                "NINFER_HOST_STATE_SLOTS=8\n"
+                "NINFER_HOST_KV_MIB=8192\n"
                 "UNRELATED_SETTING=keep-me\n",
                 encoding="utf-8",
             )
@@ -650,6 +651,9 @@ class EnvironmentValidationTests(unittest.TestCase):
 
         self.assertEqual(len(backups), 1)
         self.assertNotIn("HERMES_DASHBOARD_PASSWORD", configured)
+        self.assertNotIn("NINFER_HOST_STATE_SLOTS", configured)
+        self.assertNotIn("NINFER_HOST_KV_MIB", configured)
+        self.assertIn("NINFER_HOST_CONTEXT_MIB=10240", configured)
         self.assertIn("UNRELATED_SETTING=keep-me", configured)
         self.assertIn("NINFER_RUNTIME_PROFILE=balanced", configured)
         self.assertIn("NINFER_MAX_CONCURRENCY=2", configured)

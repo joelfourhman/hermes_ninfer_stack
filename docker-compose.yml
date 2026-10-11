@@ -53,10 +53,8 @@ services:
       - ${NINFER_KV_DTYPE:-fp8}
       - --device-state-slots
       - ${NINFER_DEVICE_STATE_SLOTS:-2}
-      - --host-state-slots
-      - ${NINFER_HOST_STATE_SLOTS:-8}
-      - --host-kv-mib
-      - ${NINFER_HOST_KV_MIB:-8192}
+      - --host-context-mib
+      - ${NINFER_HOST_CONTEXT_MIB:-10240}
       - --spec
       - ${NINFER_SPEC_BACKEND:-mtp}
       - --draft-tokens

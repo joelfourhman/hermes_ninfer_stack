@@ -167,8 +167,8 @@ class ConfigurationTests(unittest.TestCase):
     def test_cli_flag_disappearance_and_image_drift(self):
         help_text = " ".join(MANIFEST["ninfer"]["required_cli_flags"]) + " mtp dflash2 fp8"
         verify_cli_help(help_text)
-        with self.assertRaisesRegex(ValueError, "host-kv-mib"):
-            verify_cli_help(help_text.replace("--host-kv-mib", "--old-host-kv"))
+        with self.assertRaisesRegex(ValueError, "host-context-mib"):
+            verify_cli_help(help_text.replace("--host-context-mib", "--old-host-context"))
         with self.assertRaises(ValueError):
             verify_image({"org.opencontainers.image.revision": "wrong"})
 
@@ -195,8 +195,7 @@ class ConfigurationTests(unittest.TestCase):
             "NINFER_CONTEXT_LENGTH",
             "NINFER_KV_CAPACITY",
             "NINFER_DEVICE_STATE_SLOTS",
-            "NINFER_HOST_STATE_SLOTS",
-            "NINFER_HOST_KV_MIB",
+            "NINFER_HOST_CONTEXT_MIB",
             "NINFER_SPEC_BACKEND",
             "NINFER_DRAFT_TOKENS",
         ]:
